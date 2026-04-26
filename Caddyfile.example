@@ -1,0 +1,12 @@
+# Caddyfile — replace example.com with your real domain.
+# Caddy will auto-issue Let's Encrypt SSL once DNS A record points here.
+
+example.com {
+    encode zstd gzip
+
+    # SSE needs flushing — Caddy handles this by default for reverse_proxy
+    reverse_proxy 127.0.0.1:3000 {
+        # Don't buffer responses — we stream chunks for chat
+        flush_interval -1
+    }
+}

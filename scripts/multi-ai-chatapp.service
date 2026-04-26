@@ -1,0 +1,21 @@
+[Unit]
+Description=Multi-AI Chatapp server
+After=network.target
+
+[Service]
+Type=simple
+# Replace USERNAME with the linux user that ran setup.sh and logged into the CLIs.
+User=USERNAME
+# Replace INSTALL_DIR with the absolute path of this repo on the server.
+WorkingDirectory=INSTALL_DIR/server
+EnvironmentFile=INSTALL_DIR/server/.env
+ExecStart=/usr/bin/node INSTALL_DIR/server/dist/index.js
+Restart=on-failure
+RestartSec=5
+# CLIs cache auth tokens under $HOME, so HOME must be set
+Environment=HOME=/home/USERNAME
+# Keep PATH so child CLIs (claude, codex, gemini, grok) are found
+Environment=PATH=/home/USERNAME/.nvm/versions/node/current/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
