@@ -62,9 +62,8 @@ const PRO: Record<AIProvider, ModelChoices> = {
     options: ['gemini-3.1-pro-preview', 'gemini-3-pro-preview', 'gemini-3-flash-preview'],
   },
   grok: {
-    default: 'grok-4.20-multi-agent-0309',
+    default: 'grok-4.20-0309-non-reasoning',
     options: [
-      'grok-4.20-multi-agent-0309',
       'grok-4.20-0309-non-reasoning',
       'grok-4-1-fast-reasoning',
     ],
@@ -90,7 +89,6 @@ const SUPER: Record<AIProvider, ModelChoices> = {
     default: 'grok-4.20-0309-reasoning',
     options: [
       'grok-4.20-0309-reasoning',
-      'grok-4.20-multi-agent-0309',
       'grok-4.20-0309-non-reasoning',
       'grok-4-1-fast-reasoning',
     ],

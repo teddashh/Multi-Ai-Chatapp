@@ -41,7 +41,6 @@ const PRICES: Record<string, ModelPrice> = {
   'grok-4-1-fast-non-reasoning': { inputPer1M: 0.2, outputPer1M: 0.5 },
   'grok-4.20-0309-reasoning': { inputPer1M: 3.0, outputPer1M: 15.0 },
   'grok-4.20-0309-non-reasoning': { inputPer1M: 3.0, outputPer1M: 15.0 },
-  'grok-4.20-multi-agent-0309': { inputPer1M: 3.0, outputPer1M: 15.0 },
 };
 
 const PROVIDER_FALLBACK: Record<string, ModelPrice> = {

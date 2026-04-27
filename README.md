@@ -26,11 +26,13 @@ browser  ──HTTPS──>  Caddy  ──reverse-proxy──>  Hono server  ─
 
 ## Tier → Model mapping (`server/src/shared/models.ts`)
 
-| Tier      | Claude            | OpenAI         | Gemini                    | Grok                            |
-| --------- | ----------------- | -------------- | ------------------------- | ------------------------------- |
-| test      | claude-haiku-4-5  | gpt-5.4-mini   | gemini-3-flash-preview    | grok-4-1-fast-reasoning         |
-| standard  | claude-sonnet-4-6 | gpt-5.4        | gemini-3.1-pro-preview    | grok-4.20-multi-agent-0309      |
-| super     | claude-opus-4-7   | gpt-5.5-pro    | gemini-3.1-pro-preview    | grok-4.20-0309-reasoning        |
+| Tier      | Claude            | OpenAI            | Gemini                          | Grok                              |
+| --------- | ----------------- | ----------------- | ------------------------------- | --------------------------------- |
+| free      | claude-haiku-4-5  | gpt-5.4-nano      | gemini-3.1-flash-lite-preview   | grok-4-1-fast-non-reasoning       |
+| standard  | claude-haiku-4-5  | gpt-5.4-mini      | gemini-3-flash-preview          | grok-4-1-fast-reasoning           |
+| pro       | claude-sonnet-4-6 | gpt-5.4           | gemini-3.1-pro-preview          | grok-4.20-0309-non-reasoning      |
+| super     | claude-opus-4-7   | gpt-5.4 / 5.5-pro | gemini-3.1-pro-preview          | grok-4.20-0309-reasoning          |
+| admin     | (= super)         | (= super)         | (= super)                       | (= super)                         |
 
 Adjust `TIER_MODELS` in that file if vendors release new ones.
 
