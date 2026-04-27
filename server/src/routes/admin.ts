@@ -19,7 +19,7 @@ import {
   type SessionRow,
   type UserRow,
 } from '../lib/db.js';
-import { sendResetEmail } from '../lib/mail.js';
+import { sendInviteEmail } from '../lib/mail.js';
 import { estimateCost } from '../shared/prices.js';
 import type { Tier } from '../shared/types.js';
 
@@ -143,13 +143,19 @@ adminRoute.post('/users/invite', async (c) => {
 
   const publicUrl = process.env.PUBLIC_URL || 'https://chat.ted-h.com';
   const inviteUrl = `${publicUrl}/?reset=${token}`;
+  // Look up the inviting admin's display name so the recipient sees who
+  // invited them (instead of just an anonymous "you've been invited").
+  const adminRow = userStmts.findById.get(me.id) as UserRow | undefined;
+  const inviterName =
+    adminRow?.nickname || adminRow?.real_name || adminRow?.username || null;
+
   let emailSent = false;
   try {
-    await sendResetEmail({
+    await sendInviteEmail({
       to: email,
-      nickname: body.nickname || body.real_name || username,
-      resetUrl: inviteUrl,
-      reason: 'self_request',
+      greetingName: body.nickname || body.real_name || username,
+      inviterName,
+      setupUrl: inviteUrl,
     });
     emailSent = true;
   } catch (err) {
