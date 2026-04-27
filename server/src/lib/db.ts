@@ -17,7 +17,11 @@ db.exec(`
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     tier TEXT NOT NULL CHECK (tier IN ('test','standard','super')),
-    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    nickname TEXT,
+    email TEXT,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    locked_until INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS chat_sessions (
@@ -40,13 +44,46 @@ db.exec(`
     timestamp INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_messages_session ON chat_messages(session_id, id);
+
+  CREATE TABLE IF NOT EXISTS password_resets (
+    token TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id, expires_at);
 `);
+
+// One-shot, idempotent column additions for existing DBs.
+function addColumnIfMissing(table: string, column: string, decl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  }
+}
+addColumnIfMissing('users', 'nickname', 'TEXT');
+addColumnIfMissing('users', 'email', 'TEXT');
+addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
 
 export interface UserRow {
   id: number;
   username: string;
   password_hash: string;
   tier: Tier;
+  created_at: number;
+  nickname: string | null;
+  email: string | null;
+  failed_attempts: number;
+  locked_until: number;
+}
+
+export interface PasswordResetRow {
+  token: string;
+  user_id: number;
+  expires_at: number;
+  used: number;
   created_at: number;
 }
 
@@ -65,6 +102,39 @@ export const userStmts = {
   ),
   updateTier: db.prepare<[Tier, string]>(
     'UPDATE users SET tier = ? WHERE username = ?',
+  ),
+  updateProfile: db.prepare<[string | null, string | null, string]>(
+    'UPDATE users SET nickname = ?, email = ? WHERE username = ?',
+  ),
+  findByEmailOrUsername: db.prepare<[string, string]>(
+    'SELECT * FROM users WHERE username = ? OR email = ?',
+  ),
+  bumpFailedAttempts: db.prepare<[number]>(
+    'UPDATE users SET failed_attempts = failed_attempts + 1 WHERE id = ?',
+  ),
+  resetFailedAttempts: db.prepare<[number]>(
+    'UPDATE users SET failed_attempts = 0, locked_until = 0 WHERE id = ?',
+  ),
+  lockUser: db.prepare<[number, number]>(
+    'UPDATE users SET locked_until = ? WHERE id = ?',
+  ),
+  setPasswordHash: db.prepare<[string, number]>(
+    'UPDATE users SET password_hash = ?, failed_attempts = 0, locked_until = 0 WHERE id = ?',
+  ),
+};
+
+export const resetStmts = {
+  insert: db.prepare<[string, number, number]>(
+    'INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, ?)',
+  ),
+  findValid: db.prepare<[string, number]>(
+    `SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > ?`,
+  ),
+  markUsed: db.prepare<[string]>(
+    'UPDATE password_resets SET used = 1 WHERE token = ?',
+  ),
+  deleteForUser: db.prepare<[number]>(
+    'DELETE FROM password_resets WHERE user_id = ?',
   ),
 };
 

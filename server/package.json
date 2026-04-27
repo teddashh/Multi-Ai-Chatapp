@@ -9,20 +9,23 @@
     "start": "node dist/index.js",
     "user:add": "tsx src/scripts/add-user.ts",
     "user:list": "tsx src/scripts/list-users.ts",
-    "user:delete": "tsx src/scripts/delete-user.ts"
+    "user:delete": "tsx src/scripts/delete-user.ts",
+    "backup:oracle": "tsx src/scripts/oracle-backup.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.5.0",
     "hono": "^4.6.13",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "oracledb": "^6.7.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.2",
+    "@types/oracledb": "^6.5.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
