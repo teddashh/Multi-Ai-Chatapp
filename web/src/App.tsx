@@ -7,8 +7,6 @@ import type {
   SSEEvent,
 } from './shared/types';
 import {
-  AI_PROVIDERS,
-  CHAT_MODES,
   DEFAULT_CODING_ROLES,
   DEFAULT_CONSULT_ROLES,
   DEFAULT_DEBATE_ROLES,
@@ -38,34 +36,6 @@ const DEFAULT_ROLES: Record<string, ModeRoles> = {
   coding: DEFAULT_CODING_ROLES,
   roundtable: DEFAULT_ROUNDTABLE_ROLES,
 };
-
-function buildExportMarkdown(messages: ChatMessage[], mode: ChatMode): string {
-  const info = CHAT_MODES[mode];
-  const lines: string[] = [
-    `# Multi-AI Chat — ${info.icon} ${info.name}`,
-    `> Exported: ${new Date().toLocaleString()}`,
-    '',
-    '---',
-    '',
-  ];
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      lines.push('## 👤 User');
-      lines.push('');
-      lines.push(...msg.content.split('\n').map((l) => `> ${l}`));
-    } else {
-      const name = msg.provider ? AI_PROVIDERS[msg.provider].name : 'AI';
-      const role = msg.modeRole ? ` (${msg.modeRole})` : '';
-      lines.push(`## 🤖 ${name}${role}`);
-      lines.push('');
-      lines.push(msg.content);
-    }
-    lines.push('');
-    lines.push('---');
-    lines.push('');
-  }
-  return lines.join('\n');
-}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -317,19 +287,6 @@ export default function App() {
     setWorkflowStatus('');
   }, []);
 
-  const handleExport = useCallback(() => {
-    if (messages.length === 0) return;
-    const md = buildExportMarkdown(messages, mode);
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `multi-ai-chat-${mode}-${ts}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [messages, mode]);
-
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">
@@ -368,14 +325,6 @@ export default function App() {
             <h1 className="text-lg font-bold">Multi-AI Chatapp</h1>
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <button
-              onClick={handleExport}
-              disabled={messages.length === 0}
-              className="text-gray-400 hover:text-white disabled:opacity-30"
-              title="匯出 Markdown"
-            >
-              📥 匯出
-            </button>
             <span className="text-gray-400">
               {user.username}{' '}
               <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase tracking-wider">

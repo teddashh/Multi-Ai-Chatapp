@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { CHAT_MODES } from '../shared/constants';
+import { AI_PROVIDERS, CHAT_MODES } from '../shared/constants';
 import type { SessionSummary } from '../api';
-import { deleteSession, renameSession } from '../api';
+import { deleteSession, getSession, renameSession } from '../api';
 
 interface Props {
   sessions: SessionSummary[];
@@ -63,6 +63,51 @@ export default function Sidebar({
       onRefresh();
     } catch (err) {
       alert(`刪除失敗：${(err as Error).message}`);
+    }
+  };
+
+  const handleExport = async (s: SessionSummary, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const detail = await getSession(s.id);
+      const modeInfo = CHAT_MODES[detail.session.mode];
+      const lines: string[] = [
+        `# Multi-AI Chat — ${modeInfo?.icon ?? ''} ${detail.session.title}`,
+        `> Mode: ${modeInfo?.name ?? detail.session.mode}`,
+        `> Exported: ${new Date().toLocaleString()}`,
+        '',
+        '---',
+        '',
+      ];
+      for (const m of detail.messages) {
+        if (m.role === 'user') {
+          lines.push('## 👤 User');
+          lines.push('');
+          lines.push(...m.content.split('\n').map((l) => `> ${l}`));
+        } else {
+          const name = m.provider ? AI_PROVIDERS[m.provider].name : 'AI';
+          const role = m.modeRole ? ` (${m.modeRole})` : '';
+          lines.push(`## 🤖 ${name}${role}`);
+          lines.push('');
+          lines.push(m.content);
+        }
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+      const safeTitle = detail.session.title
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .slice(0, 60);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeTitle}-${ts}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`匯出失敗：${(err as Error).message}`);
     }
   };
 
@@ -147,7 +192,14 @@ export default function Sidebar({
                     <span className="text-[10px] text-gray-500">
                       {relativeTime(s.updated_at)}
                     </span>
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => handleExport(s, e)}
+                        className="text-[10px] text-gray-500 hover:text-white"
+                        title="匯出 Markdown"
+                      >
+                        📥
+                      </button>
                       <button
                         onClick={(e) => handleStartRename(s, e)}
                         className="text-[10px] text-gray-500 hover:text-white"
