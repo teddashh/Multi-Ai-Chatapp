@@ -164,12 +164,19 @@ export interface CLIRunResult {
   exitCode: number;
 }
 
-// Rough heuristic — ~3 chars per token works well enough for mixed
-// CJK / English / code, which is what this app sees. Marked as estimated
-// in the DB so the admin UI can flag it.
+// Heuristic — ~2 chars per token. The previous 3 chars/token figure was
+// calibrated against English; this app's prompts are heavily Chinese,
+// where 1 character is closer to 1 token (≈ 1.5–2). 2 sits in the
+// middle for mixed CJK + markdown + code. Compared against the real
+// xAI counts in usage_log this is much closer than 3 was.
 function estimateTokens(chars: number): number {
-  return Math.max(1, Math.round(chars / 3));
+  return Math.max(1, Math.round(chars / 2));
 }
+
+// Vision models charge ~1000–2000 tokens per attached image. Without
+// this the CLI providers' estimates were drastically under-counting
+// image-heavy turns vs Grok (which counts images in its real metering).
+const IMAGE_TOKEN_BUDGET = 1500;
 
 function recordUsage(
   opts: CLIRunOptions,
@@ -180,7 +187,10 @@ function recordUsage(
 ): void {
   if (!opts.userId) return;
   const isEstimated = realTokensIn === null || realTokensOut === null;
-  const tokensIn = realTokensIn ?? estimateTokens(promptChars);
+  const imageCount = imageAttachments(opts.attachments ?? []).length;
+  const imageTokens = imageCount * IMAGE_TOKEN_BUDGET;
+  const tokensIn =
+    realTokensIn ?? estimateTokens(promptChars) + imageTokens;
   const tokensOut = realTokensOut ?? estimateTokens(completionChars);
   try {
     usageStmts.insert.run(
