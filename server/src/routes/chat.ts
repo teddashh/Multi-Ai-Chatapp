@@ -449,7 +449,15 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           modelOverrides?.[step.provider],
         );
 
+        // Resilient resume: one step failing shouldn't break the rest of
+        // the chain. Failed steps still get persisted (so the user can
+        // retry just that one), but we substitute a placeholder into the
+        // running history so downstream prompts don't read "[Error:…]"
+        // as if it were a real argument.
+        if (ctrl.signal.aborted) break;
         let stepText = '';
+        let stepFailed = false;
+        let persistedId = 0;
         try {
           const result = await runCLI({
             provider: step.provider,
@@ -465,28 +473,14 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           });
           stepText = result.text;
         } catch (err) {
+          if (ctrl.signal.aborted) break;
           const message = (err as Error).message;
           send({ type: 'error', provider: step.provider, message });
           stepText = `[Error: ${message}]`;
-          // Persist the failure so the retry button has a target next time.
-          const failIns = messageStmts.insert.run(
-            sessionId,
-            'ai',
-            step.provider,
-            step.label,
-            stepText,
-            Math.floor(Date.now() / 1000),
-          );
-          send({
-            type: 'done',
-            provider: step.provider,
-            text: stepText,
-            messageId: Number(failIns.lastInsertRowid),
-          });
-          throw err;
+          stepFailed = true;
         }
 
-        const okIns = messageStmts.insert.run(
+        const ins = messageStmts.insert.run(
           sessionId,
           'ai',
           step.provider,
@@ -494,16 +488,17 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           stepText,
           Math.floor(Date.now() / 1000),
         );
+        persistedId = Number(ins.lastInsertRowid);
         send({
           type: 'done',
           provider: step.provider,
           text: stepText,
-          messageId: Number(okIns.lastInsertRowid),
+          messageId: persistedId,
         });
         history.push({
           provider: step.provider,
           modeRole: step.label,
-          text: stepText,
+          text: stepFailed ? '[此步驟暫時無回應]' : stepText,
         });
       }
       sessionStmts.touch.run(sessionId);

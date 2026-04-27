@@ -613,12 +613,19 @@ async function runFree(p: OrchestratorParams): Promise<void> {
   p.emit({ type: 'workflow', status: '' });
 }
 
+// Placeholder shoved into the running history when a step fails, so
+// subsequent steps see *something* sensible instead of an "[Error: ...]"
+// blob in their prompt. Users can still retry the failed step.
+const FAILED_PLACEHOLDER = '[此步驟暫時無回應]';
+
 async function runSequential(
   p: OrchestratorParams,
   steps: StepSpec[],
 ): Promise<void> {
   const history: StepResult[] = [];
   for (const step of steps) {
+    // User aborted the whole stream — don't keep firing CLI calls.
+    if (p.signal.aborted) break;
     p.emit({ type: 'workflow', status: step.workflowStatus });
     p.emit({
       type: 'role',
@@ -627,7 +634,21 @@ async function runSequential(
       label: step.label,
     });
     const prompt = step.buildPrompt(p.text, history);
-    const text = await runOne(p, step.provider, prompt);
+    let text: string;
+    try {
+      text = await runOne(p, step.provider, prompt);
+    } catch (err) {
+      // One CLI hiccup shouldn't kill a 20-step roundtable. Log the error
+      // (already surfaced via the 'done [Error: ...]' event from runOne)
+      // and keep walking. The failed message is persisted by the route's
+      // recordingSend, so the user can retry that single step later.
+      if (p.signal.aborted) break;
+      console.error(
+        `step ${step.label}/${step.provider} failed:`,
+        (err as Error).message,
+      );
+      text = FAILED_PLACEHOLDER;
+    }
     history.push({ provider: step.provider, modeRole: step.label, text });
   }
   p.emit({ type: 'workflow', status: '' });
