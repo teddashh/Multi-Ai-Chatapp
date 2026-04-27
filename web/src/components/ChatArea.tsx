@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, ChatMode } from '../shared/types';
-import { AI_PROVIDERS, MODE_ICONS } from '../shared/constants';
+import { AI_PROVIDERS } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
 import { modeDesc, modeHowto, modeName, useT } from '../i18n';
 
@@ -49,12 +49,9 @@ export default function ChatArea({
       {messages.length === 0 ? (
         <div className="max-w-md mx-auto pt-12 px-4">
           <div className="bg-gray-900 border border-gray-800 rounded-lg p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-2xl">{MODE_ICONS[mode]}</span>
-              <h2 className="text-base font-bold text-white">
-                {modeName(t, mode)}
-              </h2>
-            </div>
+            <h2 className="text-base font-bold text-white mb-2">
+              {modeName(t, mode)}
+            </h2>
             <p className="text-xs text-gray-400 mb-3">{modeDesc(t, mode)}</p>
             <ul className="text-xs text-gray-300 space-y-2 leading-relaxed">
               {modeHowto(t, mode).map((line, i) => (
@@ -64,9 +61,7 @@ export default function ChatArea({
                 </li>
               ))}
             </ul>
-            <p className="text-[11px] text-gray-500 mt-4 text-center">
-              {t.chatStartHere}
-            </p>
+            <p className="text-[11px] text-gray-500 mt-4">{t.chatStartHere}</p>
           </div>
         </div>
       ) : (

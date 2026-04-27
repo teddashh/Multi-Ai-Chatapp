@@ -546,7 +546,7 @@ export default function App() {
                     className="text-gray-400 hover:text-white"
                     title={t.manageUsers}
                   >
-                    ⚙️
+                    Admin
                   </button>
                 )}
                 <button

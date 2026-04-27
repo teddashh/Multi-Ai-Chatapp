@@ -14,14 +14,11 @@ body,
    Each theme sets:
      --bg-image:      file under /themes/, painted full-bleed at low opacity
      --bg-image-op:   the opacity value
-     --accent / --accent-hover: accent button bg (overrides .bg-blue-600)
+     --accent / --accent-hover: button bg overrides for .bg-blue-600
 
-   Winter is the default — defined on :root so theme="winter" or no
-   data-theme behaves the same.
-
-   The four "Team X" themes keep the existing dark surfaces (so we don't
-   have to touch every component) and only swap accent + background image.
-   Summer flips to a light palette via attribute selectors.
+   Two visual families:
+     Dark themes (semi-transparent dark surfaces):  winter, grok, gemini
+     Light themes (light pastel surfaces):          summer, claude, chatgpt
    ================================================================ */
 
 :root,
@@ -32,11 +29,11 @@ body,
   --accent-hover: #1d4ed8;
 }
 
-[data-theme='claude'] {
-  --bg-image: url('/themes/claude.png');
+[data-theme='grok'] {
+  --bg-image: url('/themes/grok.png');
   --bg-image-op: 0.14;
-  --accent: #d97706;
-  --accent-hover: #b45309;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
 }
 
 [data-theme='gemini'] {
@@ -46,33 +43,29 @@ body,
   --accent-hover: #1a73e8;
 }
 
-[data-theme='grok'] {
-  --bg-image: url('/themes/grok.png');
-  --bg-image-op: 0.14;
-  --accent: #e11d48;
-  --accent-hover: #be123c;
-}
-
-[data-theme='chatgpt'] {
-  --bg-image: url('/themes/chatgpt.png');
-  --bg-image-op: 0.14;
-  --accent: #10a37f;
-  --accent-hover: #0e8a6b;
-}
-
 [data-theme='summer'] {
   --bg-image: url('/themes/summer.png');
   --bg-image-op: 0.28;
-  /* Sky-cyan accent reads "summer/beach" much better than the previous
-     orange, which fought with the warm light surfaces. */
   --accent: #0891b2;
   --accent-hover: #0e7490;
 }
 
-/* Background image painter — fixed full-bleed, behind everything,
-   `cover` to keep aspect ratio so it never distorts. Anchor to the TOP so
-   character faces (upper portion of the artwork) stay visible on the
-   typical 16:9 widescreen rather than getting cropped off. */
+[data-theme='claude'] {
+  --bg-image: url('/themes/claude.png');
+  --bg-image-op: 0.22;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+}
+
+[data-theme='chatgpt'] {
+  --bg-image: url('/themes/chatgpt.png');
+  --bg-image-op: 0.22;
+  --accent: #10a37f;
+  --accent-hover: #0e8a6b;
+}
+
+/* Background painter — fixed, full-bleed, behind everything. Anchored at
+   ~15% from the top so character faces stay visible on widescreen. */
 body::before {
   content: '';
   position: fixed;
@@ -91,139 +84,175 @@ body::before {
   z-index: 1;
 }
 
-/* Make dark surfaces translucent so the background image bleeds through. */
+/* ================================================================
+   Dark themes — translucent dark surfaces let bg image bleed through
+   ================================================================ */
 [data-theme='winter'] .bg-gray-900,
-[data-theme='claude'] .bg-gray-900,
-[data-theme='gemini'] .bg-gray-900,
 [data-theme='grok'] .bg-gray-900,
-[data-theme='chatgpt'] .bg-gray-900 {
+[data-theme='gemini'] .bg-gray-900 {
   background-color: rgba(17, 24, 39, 0.78);
 }
 [data-theme='winter'] .bg-gray-950,
-[data-theme='claude'] .bg-gray-950,
-[data-theme='gemini'] .bg-gray-950,
 [data-theme='grok'] .bg-gray-950,
-[data-theme='chatgpt'] .bg-gray-950 {
+[data-theme='gemini'] .bg-gray-950 {
   background-color: rgba(3, 7, 18, 0.78);
 }
 [data-theme='winter'] .bg-gray-800,
-[data-theme='claude'] .bg-gray-800,
-[data-theme='gemini'] .bg-gray-800,
 [data-theme='grok'] .bg-gray-800,
-[data-theme='chatgpt'] .bg-gray-800 {
+[data-theme='gemini'] .bg-gray-800 {
   background-color: rgba(31, 41, 55, 0.78);
 }
 
-/* Accent overrides — the four team themes + Winter swap blue-600 to their
-   accent colour. This catches the primary "Send" / "Sign in" / active mode
-   buttons without us having to refactor every component. */
-[data-theme='claude'] .bg-blue-600,
-[data-theme='gemini'] .bg-blue-600,
+/* Accent overrides — non-default themes swap blue-600 for their own accent. */
 [data-theme='grok'] .bg-blue-600,
-[data-theme='chatgpt'] .bg-blue-600,
-[data-theme='summer'] .bg-blue-600 {
+[data-theme='gemini'] .bg-blue-600,
+[data-theme='summer'] .bg-blue-600,
+[data-theme='claude'] .bg-blue-600,
+[data-theme='chatgpt'] .bg-blue-600 {
   background-color: var(--accent);
 }
-[data-theme='claude'] .hover\:bg-blue-700:hover,
-[data-theme='gemini'] .hover\:bg-blue-700:hover,
 [data-theme='grok'] .hover\:bg-blue-700:hover,
-[data-theme='chatgpt'] .hover\:bg-blue-700:hover,
-[data-theme='summer'] .hover\:bg-blue-700:hover {
+[data-theme='gemini'] .hover\:bg-blue-700:hover,
+[data-theme='summer'] .hover\:bg-blue-700:hover,
+[data-theme='claude'] .hover\:bg-blue-700:hover,
+[data-theme='chatgpt'] .hover\:bg-blue-700:hover {
   background-color: var(--accent-hover);
 }
-[data-theme='claude'] .text-blue-300,
-[data-theme='gemini'] .text-blue-300,
 [data-theme='grok'] .text-blue-300,
-[data-theme='chatgpt'] .text-blue-300,
-[data-theme='summer'] .text-blue-300 {
+[data-theme='gemini'] .text-blue-300,
+[data-theme='summer'] .text-blue-300,
+[data-theme='claude'] .text-blue-300,
+[data-theme='chatgpt'] .text-blue-300 {
   color: var(--accent);
 }
-[data-theme='claude'] .focus\:border-blue-500:focus,
-[data-theme='gemini'] .focus\:border-blue-500:focus,
 [data-theme='grok'] .focus\:border-blue-500:focus,
-[data-theme='chatgpt'] .focus\:border-blue-500:focus,
-[data-theme='summer'] .focus\:border-blue-500:focus {
+[data-theme='gemini'] .focus\:border-blue-500:focus,
+[data-theme='summer'] .focus\:border-blue-500:focus,
+[data-theme='claude'] .focus\:border-blue-500:focus,
+[data-theme='chatgpt'] .focus\:border-blue-500:focus {
   border-color: var(--accent);
 }
-[data-theme='claude'] .bg-blue-600\/20,
-[data-theme='gemini'] .bg-blue-600\/20,
 [data-theme='grok'] .bg-blue-600\/20,
-[data-theme='chatgpt'] .bg-blue-600\/20,
-[data-theme='summer'] .bg-blue-600\/20 {
+[data-theme='gemini'] .bg-blue-600\/20,
+[data-theme='summer'] .bg-blue-600\/20,
+[data-theme='claude'] .bg-blue-600\/20,
+[data-theme='chatgpt'] .bg-blue-600\/20 {
   background-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
-[data-theme='claude'] .border-blue-700\/40,
-[data-theme='gemini'] .border-blue-700\/40,
 [data-theme='grok'] .border-blue-700\/40,
-[data-theme='chatgpt'] .border-blue-700\/40,
-[data-theme='summer'] .border-blue-700\/40 {
+[data-theme='gemini'] .border-blue-700\/40,
+[data-theme='summer'] .border-blue-700\/40,
+[data-theme='claude'] .border-blue-700\/40,
+[data-theme='chatgpt'] .border-blue-700\/40 {
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* ================================================================
-   Summer = light theme
+   Light themes — flip dark surfaces to pastels, dark text
    ================================================================
-   Light, breezy palette — warm white surfaces with soft sky tints. Kept
-   narrow on purpose: only the Tailwind classes the app actually uses get
-   overridden, so we don't break things we haven't reviewed. */
-[data-theme='summer'] {
+   Per-theme tints layered on top of the shared palette below. */
+[data-theme='summer'],
+[data-theme='claude'],
+[data-theme='chatgpt'] {
   color-scheme: light;
 }
-[data-theme='summer'] body {
-  background-color: #f0f9ff;
+[data-theme='summer'] body,
+[data-theme='claude'] body,
+[data-theme='chatgpt'] body {
   color: #0f172a;
 }
-[data-theme='summer'] .bg-gray-900 {
+[data-theme='summer'] .bg-gray-900,
+[data-theme='claude'] .bg-gray-900,
+[data-theme='chatgpt'] .bg-gray-900,
+[data-theme='summer'] .bg-gray-800,
+[data-theme='claude'] .bg-gray-800,
+[data-theme='chatgpt'] .bg-gray-800 {
   background-color: rgba(255, 255, 255, 0.92);
 }
-[data-theme='summer'] .bg-gray-950 {
-  background-color: rgba(236, 254, 255, 0.92);
+[data-theme='summer'] .bg-gray-700,
+[data-theme='claude'] .bg-gray-700,
+[data-theme='chatgpt'] .bg-gray-700 {
+  background-color: rgba(229, 231, 235, 0.9);
 }
-[data-theme='summer'] .bg-gray-800 {
-  background-color: rgba(255, 255, 255, 0.92);
-}
-[data-theme='summer'] .bg-gray-700 {
-  background-color: rgba(207, 250, 254, 0.9);
-}
-[data-theme='summer'] .border-gray-700,
-[data-theme='summer'] .border-gray-800 {
-  border-color: rgba(186, 230, 253, 0.95);
-}
-[data-theme='summer'] .text-white {
+[data-theme='summer'] .text-white,
+[data-theme='claude'] .text-white,
+[data-theme='chatgpt'] .text-white {
   color: #0f172a;
 }
 [data-theme='summer'] .text-gray-200,
-[data-theme='summer'] .text-gray-300 {
+[data-theme='summer'] .text-gray-300,
+[data-theme='claude'] .text-gray-200,
+[data-theme='claude'] .text-gray-300,
+[data-theme='chatgpt'] .text-gray-200,
+[data-theme='chatgpt'] .text-gray-300 {
   color: #1e293b;
 }
-[data-theme='summer'] .text-gray-400 {
+[data-theme='summer'] .text-gray-400,
+[data-theme='claude'] .text-gray-400,
+[data-theme='chatgpt'] .text-gray-400 {
   color: #475569;
 }
-[data-theme='summer'] .text-gray-500 {
+[data-theme='summer'] .text-gray-500,
+[data-theme='claude'] .text-gray-500,
+[data-theme='chatgpt'] .text-gray-500 {
   color: #64748b;
 }
-[data-theme='summer'] .text-gray-600 {
+[data-theme='summer'] .text-gray-600,
+[data-theme='claude'] .text-gray-600,
+[data-theme='chatgpt'] .text-gray-600 {
   color: #94a3b8;
 }
 [data-theme='summer'] input,
 [data-theme='summer'] textarea,
-[data-theme='summer'] select {
+[data-theme='summer'] select,
+[data-theme='claude'] input,
+[data-theme='claude'] textarea,
+[data-theme='claude'] select,
+[data-theme='chatgpt'] input,
+[data-theme='chatgpt'] textarea,
+[data-theme='chatgpt'] select {
   color: #0f172a;
 }
 [data-theme='summer'] input::placeholder,
-[data-theme='summer'] textarea::placeholder {
+[data-theme='summer'] textarea::placeholder,
+[data-theme='claude'] input::placeholder,
+[data-theme='claude'] textarea::placeholder,
+[data-theme='chatgpt'] input::placeholder,
+[data-theme='chatgpt'] textarea::placeholder {
   color: #94a3b8;
 }
 [data-theme='summer'] .hover\:bg-gray-700:hover,
-[data-theme='summer'] .hover\:bg-gray-800:hover {
-  background-color: rgba(207, 250, 254, 0.9);
+[data-theme='summer'] .hover\:bg-gray-800:hover,
+[data-theme='claude'] .hover\:bg-gray-700:hover,
+[data-theme='claude'] .hover\:bg-gray-800:hover,
+[data-theme='chatgpt'] .hover\:bg-gray-700:hover,
+[data-theme='chatgpt'] .hover\:bg-gray-800:hover {
+  background-color: rgba(229, 231, 235, 0.9);
 }
-[data-theme='summer'] .hover\:text-white:hover {
+[data-theme='summer'] .hover\:text-white:hover,
+[data-theme='claude'] .hover\:text-white:hover,
+[data-theme='chatgpt'] .hover\:text-white:hover {
   color: #0f172a;
 }
-[data-theme='summer'] .text-yellow-300 {
-  color: #0891b2;
+[data-theme='summer'] .text-yellow-300,
+[data-theme='claude'] .text-yellow-300,
+[data-theme='chatgpt'] .text-yellow-300 {
+  color: var(--accent);
 }
-[data-theme='summer'] .bg-red-600 {
+[data-theme='summer'] .bg-red-600,
+[data-theme='claude'] .bg-red-600,
+[data-theme='chatgpt'] .bg-red-600 {
   background-color: #ef4444;
+}
+
+/* Per-theme background tints for the sidebar / "deep" surface (gray-950).
+   Picks a hue tied to the theme's brand color. */
+[data-theme='summer'] .bg-gray-950 {
+  background-color: rgba(236, 254, 255, 0.92); /* cyan tint */
+}
+[data-theme='claude'] .bg-gray-950 {
+  background-color: rgba(255, 247, 237, 0.92); /* warm peach */
+}
+[data-theme='chatgpt'] .bg-gray-950 {
+  background-color: rgba(236, 253, 245, 0.92); /* mint */
 }

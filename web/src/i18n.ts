@@ -224,7 +224,7 @@ const ZH: Dict = {
 
   sidebarNew: '+ 新對話',
   sidebarEmpty: '還沒有對話',
-  sidebarExport: '匯出 Markdown',
+  sidebarExport: '匯出',
   sidebarRename: '改名',
   sidebarDelete: '刪除',
   sidebarConfirmDelete: '刪除這個對話？',
@@ -257,15 +257,15 @@ const ZH: Dict = {
   modeRoundtableHowto1:
     '5 輪 × 4 人辯證螺旋：開場 → 質疑 → 攻防 → 收斂 → 真理浮現。',
   modeRoundtableHowto2: '適合開放性議題，給 AI 充分時間互相挑戰、修正、收斂。',
-  modeRoundtableHowto3: '⚠️ 這個模式會跑很久（10-30 分鐘）。',
+  modeRoundtableHowto3: '注意：這個模式會跑很久（10-30 分鐘）。',
 
   chatStartHere: '在下方輸入框開始對話',
   chatExpand: '▼ 展開',
   chatCollapse: '▲ 收起',
-  retryFreeIdle: '🔄 重答',
-  retryFreeBusy: '🔄 重新作答中...',
-  retrySeqIdle: '🔄 重試並繼續',
-  retrySeqBusy: '🔄 重跑中...',
+  retryFreeIdle: '重答',
+  retryFreeBusy: '重新作答中...',
+  retrySeqIdle: '重試並繼續',
+  retrySeqBusy: '重跑中...',
   retryFreeTitle: '重新讓這個 AI 回答',
   retrySeqTitle: '從這一步重跑，後面的步驟會用新結果接著跑',
   retryFailed: (msg) => `重新作答失敗：${msg}`,
@@ -298,7 +298,7 @@ const ZH: Dict = {
   inputAttachTitle: (c, m) => `附加檔案 (${c}/${m})`,
   inputFileTooLarge: (name, mb) => `${name} 超過 ${mb}MB 上限`,
 
-  exportUserHeading: '## 👤 User',
+  exportUserHeading: '## User',
 
   adminTitle: '使用者管理',
   adminCurrentCount: (n) => `目前帳號 (${n})`,
@@ -392,7 +392,7 @@ const EN: Dict = {
 
   sidebarNew: '+ New chat',
   sidebarEmpty: 'No chats yet',
-  sidebarExport: 'Export Markdown',
+  sidebarExport: 'Export',
   sidebarRename: 'Rename',
   sidebarDelete: 'Delete',
   sidebarConfirmDelete: 'Delete this chat?',
@@ -428,15 +428,15 @@ const EN: Dict = {
     '5 rounds × 4 speakers, dialectic spiral: Opening → Cross-Examination → Deepening → Convergence → Truth Emerges.',
   modeRoundtableHowto2:
     'Best for open-ended topics — gives the AIs real time to challenge, revise, and converge.',
-  modeRoundtableHowto3: '⚠️ This mode runs long (10-30 min).',
+  modeRoundtableHowto3: 'Heads up: this mode runs long (10-30 min).',
 
   chatStartHere: 'Type below to start the conversation',
   chatExpand: '▼ Expand',
   chatCollapse: '▲ Collapse',
-  retryFreeIdle: '🔄 Retry',
-  retryFreeBusy: '🔄 Retrying...',
-  retrySeqIdle: '🔄 Retry & continue',
-  retrySeqBusy: '🔄 Replaying...',
+  retryFreeIdle: 'Retry',
+  retryFreeBusy: 'Retrying...',
+  retrySeqIdle: 'Retry & continue',
+  retrySeqBusy: 'Replaying...',
   retryFreeTitle: 'Re-run this AI',
   retrySeqTitle: 'Replay from this step — the rest of the chain will follow',
   retryFailed: (msg) => `Retry failed: ${msg}`,
@@ -469,7 +469,7 @@ const EN: Dict = {
   inputAttachTitle: (c, m) => `Attach files (${c}/${m})`,
   inputFileTooLarge: (name, mb) => `${name} exceeds the ${mb}MB limit`,
 
-  exportUserHeading: '## 👤 User',
+  exportUserHeading: '## User',
 
   adminTitle: 'Manage users',
   adminCurrentCount: (n) => `Existing accounts (${n})`,

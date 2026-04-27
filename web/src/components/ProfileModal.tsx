@@ -41,7 +41,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [avatarBust, setAvatarBust] = useState(Date.now());
-  const [usageOpen, setUsageOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(true);
   const [usage, setUsage] = useState<MyUsage | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +54,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setError('');
       setSuccess('');
       setAvatarBust(Date.now());
-      setUsageOpen(false);
+      setUsageOpen(true);
       setUsage(null);
     }
   }, [isOpen, user]);

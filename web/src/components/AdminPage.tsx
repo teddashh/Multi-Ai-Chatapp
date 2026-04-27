@@ -17,7 +17,7 @@ import {
   type User,
 } from '../api';
 import type { Tier } from '../shared/types';
-import { AI_PROVIDERS, MODE_ICONS } from '../shared/constants';
+import { AI_PROVIDERS } from '../shared/constants';
 import { useT } from '../i18n';
 
 interface Props {
@@ -89,7 +89,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
           >
             ← {t.appName}
           </button>
-          <h1 className="text-lg font-bold">⚙️ Admin</h1>
+          <h1 className="text-lg font-bold">Admin</h1>
         </div>
         <div className="text-xs text-gray-400">
           {currentUser.nickname || currentUser.username}{' '}
@@ -102,9 +102,9 @@ export default function AdminPage({ currentUser, onExit }: Props) {
       {/* Tabs */}
       <div className="flex-none border-b border-gray-800 px-4 py-2 flex gap-2 bg-gray-900">
         {([
-          ['users', '👤 使用者 / Users'],
-          ['stats', '📊 用量 / Usage'],
-          ['audit', '📜 稽核紀錄 / Audit'],
+          ['users', '使用者 / Users'],
+          ['stats', '用量 / Usage'],
+          ['audit', '稽核紀錄 / Audit'],
         ] as Array<[View, string]>).map(([k, label]) => (
           <button
             key={k}
@@ -558,9 +558,7 @@ function UserDetail({
                     s.deleted_at ? 'opacity-60' : ''
                   }`}
                 >
-                  <td className="px-3 py-2">
-                    {MODE_ICONS[s.mode] ?? '💬'} {s.title}
-                  </td>
+                  <td className="px-3 py-2">{s.title}</td>
                   <td className="px-3 py-2 text-gray-400">{s.mode}</td>
                   <td className="px-3 py-2 text-gray-500">{s.msg_count}</td>
                   <td className="px-3 py-2 text-gray-500">{shortTime(s.updated_at)}</td>
@@ -614,7 +612,6 @@ function SessionViewer({
       </button>
       <div className="bg-gray-900 border border-gray-700 rounded p-3">
         <div className="flex items-center gap-2 mb-2">
-          <span className="text-xl">{MODE_ICONS[data.session.mode] ?? '💬'}</span>
           <h2 className="text-sm font-bold flex-1">{data.session.title}</h2>
           {data.session.deleted_at && (
             <span className="text-xs text-red-400">已刪除 · {fmtTime(data.session.deleted_at)}</span>
@@ -640,7 +637,7 @@ function SessionViewer({
                 key={m.id}
                 className="bg-blue-600/15 border border-blue-700/30 rounded p-2 text-sm whitespace-pre-wrap"
               >
-                <div className="text-[10px] text-gray-500 mb-1">👤 user</div>
+                <div className="text-[10px] text-gray-500 mb-1">user</div>
                 {m.content}
                 {m.attachments && m.attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">

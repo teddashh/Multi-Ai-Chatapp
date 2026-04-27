@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AI_PROVIDERS, MODE_ICONS } from '../shared/constants';
+import { AI_PROVIDERS } from '../shared/constants';
 import type { SessionSummary } from '../api';
 import { deleteSession, getSession, renameSession } from '../api';
 import { modeName, useT } from '../i18n';
@@ -75,9 +75,8 @@ export default function Sidebar({
     try {
       const detail = await getSession(s.id);
       const m = detail.session.mode as ChatMode;
-      const icon = MODE_ICONS[m];
       const lines: string[] = [
-        `# Multi-AI Chat — ${icon} ${detail.session.title}`,
+        `# AI War Room — ${detail.session.title}`,
         `> Mode: ${modeName(t, m)}`,
         `> Exported: ${new Date().toLocaleString()}`,
         '',
@@ -92,7 +91,7 @@ export default function Sidebar({
         } else {
           const name = msg.provider ? AI_PROVIDERS[msg.provider].name : 'AI';
           const role = msg.modeRole ? ` (${msg.modeRole})` : '';
-          lines.push(`## 🤖 ${name}${role}`);
+          lines.push(`## ${name}${role}`);
           lines.push('');
           lines.push(msg.content);
         }
@@ -153,7 +152,6 @@ export default function Sidebar({
             </div>
           ) : (
             sessions.map((s) => {
-              const icon = MODE_ICONS[s.mode] ?? '💬';
               const active = s.id === activeId;
               const renaming = s.id === renamingId;
               return (
@@ -171,8 +169,7 @@ export default function Sidebar({
                       : 'hover:bg-gray-800 border border-transparent'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs flex-none">{icon}</span>
+                  <div className="mb-0.5">
                     {renaming ? (
                       <input
                         autoFocus
@@ -184,10 +181,10 @@ export default function Sidebar({
                           if (e.key === 'Enter') handleCommitRename(s.id);
                           if (e.key === 'Escape') setRenamingId(null);
                         }}
-                        className="flex-1 bg-gray-800 border border-gray-700 rounded px-1 text-xs"
+                        className="w-full bg-gray-800 border border-gray-700 rounded px-1 text-xs"
                       />
                     ) : (
-                      <span className="text-xs font-medium truncate flex-1">
+                      <span className="text-xs font-medium truncate block">
                         {s.title}
                       </span>
                     )}
@@ -196,27 +193,24 @@ export default function Sidebar({
                     <span className="text-[10px] text-gray-500">
                       {relativeTime(t, s.updated_at)}
                     </span>
-                    <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">
                       <button
                         onClick={(e) => handleExport(s, e)}
-                        className="text-[10px] text-gray-500 hover:text-white"
-                        title={t.sidebarExport}
+                        className="text-gray-500 hover:text-white"
                       >
-                        📥
+                        {t.sidebarExport}
                       </button>
                       <button
                         onClick={(e) => handleStartRename(s, e)}
-                        className="text-[10px] text-gray-500 hover:text-white"
-                        title={t.sidebarRename}
+                        className="text-gray-500 hover:text-white"
                       >
-                        ✎
+                        {t.sidebarRename}
                       </button>
                       <button
                         onClick={(e) => handleDelete(s.id, e)}
-                        className="text-[10px] text-gray-500 hover:text-red-400"
-                        title={t.sidebarDelete}
+                        className="text-gray-500 hover:text-red-400"
                       >
-                        🗑
+                        {t.sidebarDelete}
                       </button>
                     </div>
                   </div>
