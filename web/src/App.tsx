@@ -19,6 +19,7 @@ import {
   logout,
   me,
   streamChat,
+  streamRegenerate,
   type SessionSummary,
   type User,
 } from './api';
@@ -57,6 +58,7 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [modelOverrides, setModelOverrides] = useState<Partial<Record<AIProvider, string>>>(
     () => {
       try {
@@ -297,6 +299,44 @@ export default function App() {
     setWorkflowStatus('');
   }, []);
 
+  const handleRegenerate = useCallback(
+    async (messageId: string) => {
+      if (regeneratingId) return; // one at a time
+      setRegeneratingId(messageId);
+      const ctrl = new AbortController();
+      try {
+        await streamRegenerate(
+          { messageId, modelOverrides },
+          (ev) => {
+            if (ev.type === 'chunk' || ev.type === 'done') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === messageId ? { ...m, content: ev.text } : m,
+                ),
+              );
+            } else if (ev.type === 'error') {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `error-${Date.now()}`,
+                  role: 'ai',
+                  content: `[Regenerate Error] ${ev.message}`,
+                  timestamp: Date.now(),
+                },
+              ]);
+            }
+          },
+          ctrl.signal,
+        );
+      } catch (err) {
+        alert(`重新作答失敗：${(err as Error).message}`);
+      } finally {
+        setRegeneratingId(null);
+      }
+    },
+    [regeneratingId, modelOverrides],
+  );
+
   if (resetToken) {
     return (
       <ResetPassword
@@ -393,7 +433,12 @@ export default function App() {
         )}
       </div>
 
-      <ChatArea messages={messages} mode={mode} />
+      <ChatArea
+        messages={messages}
+        mode={mode}
+        onRegenerate={handleRegenerate}
+        regeneratingId={regeneratingId}
+      />
 
       {workflowStatus && (
         <div className="flex-none border-t border-gray-800 px-3 py-1.5 bg-gray-900 text-center">

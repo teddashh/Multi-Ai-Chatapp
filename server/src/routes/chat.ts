@@ -3,16 +3,22 @@ import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import { runMode } from '../lib/orchestrator.js';
+import { runCLI } from '../lib/cli.js';
+import { resolveModel } from '../shared/models.js';
 import {
   attachmentStmts,
   messageStmts,
   sessionStmts,
+  type AttachmentRow,
+  type MessageRow,
   type SessionRow,
 } from '../lib/db.js';
 import {
+  buildAttachmentPrefix,
   loadAttachments,
   relocateToSession,
   saveUpload,
+  type PreparedAttachment,
   MAX_FILE_BYTES,
   MAX_FILES_PER_MESSAGE,
 } from '../lib/uploads.js';
@@ -180,6 +186,106 @@ chatRoute.post('/send', requireAuth, async (c) => {
       send({
         type: 'error',
         message: (err as Error).message || 'orchestrator failed',
+      });
+      send({ type: 'finish' });
+    }
+  });
+});
+
+// Re-run a single AI message. V1 supports Free mode only (each AI is
+// independent there). For sequential modes the response is part of a chain so
+// we'd have to also re-run downstream — out of scope for this iteration.
+chatRoute.post('/regenerate', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        messageId?: string | number;
+        modelOverrides?: Partial<Record<AIProvider, string>>;
+      }
+    | null;
+  if (!body?.messageId) {
+    return c.json({ error: 'messageId required' }, 400);
+  }
+  const msgId = Number(body.messageId);
+  if (!Number.isFinite(msgId)) {
+    return c.json({ error: 'invalid messageId' }, 400);
+  }
+
+  const msg = messageStmts.findById.get(msgId) as MessageRow | undefined;
+  if (!msg || msg.role !== 'ai' || !msg.provider) {
+    return c.json({ error: 'AI message not found' }, 404);
+  }
+
+  const session = sessionStmts.findOwned.get(msg.session_id, user.id) as
+    | SessionRow
+    | undefined;
+  if (!session) {
+    return c.json({ error: 'session not found' }, 404);
+  }
+
+  if (session.mode !== 'free') {
+    return c.json(
+      {
+        error:
+          '只有自由模式支援單獨重新作答，序列模式的回覆是接力的，得整段重跑',
+      },
+      400,
+    );
+  }
+
+  const userMsg = messageStmts.precedingUser.get(msg.session_id, msgId) as
+    | MessageRow
+    | undefined;
+  if (!userMsg) {
+    return c.json({ error: 'preceding user message not found' }, 404);
+  }
+
+  // Load attachments tied to that user message.
+  const rawAtts = attachmentStmts.listForMessage.all(userMsg.id) as Array<
+    Pick<AttachmentRow, 'id'>
+  >;
+  const attachments: PreparedAttachment[] = loadAttachments(
+    rawAtts.map((a) => a.id),
+    user.id,
+  );
+
+  const provider = msg.provider as AIProvider;
+  const model = resolveModel(user.tier, provider, body.modelOverrides?.[provider]);
+  const prompt =
+    attachments.length > 0
+      ? buildAttachmentPrefix(attachments) + userMsg.content
+      : userMsg.content;
+
+  return streamSSE(c, async (stream) => {
+    const ctrl = new AbortController();
+    stream.onAbort(() => ctrl.abort());
+    const send = (event: SSEEvent) =>
+      stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
+
+    try {
+      const result = await runCLI({
+        provider,
+        model,
+        prompt,
+        attachments,
+        signal: ctrl.signal,
+        onChunk: (text) => {
+          void send({ type: 'chunk', provider, text });
+        },
+      });
+      messageStmts.updateContent.run(
+        result.text,
+        Math.floor(Date.now() / 1000),
+        msgId,
+      );
+      sessionStmts.touch.run(msg.session_id);
+      send({ type: 'done', provider, text: result.text });
+      send({ type: 'finish' });
+    } catch (err) {
+      send({
+        type: 'error',
+        provider,
+        message: (err as Error).message || 'regenerate failed',
       });
       send({ type: 'finish' });
     }

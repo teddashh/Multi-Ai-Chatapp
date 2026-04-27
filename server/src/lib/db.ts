@@ -271,4 +271,16 @@ export const messageStmts = {
   listForSession: db.prepare<[string]>(
     `SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id`,
   ),
+  findById: db.prepare<[number]>(
+    `SELECT * FROM chat_messages WHERE id = ?`,
+  ),
+  // Find the most recent user message before this AI message in the same session.
+  precedingUser: db.prepare<[string, number]>(
+    `SELECT * FROM chat_messages
+     WHERE session_id = ? AND id < ? AND role = 'user'
+     ORDER BY id DESC LIMIT 1`,
+  ),
+  updateContent: db.prepare<[string, number, number]>(
+    `UPDATE chat_messages SET content = ?, timestamp = ? WHERE id = ?`,
+  ),
 };

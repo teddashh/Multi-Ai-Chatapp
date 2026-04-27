@@ -6,6 +6,8 @@ import ProviderAvatar from './ProviderAvatar';
 interface Props {
   messages: ChatMessage[];
   mode: ChatMode;
+  onRegenerate?: (messageId: string) => void;
+  regeneratingId?: string | null;
 }
 
 const MODE_HOWTO: Record<ChatMode, string[]> = {
@@ -38,7 +40,8 @@ function isLong(text: string): boolean {
   return text.length > 220;
 }
 
-export default function ChatArea({ messages, mode }: Props) {
+export default function ChatArea({ messages, mode, onRegenerate, regeneratingId }: Props) {
+  const canRegenerate = mode === 'free';
   const endRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const modeInfo = CHAT_MODES[mode];
@@ -164,14 +167,26 @@ export default function ChatArea({ messages, mode }: Props) {
                 >
                   {msg.content}
                 </div>
-                {long && (
-                  <button
-                    onClick={() => toggle(msg.id)}
-                    className="mt-1.5 text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
-                  >
-                    {open ? '▲ 收起' : '▼ 展開'}
-                  </button>
-                )}
+                <div className="flex items-center gap-3 mt-1.5">
+                  {long && (
+                    <button
+                      onClick={() => toggle(msg.id)}
+                      className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
+                    >
+                      {open ? '▲ 收起' : '▼ 展開'}
+                    </button>
+                  )}
+                  {canRegenerate && onRegenerate && msg.provider && !msg.id.endsWith('-streaming') && (
+                    <button
+                      onClick={() => onRegenerate(msg.id)}
+                      disabled={regeneratingId === msg.id}
+                      className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="重新讓這個 AI 回答"
+                    >
+                      {regeneratingId === msg.id ? '🔄 重新作答中...' : '🔄 重答'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );

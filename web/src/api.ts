@@ -157,6 +157,56 @@ export async function deleteSession(id: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
+// Re-run a single AI message. Streams back the new content via the same SSE
+// shape as /send (chunk → done → finish).
+export async function streamRegenerate(
+  body: {
+    messageId: string;
+    modelOverrides?: Partial<Record<AIProvider, string>>;
+  },
+  onEvent: (event: SSEEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const res = await fetch('/api/chat/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `Regenerate failed: ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf('\n\n')) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLine = block.split('\n').find((l) => l.startsWith('data:'));
+      if (!dataLine) continue;
+      const data = dataLine.slice(5).trim();
+      if (!data) continue;
+      try {
+        const event = JSON.parse(data) as SSEEvent;
+        onEvent(event);
+        if (event.type === 'finish') return;
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 // === Admin (super tier only) ===
 
 async function adminFetch(path: string, init?: RequestInit): Promise<unknown> {
