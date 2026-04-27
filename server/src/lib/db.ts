@@ -107,7 +107,7 @@ export const userStmts = {
     'UPDATE users SET nickname = ?, email = ? WHERE username = ?',
   ),
   findByEmailOrUsername: db.prepare<[string, string]>(
-    'SELECT * FROM users WHERE username = ? OR email = ?',
+    'SELECT * FROM users WHERE username = ? OR LOWER(email) = LOWER(?)',
   ),
   bumpFailedAttempts: db.prepare<[number]>(
     'UPDATE users SET failed_attempts = failed_attempts + 1 WHERE id = ?',
