@@ -1,4 +1,8 @@
 import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import type { AIProvider } from '../shared/types.js';
 
 const CLI_BINARY: Record<AIProvider, string> = {
@@ -12,33 +16,76 @@ const CLI_BINARY: Record<AIProvider, string> = {
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '600000', 10);
 const CLI_CWD = process.env.CLI_CWD || process.cwd();
 
-// Build the argv for a given provider. The CLIs differ in flags; if any vendor
-// changes their CLI surface, this is the single place to tweak.
-function buildArgs(provider: AIProvider, model: string): string[] {
-  switch (provider) {
-    case 'claude':
-      // Anthropic Claude Code: -p prompt, --model, text output by default
-      return ['-p', '--model', model, '--output-format', 'text'];
-    case 'chatgpt':
-      // OpenAI Codex CLI: `codex exec` for one-shot, model via --model
-      return ['exec', '--model', model, '--quiet'];
-    case 'gemini':
-      // Google Gemini CLI: -p for prompt mode, -m for model
-      return ['-m', model, '-p'];
-    case 'grok':
-      // xAI Grok CLI (SuperGrok): non-interactive run
-      return ['exec', '--model', model];
-  }
+function tempFile(prefix: string): string {
+  return join(tmpdir(), `${prefix}-${randomBytes(8).toString('hex')}.txt`);
 }
 
-// Some CLIs prefer the prompt as a positional arg; others read it from stdin.
-// We pipe it via stdin to avoid shell-escaping issues with multi-line prompts.
-const SEND_VIA_STDIN: Record<AIProvider, boolean> = {
-  claude: true,
-  chatgpt: true,
-  gemini: true,
-  grok: true,
-};
+// Per-provider invocation strategy. CLIs are wildly inconsistent so we
+// describe each one explicitly:
+//   argv      — the command line to spawn (excluding the binary)
+//   useStdin  — whether to pipe the prompt to stdin
+//   finalize  — optional post-processor; if present, its return value is the
+//               final text (we ignore stdout streaming) — used when a CLI
+//               writes the clean response to a file we asked for.
+interface ProviderConfig {
+  argv: string[];
+  useStdin: boolean;
+  finalize?: () => Promise<string>;
+}
+
+function buildConfig(
+  provider: AIProvider,
+  model: string,
+  prompt: string,
+): ProviderConfig {
+  switch (provider) {
+    case 'claude':
+      // Claude Code: -p with --output-format text streams plain text to stdout.
+      // Prompt comes from stdin.
+      return {
+        argv: ['-p', '--model', model, '--output-format', 'text'],
+        useStdin: true,
+      };
+
+    case 'chatgpt': {
+      // OpenAI Codex CLI: stdout is verbose (banners, warnings, intermediate
+      // messages). --output-last-message writes only the final assistant text
+      // to a file, which is what we read.
+      const outFile = tempFile('codex-out');
+      return {
+        argv: [
+          'exec',
+          '--skip-git-repo-check',
+          '--model',
+          model,
+          '--output-last-message',
+          outFile,
+        ],
+        useStdin: true,
+        finalize: async () => {
+          try {
+            const text = await fs.readFile(outFile, 'utf8');
+            return text.trim();
+          } finally {
+            fs.unlink(outFile).catch(() => {});
+          }
+        },
+      };
+    }
+
+    case 'gemini':
+      // Gemini CLI: -p REQUIRES a value (won't read stdin alone). Pass prompt
+      // as argv — spawn() doesn't go through a shell so multi-line / special
+      // chars are safe.
+      return {
+        argv: ['-m', model, '-p', prompt],
+        useStdin: false,
+      };
+
+    default:
+      throw new Error(`unsupported CLI provider: ${provider}`);
+  }
+}
 
 export interface CLIRunOptions {
   provider: AIProvider;
@@ -59,12 +106,12 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
     return runXAIChat(opts);
   }
 
-  const { provider, model, prompt, onChunk, signal } = opts;
+  const { provider, prompt, onChunk, signal } = opts;
+  const cfg = buildConfig(provider, opts.model, prompt);
   const bin = CLI_BINARY[provider];
-  const args = buildArgs(provider, model);
 
   return new Promise<CLIRunResult>((resolve, reject) => {
-    const child = spawn(bin, args, {
+    const child = spawn(bin, cfg.argv, {
       cwd: CLI_CWD,
       env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -96,8 +143,9 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
 
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
-      // Stream incremental progress to the caller
-      if (onChunk && stdout.length > lastEmittedLen) {
+      // Stream live chunks only when the provider streams clean text on stdout.
+      // Providers with a finalize step (codex) emit noise on stdout — skip it.
+      if (!cfg.finalize && onChunk && stdout.length > lastEmittedLen) {
         onChunk(stdout);
         lastEmittedLen = stdout.length;
       }
@@ -112,7 +160,7 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
       if (!aborted) reject(new Error(`${provider} CLI spawn failed: ${err.message}`));
     });
 
-    child.on('close', (code) => {
+    child.on('close', async (code) => {
       clearTimeout(timer);
       if (aborted) return;
       if (code !== 0) {
@@ -120,13 +168,21 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
         reject(new Error(`${provider} CLI exited ${code}: ${tail}`));
         return;
       }
-      resolve({ text: stdout.trim(), exitCode: code ?? 0 });
+      try {
+        const text = cfg.finalize ? await cfg.finalize() : stdout.trim();
+        // Surface one final chunk so the SSE stream gets the assembled response
+        // for non-streaming providers.
+        if (cfg.finalize && onChunk) onChunk(text);
+        resolve({ text, exitCode: code ?? 0 });
+      } catch (err) {
+        reject(err as Error);
+      }
     });
 
-    if (SEND_VIA_STDIN[provider]) {
+    if (cfg.useStdin) {
       child.stdin.write(prompt);
-      child.stdin.end();
     }
+    child.stdin.end();
   });
 }
 
