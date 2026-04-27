@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AIProvider,
   ChatMessage,
   ChatMode,
   ModeRoles,
@@ -68,6 +69,16 @@ export default function App() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [modelOverrides, setModelOverrides] = useState<Partial<Record<AIProvider, string>>>(
+    () => {
+      try {
+        const raw = localStorage.getItem('modelOverrides');
+        return raw ? (JSON.parse(raw) as Partial<Record<AIProvider, string>>) : {};
+      } catch {
+        return {};
+      }
+    },
+  );
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingRolesRef = useRef<Record<string, string>>({});
@@ -90,6 +101,18 @@ export default function App() {
     setUser(null);
     setMessages([]);
   };
+
+  const handleModelSelect = useCallback((provider: AIProvider, model: string) => {
+    setModelOverrides((prev) => {
+      const next = { ...prev, [provider]: model };
+      try {
+        localStorage.setItem('modelOverrides', JSON.stringify(next));
+      } catch {
+        // ignore storage failures (private mode etc.)
+      }
+      return next;
+    });
+  }, []);
 
   const handleEvent = useCallback((ev: SSEEvent) => {
     switch (ev.type) {
@@ -201,7 +224,12 @@ export default function App() {
 
       try {
         await streamChat(
-          { text, mode, roles: mode !== 'free' ? roles : undefined },
+          {
+            text,
+            mode,
+            roles: mode !== 'free' ? roles : undefined,
+            modelOverrides,
+          },
           handleEvent,
           ctrl.signal,
         );
@@ -223,7 +251,7 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [mode, roles, isProcessing, handleEvent],
+    [mode, roles, isProcessing, modelOverrides, handleEvent],
   );
 
   const handleCancel = useCallback(() => {
@@ -295,7 +323,11 @@ export default function App() {
             </button>
           </div>
         </div>
-        <ProvidersBar />
+        <ProvidersBar
+          models={user.models}
+          selected={modelOverrides}
+          onSelect={handleModelSelect}
+        />
       </div>
 
       {/* Mode + Roles */}

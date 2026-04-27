@@ -6,8 +6,8 @@ import {
   requireAuth,
   verifyPassword,
   type AppVariables,
-  type SessionUser,
 } from '../lib/auth.js';
+import { TIER_MODELS } from '../shared/models.js';
 
 export const authRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -31,7 +31,11 @@ authRoute.post('/login', async (c) => {
 
   issueSession(c, { id: user.id, username: user.username, tier: user.tier });
   return c.json({
-    user: { username: user.username, tier: user.tier },
+    user: {
+      username: user.username,
+      tier: user.tier,
+      models: TIER_MODELS[user.tier],
+    },
   });
 });
 
@@ -42,5 +46,11 @@ authRoute.post('/logout', (c) => {
 
 authRoute.get('/me', requireAuth, (c) => {
   const user = c.get('user');
-  return c.json({ user: { username: user.username, tier: user.tier } });
+  return c.json({
+    user: {
+      username: user.username,
+      tier: user.tier,
+      models: TIER_MODELS[user.tier],
+    },
+  });
 });

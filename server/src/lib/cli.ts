@@ -76,9 +76,10 @@ function buildConfig(
     case 'gemini':
       // Gemini CLI: -p REQUIRES a value (won't read stdin alone). Pass prompt
       // as argv — spawn() doesn't go through a shell so multi-line / special
-      // chars are safe.
+      // chars are safe. --skip-trust suppresses the trusted-directory check
+      // since we run from /tmp.
       return {
-        argv: ['-m', model, '-p', prompt],
+        argv: ['-m', model, '--skip-trust', '-p', prompt],
         useStdin: false,
       };
 

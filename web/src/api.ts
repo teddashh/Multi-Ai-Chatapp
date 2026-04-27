@@ -1,8 +1,14 @@
-import type { ChatMode, ModeRoles, SSEEvent, Tier } from './shared/types';
+import type { AIProvider, ChatMode, ModeRoles, SSEEvent, Tier } from './shared/types';
+
+export interface ModelChoices {
+  default: string;
+  options: string[];
+}
 
 export interface User {
   username: string;
   tier: Tier;
+  models: Record<AIProvider, ModelChoices>;
 }
 
 export interface AdminUser {
@@ -88,7 +94,12 @@ export async function deleteUser(username: string): Promise<void> {
 // Streams chat events via SSE. Calls onEvent for each SSEEvent until 'finish'
 // or an abort. Returns when the stream ends.
 export async function streamChat(
-  body: { text: string; mode: ChatMode; roles?: ModeRoles },
+  body: {
+    text: string;
+    mode: ChatMode;
+    roles?: ModeRoles;
+    modelOverrides?: Partial<Record<AIProvider, string>>;
+  },
   onEvent: (event: SSEEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

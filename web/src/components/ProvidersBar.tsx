@@ -1,24 +1,50 @@
 import React from 'react';
 import type { AIProvider } from '../shared/types';
 import { AI_PROVIDERS } from '../shared/constants';
+import type { ModelChoices } from '../api';
 
 const PROVIDERS: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
 
-export default function ProvidersBar() {
+interface Props {
+  models: Record<AIProvider, ModelChoices>;
+  selected: Partial<Record<AIProvider, string>>;
+  onSelect: (provider: AIProvider, model: string) => void;
+}
+
+export default function ProvidersBar({ models, selected, onSelect }: Props) {
   return (
-    <div className="grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
       {PROVIDERS.map((p) => {
         const info = AI_PROVIDERS[p];
+        const choices = models[p];
+        const current = selected[p] ?? choices.default;
         return (
           <div
             key={p}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 border border-gray-700"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-gray-800 border border-gray-700 min-w-0"
           >
             <span
-              className="w-2 h-2 rounded-full"
+              className="w-2 h-2 rounded-full flex-none"
               style={{ backgroundColor: info.color }}
             />
-            <span style={{ color: info.color }}>{info.name}</span>
+            <span
+              className="text-xs font-semibold flex-none"
+              style={{ color: info.color }}
+            >
+              {info.name}
+            </span>
+            <select
+              value={current}
+              onChange={(e) => onSelect(p, e.target.value)}
+              className="bg-transparent text-[11px] text-gray-300 border-none focus:outline-none ml-auto truncate min-w-0 max-w-[140px] cursor-pointer hover:text-white"
+              title={current}
+            >
+              {choices.options.map((m) => (
+                <option key={m} value={m} className="bg-gray-900 text-gray-200">
+                  {m}
+                </option>
+              ))}
+            </select>
           </div>
         );
       })}

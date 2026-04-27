@@ -2,14 +2,19 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import { runMode } from '../lib/orchestrator.js';
-import type { ChatMode, ModeRoles, SSEEvent } from '../shared/types.js';
+import type { AIProvider, ChatMode, ModeRoles, SSEEvent } from '../shared/types.js';
 
 export const chatRoute = new Hono<{ Variables: AppVariables }>();
 
 chatRoute.post('/send', requireAuth, async (c) => {
   const user = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
-    | { text?: string; mode?: ChatMode; roles?: ModeRoles }
+    | {
+        text?: string;
+        mode?: ChatMode;
+        roles?: ModeRoles;
+        modelOverrides?: Partial<Record<AIProvider, string>>;
+      }
     | null;
 
   if (!body?.text || !body?.mode) {
@@ -19,6 +24,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const text = body.text;
   const mode = body.mode;
   const roles = body.roles;
+  const modelOverrides = body.modelOverrides;
 
   return streamSSE(c, async (stream) => {
     const controller = new AbortController();
@@ -37,6 +43,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         text,
         mode,
         roles,
+        modelOverrides,
         tier: user.tier,
         emit: send,
         signal: controller.signal,

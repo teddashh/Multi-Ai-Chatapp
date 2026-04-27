@@ -1,5 +1,5 @@
 import { runCLI } from './cli.js';
-import { modelFor } from '../shared/models.js';
+import { resolveModel } from '../shared/models.js';
 import { PROMPTS, PROVIDER_NAMES } from '../shared/prompts.js';
 import type {
   AIProvider,
@@ -18,6 +18,7 @@ export interface OrchestratorParams {
   mode: ChatMode;
   roles?: ModeRoles;
   tier: Tier;
+  modelOverrides?: Partial<Record<AIProvider, string>>;
   emit: (event: SSEEvent) => void;
   signal: AbortSignal;
 }
@@ -55,7 +56,7 @@ async function runOne(
   provider: AIProvider,
   prompt: string,
 ): Promise<string> {
-  const model = modelFor(p.tier, provider);
+  const model = resolveModel(p.tier, provider, p.modelOverrides?.[provider]);
   try {
     const result = await runCLI({
       provider,
