@@ -3,6 +3,7 @@ dist/
 build/
 .env
 *.local
+*.tsbuildinfo
 
 # SQLite
 server/data/
