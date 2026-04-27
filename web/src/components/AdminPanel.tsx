@@ -14,7 +14,7 @@ interface Props {
   currentUsername: string;
 }
 
-const TIERS: Tier[] = ['test', 'standard', 'super'];
+const TIERS: Tier[] = ['standard', 'pro', 'super'];
 
 interface RowEdit {
   password?: string;
@@ -33,7 +33,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
   const [newPassword, setNewPassword] = useState('');
   const [newNickname, setNewNickname] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [newTier, setNewTier] = useState<Tier>('test');
+  const [newTier, setNewTier] = useState<Tier>('standard');
 
   const [editing, setEditing] = useState<Record<string, RowEdit>>({});
 
@@ -58,7 +58,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
       setNewPassword('');
       setNewNickname('');
       setNewEmail('');
-      setNewTier('test');
+      setNewTier('standard');
     }
   }, [isOpen]);
 
@@ -79,7 +79,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
       setNewPassword('');
       setNewNickname('');
       setNewEmail('');
-      setNewTier('test');
+      setNewTier('standard');
       await refresh();
     } catch (err) {
       setError((err as Error).message);

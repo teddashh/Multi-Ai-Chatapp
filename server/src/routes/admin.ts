@@ -9,7 +9,7 @@ import type { Tier } from '../shared/types.js';
 
 export const adminRoute = new Hono<{ Variables: AppVariables }>();
 
-const VALID_TIERS: Tier[] = ['test', 'standard', 'super'];
+const VALID_TIERS: Tier[] = ['standard', 'pro', 'super'];
 
 adminRoute.use('*', requireSuper);
 

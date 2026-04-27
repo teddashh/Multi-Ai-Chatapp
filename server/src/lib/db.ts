@@ -16,7 +16,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    tier TEXT NOT NULL CHECK (tier IN ('test','standard','super')),
+    tier TEXT NOT NULL CHECK (tier IN ('standard','pro','super')),
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     nickname TEXT,
     email TEXT,
@@ -66,6 +66,41 @@ addColumnIfMissing('users', 'nickname', 'TEXT');
 addColumnIfMissing('users', 'email', 'TEXT');
 addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
+
+// Tier rename migration (test/standard/super → standard/pro/super).
+// Idempotent: gated on PRAGMA user_version to run exactly once.
+const ver = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver < 1) {
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      tier TEXT NOT NULL CHECK (tier IN ('standard','pro','super')),
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      nickname TEXT,
+      email TEXT,
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO users_new (id, username, password_hash, tier, created_at, nickname, email, failed_attempts, locked_until)
+    SELECT id, username, password_hash,
+      CASE tier
+        WHEN 'test' THEN 'standard'
+        WHEN 'standard' THEN 'pro'
+        ELSE 'super'
+      END,
+      created_at, nickname, email, failed_attempts, locked_until
+    FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+    PRAGMA user_version = 1;
+  `);
+}
 
 export interface UserRow {
   id: number;

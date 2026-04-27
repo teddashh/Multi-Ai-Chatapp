@@ -8,7 +8,7 @@ export interface ModelChoices {
   options: string[];
 }
 
-const TEST: Record<AIProvider, ModelChoices> = {
+const STANDARD: Record<AIProvider, ModelChoices> = {
   claude: {
     default: 'claude-haiku-4-5',
     options: ['claude-haiku-4-5'],
@@ -27,7 +27,7 @@ const TEST: Record<AIProvider, ModelChoices> = {
   },
 };
 
-const STANDARD: Record<AIProvider, ModelChoices> = {
+const PRO: Record<AIProvider, ModelChoices> = {
   claude: {
     default: 'claude-sonnet-4-6',
     options: ['claude-sonnet-4-6', 'claude-haiku-4-5'],
@@ -77,8 +77,8 @@ const SUPER: Record<AIProvider, ModelChoices> = {
 };
 
 export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> = {
-  test: TEST,
   standard: STANDARD,
+  pro: PRO,
   super: SUPER,
 };
 
