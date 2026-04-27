@@ -4,7 +4,6 @@ import { randomUUID } from 'node:crypto';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import {
   buildPerProviderHistory,
-  buildSharedHistoryPrefix,
   buildStepList,
   defaultRolesFor,
   failureText,
@@ -251,26 +250,21 @@ chatRoute.post('/send', requireAuth, async (c) => {
       send(event);
     };
 
-    // Load earlier turns for memory continuity. Free mode: each AI sees
-    // its own thread. Sequential modes: a flattened transcript is
-    // prefixed onto the user's text so each step's prompt embeds the
-    // prior context naturally.
+    // Load earlier turns for memory continuity. We use per-provider
+    // history for *both* Free and Sequential modes — each AI sees its
+    // own past replies plus every user question. Cross-AI awareness
+    // across turns is sacrificed on purpose: leaking other agents'
+    // round labels ("第二輪") into the next turn's prompt was tripping
+    // the new round into mimicking the old structure. Each AI keeps
+    // its own thread; multi-agent dialogue still happens *within* a
+    // turn via the step pipeline.
     const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
       .filter((m) => m.id < userMsgId);
-    let runText = text;
-    let perProviderHistory:
-      | Partial<Record<AIProvider, Array<{ role: 'user' | 'assistant'; content: string }>>>
-      | undefined = undefined;
-    if (mode === 'free') {
-      perProviderHistory = buildPerProviderHistory(priorMsgs);
-    } else {
-      const prefix = buildSharedHistoryPrefix(priorMsgs, user.lang);
-      if (prefix) runText = prefix + text;
-    }
+    const perProviderHistory = buildPerProviderHistory(priorMsgs);
 
     try {
       await runMode({
-        text: runText,
+        text,
         mode,
         roles,
         modelOverrides,
@@ -442,13 +436,12 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
     return c.json({ error: 'retry index past end of step list' }, 400);
   }
 
-  // Cross-turn memory: prefix the user's question with a transcript of
-  // earlier turns in this session so each step's prompt sees the same
-  // context the original /send had.
+  // Cross-turn memory: each provider sees its own past thread. Same
+  // shape as the /send path so retries inherit the same context.
   const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
     .filter((m) => m.id < userMsg.id);
-  const historyPrefix = buildSharedHistoryPrefix(priorMsgs, user.lang);
-  const userText = historyPrefix + userMsg.content;
+  const perProviderHistory = buildPerProviderHistory(priorMsgs);
+  const userText = userMsg.content;
 
   return streamSSE(c, async (stream) => {
     const previous = sessionAborters.get(sessionId);
@@ -516,6 +509,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
             },
             userId: user.id,
             mode: modeStr,
+            history: perProviderHistory[step.provider],
           });
           stepText = result.text;
         } catch (err) {

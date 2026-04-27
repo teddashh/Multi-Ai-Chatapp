@@ -68,48 +68,12 @@ export function buildPerProviderHistory(
   return out;
 }
 
-// Shared history for sequential modes (debate / consult / coding /
-// roundtable). Each sequential mode has its own internal step structure
-// ("第一輪", "正方", "Coder v1" etc.) — leaking the FULL AI replies of
-// prior turns into the new turn's prompt was tripping up the next round
-// of AIs (Gemini saw "第二輪" in history and started numbering its round
-// 1 reply as "第二輪・Gemini 立論").
-//
-// The fix: only show the user's prior questions as topic context and
-// explicitly tell the AI this is a fresh new question — no AI replies,
-// no round numbers, no labels.
-export function buildSharedHistoryPrefix(
-  messages: MessageRow[],
-  lang: Lang,
-): string {
-  const userQuestions = messages
-    .filter((m) => m.role === 'user')
-    .map((m) => m.content.trim())
-    .filter((q) => q.length > 0);
-  if (userQuestions.length === 0) return '';
-  const recent = userQuestions.slice(-MAX_HISTORY_TURNS);
-  const lines: string[] = [];
-  if (lang === 'en') {
-    lines.push(
-      '[For topic context only — earlier in this session the user asked:]',
-    );
-    for (const q of recent) lines.push(`- ${q}`);
-    lines.push('');
-    lines.push(
-      '[The question below is a NEW question. Treat it as a fresh discussion — do not continue any earlier round numbering, role labels, or argument structure.]',
-    );
-    lines.push('');
-    return lines.join('\n');
-  }
-  lines.push('[僅作為主題背景參考 — 在此 session 中，使用者先前問過：]');
-  for (const q of recent) lines.push(`- ${q}`);
-  lines.push('');
-  lines.push(
-    '[下方是「全新的問題」，請當成一場全新的討論。不要沿用先前對話的回合編號、角色標籤或論證結構。]',
-  );
-  lines.push('');
-  return lines.join('\n');
-}
+// (No buildSharedHistoryPrefix — sequential modes also use
+// per-provider history now. Each AI sees only its own past thread, so
+// it never reads other agents' "第二輪" labels and gets dragged into
+// mimicking them. Within-turn multi-agent dialogue is unaffected
+// because the orchestrator already passes prior step outputs into the
+// next step's prompt builder.)
 
 export interface OrchestratorParams {
   text: string;
