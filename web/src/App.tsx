@@ -582,6 +582,8 @@ export default function App() {
           <ChatArea
             messages={messages}
             mode={mode}
+            user={user}
+            avatarBust={avatarBust}
             onRegenerate={handleRegenerate}
             regeneratingId={regeneratingId}
           />
