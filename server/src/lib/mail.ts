@@ -52,8 +52,8 @@ export async function sendResetEmail(p: ResetEmailParams): Promise<void> {
 
   const reasonZh =
     p.reason === 'auto_lockout'
-      ? '由於連續 3 次密碼錯誤，帳號已暫時鎖定。'
-      : '你（或某人冒用你的身份）發起了密碼重設請求。';
+      ? '為了帳號安全，我們在偵測到多次登入失敗後暫時阻擋了登入，請用下方連結重新設定密碼。'
+      : '我們收到了你的密碼重設請求。';
 
   const html = `<!doctype html>
 <html><body style="font-family: -apple-system, system-ui, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; color: #1f2937;">
