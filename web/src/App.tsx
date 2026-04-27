@@ -422,7 +422,7 @@ export default function App() {
         )}
       </div>
 
-      <ChatArea messages={messages} />
+      <ChatArea messages={messages} mode={mode} />
 
       {workflowStatus && (
         <div className="flex-none border-t border-gray-800 px-3 py-1.5 bg-gray-900 text-center">
