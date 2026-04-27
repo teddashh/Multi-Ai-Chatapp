@@ -33,10 +33,19 @@ function isUsableMessage(m: MessageRow): boolean {
   return !m.content.startsWith('[Error:');
 }
 
-// Per-provider history for Free mode — each AI gets its own thread
-// (their replies + every user message). We cap to the most recent
-// MAX_HISTORY_TURNS turns so we don't hand the model a 100-turn novel.
-const MAX_HISTORY_TURNS = 12;
+// Per-provider history — each AI gets its own thread (their replies +
+// every user message). Two caps to keep prompts from growing into
+// CLI-choking territory: a turn count and a per-message char budget.
+// Long sessions in sequential modes were running into "我現在狀況不太好"
+// failures because the combined prompt + history was past the CLI's
+// comfort zone.
+const MAX_HISTORY_TURNS = 6;
+const MAX_HISTORY_MSG_CHARS = 1500;
+
+function trimContent(s: string): string {
+  if (s.length <= MAX_HISTORY_MSG_CHARS) return s;
+  return s.slice(0, MAX_HISTORY_MSG_CHARS) + '…';
+}
 
 export function buildPerProviderHistory(
   messages: MessageRow[],
@@ -54,8 +63,8 @@ export function buildPerProviderHistory(
         // assistant would see "user x4 in a row" with no replies.
         pendingUser = m.content;
       } else if (m.provider === p && pendingUser !== null) {
-        turns.push({ role: 'user', content: pendingUser });
-        turns.push({ role: 'assistant', content: m.content });
+        turns.push({ role: 'user', content: trimContent(pendingUser) });
+        turns.push({ role: 'assistant', content: trimContent(m.content) });
         pendingUser = null;
       }
     }
