@@ -50,6 +50,8 @@ export interface Dict {
   verifySuccess: string;
   verifyFailed: (msg: string) => string;
   verifyVerifying: string;
+  connectionLostBanner: string;
+  connectionLostDismiss: string;
   forgotTitle: string;
   forgotPrompt: string;
   forgotSent: string;
@@ -194,7 +196,7 @@ export interface Dict {
 }
 
 const ZH: Dict = {
-  appName: 'AI 四人行',
+  appName: 'AI 茶話團',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -215,7 +217,7 @@ const ZH: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI 四人行',
+  loginTitle: 'AI 茶話團',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',
@@ -237,6 +239,9 @@ const ZH: Dict = {
   verifySuccess: 'Email 驗證成功！',
   verifyFailed: (msg) => `驗證失敗：${msg}`,
   verifyVerifying: '驗證中...',
+  connectionLostBanner:
+    '連線中斷（可能是切換視窗或網路），伺服器仍在跑，已重新載入到目前進度。如果還沒跑完，等一下再點對應步驟旁的「重試」即可繼續。',
+  connectionLostDismiss: '知道了',
   forgotTitle: '忘記密碼',
   forgotPrompt: '輸入你的帳號或 email，我們會寄重設信過去。',
   forgotSent:
@@ -421,6 +426,9 @@ const EN: Dict = {
   verifySuccess: 'Email verified!',
   verifyFailed: (msg) => `Verification failed: ${msg}`,
   verifyVerifying: 'Verifying...',
+  connectionLostBanner:
+    'Connection dropped (likely tab backgrounded or a network blip). The server is still running — we reloaded the latest progress. If steps are still missing, hit Retry on the failed one to continue.',
+  connectionLostDismiss: 'Got it',
   forgotTitle: 'Forgot password',
   forgotPrompt:
     'Enter your username or email and we will send a reset link.',

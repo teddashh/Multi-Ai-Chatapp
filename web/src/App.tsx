@@ -14,6 +14,7 @@ import {
   DEFAULT_ROUNDTABLE_ROLES,
 } from './shared/constants';
 import {
+  abortChat,
   avatarUrl,
   getSession,
   listSessions,
@@ -99,6 +100,30 @@ export default function App() {
   const [resendState, setResendState] = useState<
     'idle' | 'sending' | 'sent' | 'err'
   >('idle');
+  const [connectionLost, setConnectionLost] = useState(false);
+
+  // Pulled out so the SSE-drop recovery can use it. Reloads the active
+  // session from DB so any messages the server persisted while we were
+  // disconnected show up in the UI.
+  const reloadActiveSession = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      const detail = await getSession(activeSessionId);
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          provider: m.provider,
+          modeRole: m.modeRole,
+          content: m.content,
+          timestamp: m.timestamp,
+          attachments: m.attachments,
+        })),
+      );
+    } catch {
+      // best-effort
+    }
+  }, [activeSessionId]);
 
   const [lang, setLangState] = useState<Lang>(loadInitialLang);
   const setLang = useCallback((l: Lang) => {
@@ -426,15 +451,12 @@ export default function App() {
         );
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `error-${Date.now()}`,
-              role: 'ai',
-              content: `[Error] ${(err as Error).message}`,
-              timestamp: Date.now(),
-            },
-          ]);
+          // Likely the SSE stream got dropped (tab backgrounded, network
+          // blip, mobile suspension). The server keeps running, so just
+          // reload the session and show a friendly banner instead of
+          // injecting a noisy "[Error] xxx" bubble.
+          setConnectionLost(true);
+          await reloadActiveSession();
         }
       } finally {
         setIsProcessing(false);
@@ -442,14 +464,20 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [mode, roles, isProcessing, modelOverrides, activeSessionId, handleEvent],
+    [mode, roles, isProcessing, modelOverrides, activeSessionId, handleEvent, reloadActiveSession],
   );
 
   const handleCancel = useCallback(() => {
+    // Tell the server to stop the orchestrator — disconnecting the SSE
+    // alone no longer aborts (so backgrounded tabs don't kill the chain),
+    // so a real "Stop" needs an explicit endpoint hit.
+    if (activeSessionId) {
+      void abortChat(activeSessionId);
+    }
     abortRef.current?.abort();
     setIsProcessing(false);
     setWorkflowStatus('');
-  }, []);
+  }, [activeSessionId]);
 
   const handleRegenerate = useCallback(
     async (messageId: string) => {
@@ -495,7 +523,9 @@ export default function App() {
         );
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
-          alert(t.retryFailed((err as Error).message));
+          // Stream dropped — same recovery as handleSend.
+          setConnectionLost(true);
+          await reloadActiveSession();
         }
       } finally {
         setRegeneratingId(null);
@@ -506,7 +536,14 @@ export default function App() {
         }
       }
     },
-    [regeneratingId, isProcessing, mode, modelOverrides, handleEvent, t],
+    [
+      regeneratingId,
+      isProcessing,
+      mode,
+      modelOverrides,
+      handleEvent,
+      reloadActiveSession,
+    ],
   );
 
   // === Render ===
@@ -629,6 +666,17 @@ export default function App() {
             )}
           </div>
 
+          {connectionLost && (
+            <div className="flex-none border-b border-amber-700/40 bg-amber-900/20 px-3 py-2 text-xs text-amber-200 flex flex-wrap items-center gap-2">
+              <span className="flex-1">{t.connectionLostBanner}</span>
+              <button
+                onClick={() => setConnectionLost(false)}
+                className="px-2 py-0.5 rounded bg-amber-700/40 hover:bg-amber-700/60"
+              >
+                {t.connectionLostDismiss}
+              </button>
+            </div>
+          )}
           {!user.emailVerified && (
             <div className="flex-none border-b border-yellow-700/40 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-200 flex flex-wrap items-center gap-2">
               <span className="flex-1">{t.verifyBannerText}</span>

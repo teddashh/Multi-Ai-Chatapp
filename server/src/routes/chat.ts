@@ -34,6 +34,17 @@ import type { AIProvider, ChatMode, ModeRoles, SSEEvent } from '../shared/types.
 
 export const chatRoute = new Hono<{ Variables: AppVariables }>();
 
+// Per-session AbortController so an explicit "stop" or admin kill can
+// cancel an in-flight orchestrator run. NOT tied to SSE lifecycle —
+// disconnecting the stream (e.g., backgrounding the tab on iOS) no
+// longer aborts the chain. The chain runs to completion server-side and
+// persists each step; the next time the client reconnects it can pull
+// the fresh state via GET /api/sessions/:id.
+const sessionAborters = new Map<string, AbortController>();
+// Hard ceiling so a runaway chain can't burn forever if the client
+// genuinely walked away.
+const RUN_TIMEOUT_MS = 30 * 60 * 1000;
+
 chatRoute.post('/upload', requireAuth, async (c) => {
   const user = c.get('user');
   const body = await c.req.parseBody().catch(() => null);
@@ -174,18 +185,32 @@ chatRoute.post('/send', requireAuth, async (c) => {
   );
 
   return streamSSE(c, async (stream) => {
+    // Reuse any controller already running for this session, or start a
+    // fresh one. Subsequent sends to the same session would be unusual
+    // (one chain per session at a time), but if it happens we let the
+    // newer one win.
+    const previousAborter = sessionAborters.get(sessionId);
+    if (previousAborter) previousAborter.abort();
     const controller = new AbortController();
-    stream.onAbort(() => controller.abort());
+    sessionAborters.set(sessionId, controller);
+    const runTimeout = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
+
+    // NOTE: deliberately NOT calling stream.onAbort(controller.abort).
+    // SSE drops (tab backgrounded, network blip) shouldn't kill the
+    // chain — let the orchestrator keep running and persisting; the
+    // client recovers by reloading the session.
 
     // Track per-provider in-flight role labels so we can persist them with the
     // matching 'done' message (orchestrator emits role before chunk/done).
     const pendingRoles: Partial<Record<AIProvider, string>> = {};
 
     const send = (event: SSEEvent) => {
+      // Writes after disconnect just no-op — they fail silently and we
+      // keep going. Wrap to swallow any rejection.
       void stream.writeSSE({
         event: event.type,
         data: JSON.stringify(event),
-      });
+      }).catch(() => {});
     };
 
     // Surface session metadata first so client can update its sidebar
@@ -265,6 +290,11 @@ chatRoute.post('/send', requireAuth, async (c) => {
         message: (err as Error).message || 'orchestrator failed',
       });
       send({ type: 'finish' });
+    } finally {
+      clearTimeout(runTimeout);
+      if (sessionAborters.get(sessionId) === controller) {
+        sessionAborters.delete(sessionId);
+      }
     }
   });
 });
@@ -334,10 +364,15 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
     const perProviderHistory = buildPerProviderHistory(priorMsgs);
 
     return streamSSE(c, async (stream) => {
+      const previous = sessionAborters.get(sessionId);
+      if (previous) previous.abort();
       const ctrl = new AbortController();
-      stream.onAbort(() => ctrl.abort());
+      sessionAborters.set(sessionId, ctrl);
+      const runTimeout = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
       const send = (event: SSEEvent) =>
-        stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
+        stream
+          .writeSSE({ event: event.type, data: JSON.stringify(event) })
+          .catch(() => {});
 
       try {
         const result = await runCLI({
@@ -368,6 +403,11 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           message: (err as Error).message || 'regenerate failed',
         });
         send({ type: 'finish' });
+      } finally {
+        clearTimeout(runTimeout);
+        if (sessionAborters.get(sessionId) === ctrl) {
+          sessionAborters.delete(sessionId);
+        }
       }
     });
   }
@@ -411,10 +451,15 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
   const userText = historyPrefix + userMsg.content;
 
   return streamSSE(c, async (stream) => {
+    const previous = sessionAborters.get(sessionId);
+    if (previous) previous.abort();
     const ctrl = new AbortController();
-    stream.onAbort(() => ctrl.abort());
+    sessionAborters.set(sessionId, ctrl);
+    const runTimeout = setTimeout(() => ctrl.abort(), RUN_TIMEOUT_MS);
     const send = (event: SSEEvent) =>
-      stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
+      stream
+        .writeSSE({ event: event.type, data: JSON.stringify(event) })
+        .catch(() => {});
 
     try {
       // History = everything BEFORE the retry point; trust what's stored.
@@ -512,6 +557,27 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
         message: (err as Error).message || 'resume failed',
       });
       send({ type: 'finish' });
+    } finally {
+      clearTimeout(runTimeout);
+      if (sessionAborters.get(sessionId) === ctrl) {
+        sessionAborters.delete(sessionId);
+      }
     }
   });
+});
+
+// Explicit abort — used by the client's "Stop" button. Disconnecting the
+// SSE stream alone no longer aborts (so backgrounded tabs don't kill the
+// chain), so we need a real way for users to say "stop now please".
+chatRoute.post('/abort/:sessionId', requireAuth, (c) => {
+  const user = c.get('user');
+  const sessionId = c.req.param('sessionId') ?? '';
+  if (!sessionId) return c.json({ error: 'sessionId required' }, 400);
+  // Confirm the session belongs to the caller — don't let one user abort
+  // another's chain.
+  const owned = sessionStmts.findOwned.get(sessionId, user.id);
+  if (!owned) return c.json({ error: 'not found' }, 404);
+  const ctrl = sessionAborters.get(sessionId);
+  if (ctrl) ctrl.abort();
+  return c.json({ ok: true, aborted: !!ctrl });
 });

@@ -337,6 +337,13 @@ export async function renameSession(id: string, title: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
+export async function abortChat(sessionId: string): Promise<void> {
+  await fetch(`/api/chat/abort/${encodeURIComponent(sessionId)}`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {});
+}
+
 export async function deleteSession(id: string): Promise<void> {
   const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',

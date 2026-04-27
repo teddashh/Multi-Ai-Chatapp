@@ -68,58 +68,45 @@ export function buildPerProviderHistory(
   return out;
 }
 
-// Shared history for sequential modes — flatten into a brief transcript
-// prefix that gets inserted before the user's current question. Picks
-// the FINAL AI message of each prior turn (i.e., the synthesis step) so
-// the new turn sees one coherent answer per past turn rather than every
-// intermediate step.
+// Shared history for sequential modes (debate / consult / coding /
+// roundtable). Each sequential mode has its own internal step structure
+// ("第一輪", "正方", "Coder v1" etc.) — leaking the FULL AI replies of
+// prior turns into the new turn's prompt was tripping up the next round
+// of AIs (Gemini saw "第二輪" in history and started numbering its round
+// 1 reply as "第二輪・Gemini 立論").
+//
+// The fix: only show the user's prior questions as topic context and
+// explicitly tell the AI this is a fresh new question — no AI replies,
+// no round numbers, no labels.
 export function buildSharedHistoryPrefix(
   messages: MessageRow[],
   lang: Lang,
 ): string {
-  const usable = messages.filter(isUsableMessage);
-  // Walk forward, group by "turn" = run of msgs starting at a user msg.
-  type Turn = { user: string; finalAi: string | null; provider: string | null };
-  const turns: Turn[] = [];
-  let cur: Turn | null = null;
-  for (const m of usable) {
-    if (m.role === 'user') {
-      if (cur) turns.push(cur);
-      cur = { user: m.content, finalAi: null, provider: null };
-    } else if (cur) {
-      // Last AI msg in the turn wins — overwrite as we walk.
-      cur.finalAi = m.content;
-      cur.provider = m.provider;
-    }
-  }
-  if (cur) turns.push(cur);
-
-  // Drop turns that didn't produce any AI output (unfinished / errored).
-  const completed = turns.filter((t) => t.finalAi);
-  if (completed.length === 0) return '';
-
-  const recent = completed.slice(-MAX_HISTORY_TURNS);
+  const userQuestions = messages
+    .filter((m) => m.role === 'user')
+    .map((m) => m.content.trim())
+    .filter((q) => q.length > 0);
+  if (userQuestions.length === 0) return '';
+  const recent = userQuestions.slice(-MAX_HISTORY_TURNS);
   const lines: string[] = [];
   if (lang === 'en') {
-    lines.push('[Earlier conversation in this session — for context]');
-    for (const t of recent) {
-      lines.push(`User: ${t.user}`);
-      lines.push(`Assistant (${t.provider ?? 'AI'}): ${t.finalAi}`);
-    }
-    lines.push('[End of history]');
+    lines.push(
+      '[For topic context only — earlier in this session the user asked:]',
+    );
+    for (const q of recent) lines.push(`- ${q}`);
     lines.push('');
-    lines.push('[Current question]');
+    lines.push(
+      '[The question below is a NEW question. Treat it as a fresh discussion — do not continue any earlier round numbering, role labels, or argument structure.]',
+    );
     lines.push('');
     return lines.join('\n');
   }
-  lines.push('[以下是這個 session 先前的對話，請延續 context]');
-  for (const t of recent) {
-    lines.push(`使用者：${t.user}`);
-    lines.push(`${t.provider ?? 'AI'}：${t.finalAi}`);
-  }
-  lines.push('[歷史結束]');
+  lines.push('[僅作為主題背景參考 — 在此 session 中，使用者先前問過：]');
+  for (const q of recent) lines.push(`- ${q}`);
   lines.push('');
-  lines.push('[新的提問]');
+  lines.push(
+    '[下方是「全新的問題」，請當成一場全新的討論。不要沿用先前對話的回合編號、角色標籤或論證結構。]',
+  );
   lines.push('');
   return lines.join('\n');
 }
