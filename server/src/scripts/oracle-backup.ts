@@ -173,7 +173,7 @@ async function syncUsers(conn: oracledb.Connection): Promise<number> {
       `INSERT INTO MAC_USERS
          (USER_ID, USERNAME, NICKNAME, EMAIL, PASSWORD_HASH, TIER, SRC_CREATED_AT, IS_DELETED)
        VALUES
-         (:id, :username, :nickname, :email, :hash, :tier, :created, 0)`,
+         (:id, :username, :nickname, :email, :hash, :tier, :cdate, 0)`,
       {
         id: u.id,
         username: u.username,
@@ -181,7 +181,7 @@ async function syncUsers(conn: oracledb.Connection): Promise<number> {
         email: u.email || null,
         hash: u.password_hash,
         tier: u.tier,
-        created: u.created_at,
+        cdate: u.created_at,
       },
     );
     added++;
@@ -223,7 +223,7 @@ async function syncUsers(conn: oracledb.Connection): Promise<number> {
         `INSERT INTO MAC_USERS
            (USER_ID, USERNAME, NICKNAME, EMAIL, PASSWORD_HASH, TIER, SRC_CREATED_AT, IS_DELETED)
          VALUES
-           (:id, :username, :nickname, :email, :hash, :tier, :created, 1)`,
+           (:id, :username, :nickname, :email, :hash, :tier, :cdate, 1)`,
         {
           id: row.USER_ID,
           username: r.USERNAME,
@@ -231,7 +231,7 @@ async function syncUsers(conn: oracledb.Connection): Promise<number> {
           email: r.EMAIL,
           hash: r.PASSWORD_HASH,
           tier: r.TIER,
-          created: r.SRC_CREATED_AT,
+          cdate: r.SRC_CREATED_AT,
         },
       );
       added++;
@@ -276,14 +276,14 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
     await conn.execute(
       `INSERT INTO MAC_SESSIONS
          (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-       VALUES (:sid, :uid, :title, :cmode, :created, :updated, 0)`,
+       VALUES (:sid, :uid, :title, :cmode, :cdate, :udate, 0)`,
       {
         sid: s.id,
         uid: s.user_id,
         title: s.title,
         cmode: s.mode,
-        created: s.created_at,
-        updated: s.updated_at,
+        cdate: s.created_at,
+        udate: s.updated_at,
       },
     );
     added++;
@@ -322,14 +322,14 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       await conn.execute(
         `INSERT INTO MAC_SESSIONS
            (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-         VALUES (:sid, :uid, :title, :cmode, :created, :updated, 1)`,
+         VALUES (:sid, :uid, :title, :cmode, :cdate, :udate, 1)`,
         {
           sid: r.SESSION_ID,
           uid: x.USER_ID,
           title: x.TITLE,
           cmode: x.CHAT_MODE,
-          created: x.SRC_CREATED_AT,
-          updated: x.SRC_UPDATED_AT,
+          cdate: x.SRC_CREATED_AT,
+          udate: x.SRC_UPDATED_AT,
         },
       );
       added++;
