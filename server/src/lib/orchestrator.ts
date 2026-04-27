@@ -365,8 +365,13 @@ export async function runOne(
     return result.text;
   } catch (err) {
     const message = (err as Error).message;
+    // Keep the raw error visible to admins via the SSE 'error' channel
+    // (logged server-side too) but show the user a soft, in-character
+    // fallback instead of "[Error: 429 ...]". The 'done' text is what
+    // gets persisted as the AI bubble's content.
+    console.error(`[${provider}] step failed:`, message);
     p.emit({ type: 'error', provider, message });
-    p.emit({ type: 'done', provider, text: `[Error: ${message}]` });
+    p.emit({ type: 'done', provider, text: failureText(p.lang) });
     throw err;
   }
 }
@@ -613,10 +618,16 @@ async function runFree(p: OrchestratorParams): Promise<void> {
   p.emit({ type: 'workflow', status: '' });
 }
 
-// Placeholder shoved into the running history when a step fails, so
-// subsequent steps see *something* sensible instead of an "[Error: ...]"
-// blob in their prompt. Users can still retry the failed step.
-const FAILED_PLACEHOLDER = '[此步驟暫時無回應]';
+// User-facing fallback when an AI step fails (CLI hiccup, 429, abort,
+// etc). The text is in-character — sounds like the AI itself is saying
+// "I'm having a bad moment, please retry" — instead of a raw error blob.
+// Same string is used both as the displayed message and as the entry
+// downstream steps see in their history.
+export function failureText(lang: Lang): string {
+  return lang === 'en'
+    ? "I'm not feeling great right now and don't know how to respond. Please give me a moment and hit Retry to try again."
+    : '我現在狀況不太好，不知道該怎麼回，暫時沒有回應。請你等等幫我按一下「重試」。';
+}
 
 async function runSequential(
   p: OrchestratorParams,
@@ -647,7 +658,7 @@ async function runSequential(
         `step ${step.label}/${step.provider} failed:`,
         (err as Error).message,
       );
-      text = FAILED_PLACEHOLDER;
+      text = failureText(p.lang);
     }
     history.push({ provider: step.provider, modeRole: step.label, text });
   }

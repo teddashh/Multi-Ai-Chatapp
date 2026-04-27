@@ -7,6 +7,7 @@ import {
   buildSharedHistoryPrefix,
   buildStepList,
   defaultRolesFor,
+  failureText,
   runMode,
   type StepResult,
 } from '../lib/orchestrator.js';
@@ -476,7 +477,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           if (ctrl.signal.aborted) break;
           const message = (err as Error).message;
           send({ type: 'error', provider: step.provider, message });
-          stepText = `[Error: ${message}]`;
+          stepText = failureText(user.lang);
           stepFailed = true;
         }
 
@@ -498,7 +499,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
         history.push({
           provider: step.provider,
           modeRole: step.label,
-          text: stepFailed ? '[此步驟暫時無回應]' : stepText,
+          text: stepText,
         });
       }
       sessionStmts.touch.run(sessionId);
