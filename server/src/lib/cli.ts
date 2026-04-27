@@ -5,7 +5,8 @@ const CLI_BINARY: Record<AIProvider, string> = {
   claude: process.env.CLI_CLAUDE || 'claude',
   chatgpt: process.env.CLI_CODEX || 'codex',
   gemini: process.env.CLI_GEMINI || 'gemini',
-  grok: process.env.CLI_GROK || 'grok',
+  // grok unused — uses direct xAI API instead
+  grok: 'unused',
 };
 
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '600000', 10);
@@ -53,6 +54,11 @@ export interface CLIRunResult {
 }
 
 export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
+  // Grok has no usable official CLI yet — use the xAI REST API instead.
+  if (opts.provider === 'grok') {
+    return runXAIChat(opts);
+  }
+
   const { provider, model, prompt, onChunk, signal } = opts;
   const bin = CLI_BINARY[provider];
   const args = buildArgs(provider, model);
@@ -122,4 +128,66 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
       child.stdin.end();
     }
   });
+}
+
+// xAI's Chat Completions API is OpenAI-compatible. We hit it directly because
+// xAI hasn't shipped an official Grok CLI yet.
+async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
+  const apiKey = process.env.XAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('XAI_API_KEY is not set in server/.env');
+  }
+
+  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      messages: [{ role: 'user', content: opts.prompt }],
+      stream: true,
+    }),
+    signal: opts.signal,
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`xAI API ${response.status}: ${text || response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let fullText = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let lineEnd: number;
+    while ((lineEnd = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, lineEnd).trim();
+      buffer = buffer.slice(lineEnd + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data) as {
+          choices?: Array<{ delta?: { content?: string } }>;
+        };
+        const delta = json.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          opts.onChunk?.(fullText);
+        }
+      } catch {
+        // ignore malformed SSE chunks
+      }
+    }
+  }
+
+  return { text: fullText.trim(), exitCode: 0 };
 }
