@@ -197,6 +197,25 @@ export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 }
 
+export async function signup(fields: {
+  email: string;
+  password: string;
+  nickname?: string;
+}): Promise<User> {
+  const res = await fetch('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify(fields),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `Sign up failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.user as User;
+}
+
 export async function forgotPassword(identifier: string): Promise<void> {
   const res = await fetch('/api/auth/forgot-password', {
     method: 'POST',
@@ -387,17 +406,16 @@ export async function createUser(
 
 export async function inviteUser(
   fields: {
-    username: string;
     email: string;
     tier: Tier;
     nickname?: string;
     real_name?: string;
   },
-): Promise<{ inviteUrl: string }> {
+): Promise<{ inviteUrl: string; username: string; emailSent: boolean }> {
   const data = (await adminFetch('/users/invite', {
     method: 'POST',
     body: JSON.stringify(fields),
-  })) as { inviteUrl: string };
+  })) as { inviteUrl: string; username: string; emailSent: boolean };
   return data;
 }
 
@@ -473,8 +491,17 @@ export async function streamChat(
   });
 
   if (!res.ok || !res.body) {
+    // Server returns a JSON error body — surface its `message` (lang-aware)
+    // or `error` field instead of the raw JSON blob.
     const text = await res.text().catch(() => '');
-    throw new Error(text || `Chat failed: ${res.status}`);
+    let msg = text || `Chat failed: ${res.status}`;
+    try {
+      const parsed = JSON.parse(text);
+      msg = parsed.message || parsed.error || msg;
+    } catch {
+      // not JSON; keep raw
+    }
+    throw new Error(msg);
   }
 
   const reader = res.body.getReader();

@@ -25,7 +25,27 @@ import type { Tier } from '../shared/types.js';
 
 export const adminRoute = new Hono<{ Variables: AppVariables }>();
 
-const VALID_TIERS: Tier[] = ['standard', 'pro', 'super', 'admin'];
+const VALID_TIERS: Tier[] = ['free', 'standard', 'pro', 'super', 'admin'];
+
+// Derive a sensible username from an email. `linda+test@gmail.com` → `linda`.
+// Falls back to the local part as-is if the heuristics strip too much.
+function deriveUsername(email: string): string {
+  const local = email.split('@')[0] ?? '';
+  // Drop +tags and runs of non-word chars, lowercase.
+  let candidate = local.split('+')[0].replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase();
+  if (!candidate) candidate = local.toLowerCase() || 'user';
+  return candidate.slice(0, 40);
+}
+
+// Find a free username starting with `base`, appending 2/3/... on conflicts.
+function uniqueUsername(base: string): string {
+  if (!userStmts.findByUsername.get(base)) return base;
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base}${i}`;
+    if (!userStmts.findByUsername.get(candidate)) return candidate;
+  }
+  return `${base}${randomBytes(2).toString('hex')}`;
+}
 const RESET_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days for invites
 
 adminRoute.use('*', requireAdmin);
@@ -77,70 +97,71 @@ adminRoute.get('/users', (c) => {
   return c.json({ users: enriched });
 });
 
-// Create + email an invite link. The user clicks the link to set their own
-// password — same mechanism as forgot-password but with a longer TTL since
-// they may not check email immediately.
+// Create + email an invite link. Admin only fills email + real_name + tier;
+// username is derived from the email (with a numeric suffix on conflict).
+// Returns the invite URL so admin can also share it manually.
 adminRoute.post('/users/invite', async (c) => {
   const me = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
     | {
-        username?: string;
         email?: string;
         tier?: Tier;
-        nickname?: string;
         real_name?: string;
+        nickname?: string;
       }
     | null;
-  if (!body?.username || !body?.email || !body?.tier) {
-    return c.json({ error: 'username, email, tier required' }, 400);
+  if (!body?.email || !body?.tier) {
+    return c.json({ error: 'email and tier required' }, 400);
   }
   if (!VALID_TIERS.includes(body.tier)) {
     return c.json({ error: 'invalid tier' }, 400);
   }
-  if (userStmts.findByUsername.get(body.username)) {
-    return c.json({ error: 'user already exists' }, 409);
+  const email = body.email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return c.json({ error: 'invalid email' }, 400);
+  }
+  const existing = userStmts.findByEmailOrUsername.get(email, email) as
+    | UserRow
+    | undefined;
+  if (existing) {
+    return c.json({ error: 'account already exists for this email' }, 409);
   }
 
+  const username = uniqueUsername(deriveUsername(email));
   // Stash a placeholder password — the user replaces it via the reset link.
   const placeholder = await hashPassword(randomBytes(24).toString('hex'));
-  userStmts.insert.run(body.username, placeholder, body.tier);
-  userStmts.updateProfile.run(
-    body.nickname ?? null,
-    body.email,
-    body.username,
-  );
+  userStmts.insert.run(username, placeholder, body.tier);
+  userStmts.updateProfile.run(body.nickname ?? null, email, username);
   if (body.real_name) {
-    userStmts.updateRealName.run(body.real_name, body.username);
+    userStmts.updateRealName.run(body.real_name, username);
   }
 
-  const created = userStmts.findByUsername.get(body.username) as UserRow;
+  const created = userStmts.findByUsername.get(username) as UserRow;
   const token = randomBytes(32).toString('hex');
   const expiresAt = Math.floor(Date.now() / 1000) + RESET_TOKEN_TTL_SECONDS;
   resetStmts.insert.run(token, created.id, expiresAt);
 
   const publicUrl = process.env.PUBLIC_URL || 'https://chat.ted-h.com';
   const inviteUrl = `${publicUrl}/?reset=${token}`;
+  let emailSent = false;
   try {
     await sendResetEmail({
-      to: body.email,
-      nickname: body.nickname || body.real_name || body.username,
+      to: email,
+      nickname: body.nickname || body.real_name || username,
       resetUrl: inviteUrl,
       reason: 'self_request',
     });
+    emailSent = true;
   } catch (err) {
     console.error('invite email failed', (err as Error).message);
   }
 
   audit(me.id, 'invite_user', {
     targetUserId: created.id,
-    metadata: {
-      username: body.username,
-      email: body.email,
-      tier: body.tier,
-    },
+    metadata: { username, email, tier: body.tier, emailSent },
   });
 
-  return c.json({ ok: true, inviteUrl });
+  return c.json({ ok: true, inviteUrl, username, emailSent });
 });
 
 // Legacy create — still supported in case admin wants to set a password

@@ -35,6 +35,15 @@ export interface Dict {
   loginForgot: string;
   loginSigningIn: string;
   loginSignIn: string;
+  loginNoAccount: string;
+  loginHaveAccount: string;
+  signupTitle: string;
+  signupEmail: string;
+  signupPassword: string;
+  signupNickname: string;
+  signupSubmit: string;
+  signupSubmitting: string;
+  signupTierNote: string;
   forgotTitle: string;
   forgotPrompt: string;
   forgotSent: string;
@@ -206,6 +215,16 @@ const ZH: Dict = {
   loginForgot: '忘記密碼？',
   loginSigningIn: '登入中...',
   loginSignIn: '登入',
+  loginNoAccount: '還沒有帳號？立即註冊',
+  loginHaveAccount: '已有帳號？回登入',
+  signupTitle: '註冊新帳號',
+  signupEmail: 'Email',
+  signupPassword: '密碼（至少 6 字元）',
+  signupNickname: '暱稱',
+  signupSubmit: '註冊',
+  signupSubmitting: '註冊中...',
+  signupTierNote:
+    '免費帳號每個模式每天限用 1 次，僅可使用最便宜的模型；如需升級請聯絡管理員。',
   forgotTitle: '忘記密碼',
   forgotPrompt: '輸入你的帳號或 email，我們會寄重設信過去。',
   forgotSent:
@@ -373,6 +392,16 @@ const EN: Dict = {
   loginForgot: 'Forgot password?',
   loginSigningIn: 'Signing in...',
   loginSignIn: 'Sign in',
+  loginNoAccount: "Don't have an account? Sign up",
+  loginHaveAccount: 'Have an account? Sign in',
+  signupTitle: 'Create account',
+  signupEmail: 'Email',
+  signupPassword: 'Password (min 6 chars)',
+  signupNickname: 'Nickname',
+  signupSubmit: 'Sign up',
+  signupSubmitting: 'Creating...',
+  signupTierNote:
+    'Free accounts get 1 use per mode per day on the cheapest models. Contact the admin to upgrade.',
   forgotTitle: 'Forgot password',
   forgotPrompt:
     'Enter your username or email and we will send a reset link.',

@@ -522,4 +522,11 @@ export const messageStmts = {
   updateContent: db.prepare<[string, number, number]>(
     `UPDATE chat_messages SET content = ?, timestamp = ? WHERE id = ?`,
   ),
+  // Count user messages a given user has sent in a given mode since some
+  // epoch second. Used for the free-tier daily quota.
+  countUserMsgsSince: db.prepare<[number, string, number]>(
+    `SELECT COUNT(*) AS c FROM chat_messages m
+     JOIN chat_sessions s ON s.id = m.session_id
+     WHERE s.user_id = ? AND s.mode = ? AND m.role = 'user' AND m.timestamp >= ?`,
+  ),
 };

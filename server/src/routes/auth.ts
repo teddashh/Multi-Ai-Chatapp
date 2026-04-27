@@ -149,6 +149,63 @@ authRoute.post('/logout', (c) => {
   return c.json({ ok: true });
 });
 
+// Public sign-up — anyone can create a free-tier account and start using
+// the cheapest models with a daily quota. Admin can later upgrade them.
+authRoute.post('/signup', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        email?: string;
+        password?: string;
+        nickname?: string;
+      }
+    | null;
+  if (!body?.email || !body?.password) {
+    return c.json({ error: 'email and password required' }, 400);
+  }
+  if (body.password.length < 6) {
+    return c.json({ error: 'password too short (min 6 chars)' }, 400);
+  }
+  const email = body.email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return c.json({ error: 'invalid email' }, 400);
+  }
+  // Username is just the email — login already accepts either.
+  // Check for collision against both username AND email columns.
+  const existing = userStmts.findByEmailOrUsername.get(email, email) as
+    | UserRow
+    | undefined;
+  if (existing) {
+    return c.json({ error: 'account already exists for this email' }, 409);
+  }
+  const hash = await hashPassword(body.password);
+  userStmts.insert.run(email, hash, 'free');
+  userStmts.updateProfile.run(body.nickname?.trim() || null, email, email);
+
+  const fresh = userStmts.findByUsername.get(email) as UserRow;
+  // Auto-login: drop a session cookie so the client lands signed in.
+  issueSession(c, {
+    id: fresh.id,
+    username: fresh.username,
+    tier: fresh.tier,
+    nickname: fresh.nickname,
+    email: fresh.email,
+    lang: fresh.lang,
+    avatarPath: fresh.avatar_path,
+  });
+  return c.json({
+    user: {
+      username: fresh.username,
+      nickname: fresh.nickname,
+      email: fresh.email,
+      tier: fresh.tier,
+      lang: fresh.lang,
+      hasAvatar: !!fresh.avatar_path,
+      theme: fresh.theme,
+      models: TIER_MODELS[fresh.tier],
+    },
+  });
+});
+
 authRoute.get('/me', requireAuth, (c) => {
   const session = c.get('user');
   const user = userStmts.findById.get(session.id) as UserRow | undefined;

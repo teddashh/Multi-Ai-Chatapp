@@ -9,7 +9,7 @@ import {
   type StepResult,
 } from '../lib/orchestrator.js';
 import { runCLI } from '../lib/cli.js';
-import { resolveModel } from '../shared/models.js';
+import { FREE_DAILY_QUOTA_PER_MODE, resolveModel } from '../shared/models.js';
 import {
   attachmentStmts,
   messageStmts,
@@ -81,6 +81,37 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const modelOverrides = body.modelOverrides;
   const attachmentIds = (body.attachmentIds || []).slice(0, MAX_FILES_PER_MESSAGE);
   const attachments = loadAttachments(attachmentIds, user.id);
+
+  // Free-tier daily quota: at most FREE_DAILY_QUOTA_PER_MODE user turns
+  // per mode per day. Counts user messages in any session of theirs in
+  // that mode since today's UTC midnight (server time).
+  if (user.tier === 'free') {
+    const now = new Date();
+    const utcMidnight = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate(),
+    );
+    const todayStart = Math.floor(utcMidnight / 1000);
+    const row = messageStmts.countUserMsgsSince.get(user.id, mode, todayStart) as
+      | { c: number }
+      | undefined;
+    const used = row?.c ?? 0;
+    if (used >= FREE_DAILY_QUOTA_PER_MODE) {
+      return c.json(
+        {
+          error: 'quota_exceeded',
+          mode,
+          used,
+          limit: FREE_DAILY_QUOTA_PER_MODE,
+          message: '此模式的每日免費額度已用完，請聯絡管理員升級會員等級。',
+          messageEn:
+            'You have used your free daily quota for this mode. Please contact the admin to upgrade your tier.',
+        },
+        429,
+      );
+    }
+  }
 
   // Resolve session: reuse if user owns it, else create a fresh one.
   let sessionId = body.sessionId ?? '';

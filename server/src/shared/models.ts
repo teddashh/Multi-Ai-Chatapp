@@ -8,6 +8,27 @@ export interface ModelChoices {
   options: string[];
 }
 
+// Free tier — single cheapest pick per provider, locked. Free accounts also
+// have a per-mode daily quota enforced separately.
+const FREE: Record<AIProvider, ModelChoices> = {
+  claude: {
+    default: 'claude-haiku-4-5',
+    options: ['claude-haiku-4-5'],
+  },
+  chatgpt: {
+    default: 'gpt-5.4-nano',
+    options: ['gpt-5.4-nano'],
+  },
+  gemini: {
+    default: 'gemini-3.1-flash-lite-preview',
+    options: ['gemini-3.1-flash-lite-preview'],
+  },
+  grok: {
+    default: 'grok-4-1-fast-non-reasoning',
+    options: ['grok-4-1-fast-non-reasoning'],
+  },
+};
+
 const STANDARD: Record<AIProvider, ModelChoices> = {
   claude: {
     default: 'claude-haiku-4-5',
@@ -79,11 +100,16 @@ const SUPER: Record<AIProvider, ModelChoices> = {
 // Admin tier === Super tier model-wise (admin is purely a permission flag,
 // not a separate model bracket).
 export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> = {
+  free: FREE,
   standard: STANDARD,
   pro: PRO,
   super: SUPER,
   admin: SUPER,
 };
+
+// Per-mode daily quota for free tier. Counts user messages started in
+// each mode within the current local day.
+export const FREE_DAILY_QUOTA_PER_MODE = 1;
 
 export function defaultModel(tier: Tier, provider: AIProvider): string {
   return TIER_MODELS[tier][provider].default;

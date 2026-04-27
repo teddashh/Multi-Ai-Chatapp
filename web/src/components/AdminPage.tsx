@@ -27,7 +27,7 @@ interface Props {
 
 type View = 'users' | 'audit' | 'stats' | 'user-detail' | 'session-viewer';
 
-const TIERS: Tier[] = ['standard', 'pro', 'super', 'admin'];
+const TIERS: Tier[] = ['free', 'standard', 'pro', 'super', 'admin'];
 
 function fmtTime(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleString();
@@ -185,32 +185,44 @@ function UsersList({
   const t = useT();
   const [showInvite, setShowInvite] = useState(false);
   const [inv, setInv] = useState({
-    username: '',
     email: '',
     real_name: '',
     nickname: '',
     tier: 'standard' as Tier,
   });
-  const [inviteResult, setInviteResult] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<{
+    inviteUrl: string;
+    username: string;
+    emailSent: boolean;
+  } | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     onError('');
     setInviteResult(null);
+    setCopied(false);
     try {
       const r = await inviteUser({
-        username: inv.username.trim(),
         email: inv.email.trim(),
         tier: inv.tier,
         nickname: inv.nickname.trim() || undefined,
         real_name: inv.real_name.trim() || undefined,
       });
-      setInviteResult(r.inviteUrl);
-      setInv({ username: '', email: '', real_name: '', nickname: '', tier: 'standard' });
+      setInviteResult(r);
+      setInv({ email: '', real_name: '', nickname: '', tier: 'standard' });
       onRefresh();
     } catch (err) {
       onError((err as Error).message);
     }
+  };
+
+  const handleCopyInvite = () => {
+    if (!inviteResult) return;
+    navigator.clipboard.writeText(inviteResult.inviteUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
@@ -234,16 +246,8 @@ function UsersList({
         >
           <div className="grid grid-cols-2 gap-2">
             <input
-              type="text"
-              placeholder="username (帳號)"
-              value={inv.username}
-              onChange={(e) => setInv((p) => ({ ...p, username: e.target.value }))}
-              required
-              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
-            />
-            <input
               type="email"
-              placeholder="email"
+              placeholder="email *"
               value={inv.email}
               onChange={(e) => setInv((p) => ({ ...p, email: e.target.value }))}
               required
@@ -251,14 +255,14 @@ function UsersList({
             />
             <input
               type="text"
-              placeholder="real name (真實姓名 — admin 可見)"
+              placeholder="真實姓名（admin 可見）"
               value={inv.real_name}
               onChange={(e) => setInv((p) => ({ ...p, real_name: e.target.value }))}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
             />
             <input
               type="text"
-              placeholder="nickname (暱稱 — 預設值)"
+              placeholder="暱稱（預設值，可空）"
               value={inv.nickname}
               onChange={(e) => setInv((p) => ({ ...p, nickname: e.target.value }))}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
@@ -274,18 +278,36 @@ function UsersList({
             </select>
             <button
               type="submit"
-              disabled={!inv.username.trim() || !inv.email.trim()}
-              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs font-medium"
+              disabled={!inv.email.trim()}
+              className="col-span-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs font-medium"
             >
-              寄送邀請信
+              邀請使用者
             </button>
           </div>
           <p className="text-[11px] text-gray-500">
-            系統會寄出設定密碼的連結到對方信箱（7 天有效）。
+            Username 會自動從 email 產生（衝突會加數字）。系統同時寄信給對方，並回傳一個你可以另外分享的連結（7 天有效）。
           </p>
           {inviteResult && (
-            <div className="text-[11px] text-emerald-400 break-all">
-              ✓ 邀請已建立，連結：<code>{inviteResult}</code>
+            <div className="bg-gray-800 border border-emerald-700/50 rounded p-2 space-y-1">
+              <div className="text-[11px] text-emerald-400">
+                ✓ 已建立帳號 <code className="bg-gray-900 px-1 rounded">{inviteResult.username}</code>
+                {inviteResult.emailSent ? '，邀請信已寄出。' : '。寄信失敗，請改用下方連結。'}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={inviteResult.inviteUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-[11px] font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyInvite}
+                  className="px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-[11px]"
+                >
+                  {copied ? '✓ 已複製' : '複製'}
+                </button>
+              </div>
             </div>
           )}
         </form>
