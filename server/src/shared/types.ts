@@ -45,7 +45,7 @@ export type SSEEvent =
   | { type: 'workflow'; status: string }
   | { type: 'role'; provider: AIProvider; role: string; label: string }
   | { type: 'chunk'; provider: AIProvider; text: string }
-  | { type: 'done'; provider: AIProvider; text: string }
+  | { type: 'done'; provider: AIProvider; text: string; messageId?: number }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }
   | { type: 'finish' };

@@ -2,7 +2,12 @@ import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
-import { runMode } from '../lib/orchestrator.js';
+import {
+  buildStepList,
+  defaultRolesFor,
+  runMode,
+  type StepResult,
+} from '../lib/orchestrator.js';
 import { runCLI } from '../lib/cli.js';
 import { resolveModel } from '../shared/models.js';
 import {
@@ -18,7 +23,6 @@ import {
   loadAttachments,
   relocateToSession,
   saveUpload,
-  type PreparedAttachment,
   MAX_FILE_BYTES,
   MAX_FILES_PER_MESSAGE,
 } from '../lib/uploads.js';
@@ -91,7 +95,8 @@ chatRoute.post('/send', requireAuth, async (c) => {
   }
   if (!sessionId) {
     sessionId = randomUUID();
-    sessionStmts.insert.run(sessionId, user.id, deriveTitle(text), mode);
+    const rolesJson = roles && mode !== 'free' ? JSON.stringify(roles) : null;
+    sessionStmts.insert.run(sessionId, user.id, deriveTitle(text), mode, rolesJson);
     isNew = true;
   } else {
     sessionStmts.touch.run(sessionId);
@@ -154,7 +159,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         if (role) delete pendingRoles[event.provider];
         const ts = Math.floor(Date.now() / 1000);
         try {
-          messageStmts.insert.run(
+          const ins = messageStmts.insert.run(
             sessionId,
             'ai',
             event.provider,
@@ -162,6 +167,10 @@ chatRoute.post('/send', requireAuth, async (c) => {
             event.text,
             ts,
           );
+          // Pass the persisted DB row id back to the client so it can use a
+          // stable id on retries without needing a session reload.
+          send({ ...event, messageId: Number(ins.lastInsertRowid) });
+          return;
         } catch (err) {
           console.error('failed to persist ai message', err);
         }
@@ -192,9 +201,10 @@ chatRoute.post('/send', requireAuth, async (c) => {
   });
 });
 
-// Re-run a single AI message. V1 supports Free mode only (each AI is
-// independent there). For sequential modes the response is part of a chain so
-// we'd have to also re-run downstream — out of scope for this iteration.
+// Re-run an AI message. Free mode: in-place retry of one cell. Sequential
+// modes (debate/consult/coding/roundtable): wipe everything from this step
+// onward and replay the chain — useful when a CLI hiccup left the chain
+// stuck mid-flight.
 chatRoute.post('/regenerate', requireAuth, async (c) => {
   const user = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
@@ -223,16 +233,6 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
     return c.json({ error: 'session not found' }, 404);
   }
 
-  if (session.mode !== 'free') {
-    return c.json(
-      {
-        error:
-          '只有自由模式支援單獨重新作答，序列模式的回覆是接力的，得整段重跑',
-      },
-      400,
-    );
-  }
-
   const userMsg = messageStmts.precedingUser.get(msg.session_id, msgId) as
     | MessageRow
     | undefined;
@@ -240,21 +240,91 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
     return c.json({ error: 'preceding user message not found' }, 404);
   }
 
-  // Load attachments tied to that user message.
   const rawAtts = attachmentStmts.listForMessage.all(userMsg.id) as Array<
     Pick<AttachmentRow, 'id'>
   >;
-  const attachments: PreparedAttachment[] = loadAttachments(
+  const attachments = loadAttachments(
     rawAtts.map((a) => a.id),
     user.id,
   );
+  const sessionId = msg.session_id;
+  const modelOverrides = body.modelOverrides;
+  const modeStr = session.mode as ChatMode;
 
-  const provider = msg.provider as AIProvider;
-  const model = resolveModel(user.tier, provider, body.modelOverrides?.[provider]);
-  const prompt =
-    attachments.length > 0
-      ? buildAttachmentPrefix(attachments) + userMsg.content
-      : userMsg.content;
+  // === Free mode: just rewrite this one cell in place. ===
+  if (modeStr === 'free') {
+    const provider = msg.provider as AIProvider;
+    const model = resolveModel(user.tier, provider, modelOverrides?.[provider]);
+    const prompt =
+      attachments.length > 0
+        ? buildAttachmentPrefix(attachments) + userMsg.content
+        : userMsg.content;
+
+    return streamSSE(c, async (stream) => {
+      const ctrl = new AbortController();
+      stream.onAbort(() => ctrl.abort());
+      const send = (event: SSEEvent) =>
+        stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
+
+      try {
+        const result = await runCLI({
+          provider,
+          model,
+          prompt,
+          attachments,
+          signal: ctrl.signal,
+          onChunk: (text) => {
+            void send({ type: 'chunk', provider, text });
+          },
+        });
+        messageStmts.updateContent.run(
+          result.text,
+          Math.floor(Date.now() / 1000),
+          msgId,
+        );
+        sessionStmts.touch.run(sessionId);
+        send({ type: 'done', provider, text: result.text, messageId: msgId });
+        send({ type: 'finish' });
+      } catch (err) {
+        send({
+          type: 'error',
+          provider,
+          message: (err as Error).message || 'regenerate failed',
+        });
+        send({ type: 'finish' });
+      }
+    });
+  }
+
+  // === Sequential mode: replay the chain from this step onward. ===
+  // Recover roles: prefer the JSON stored at session-create time, fall back
+  // to mode defaults (legacy sessions created before the roles_json column).
+  let roles: ModeRoles | null = null;
+  if (session.roles_json) {
+    try {
+      roles = JSON.parse(session.roles_json) as ModeRoles;
+    } catch {
+      roles = null;
+    }
+  }
+  if (!roles) roles = defaultRolesFor(modeStr);
+  if (!roles) {
+    return c.json({ error: `unsupported mode ${modeStr}` }, 400);
+  }
+  const steps = buildStepList(modeStr, roles);
+  if (steps.length === 0) {
+    return c.json({ error: 'no steps for mode' }, 400);
+  }
+
+  // The chain is the AI messages produced *for this user turn*, in order.
+  const allAi = messageStmts.aiAfterUser.all(sessionId, userMsg.id) as MessageRow[];
+  const retryIdx = allAi.findIndex((m) => m.id === msgId);
+  if (retryIdx < 0) {
+    return c.json({ error: 'cannot locate retry target in chain' }, 404);
+  }
+  if (retryIdx >= steps.length) {
+    return c.json({ error: 'retry index past end of step list' }, 400);
+  }
 
   return streamSSE(c, async (stream) => {
     const ctrl = new AbortController();
@@ -263,29 +333,102 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
       stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
 
     try {
-      const result = await runCLI({
-        provider,
-        model,
-        prompt,
-        attachments,
-        signal: ctrl.signal,
-        onChunk: (text) => {
-          void send({ type: 'chunk', provider, text });
-        },
-      });
-      messageStmts.updateContent.run(
-        result.text,
-        Math.floor(Date.now() / 1000),
-        msgId,
-      );
-      sessionStmts.touch.run(msg.session_id);
-      send({ type: 'done', provider, text: result.text });
+      // History = everything BEFORE the retry point; trust what's stored.
+      const history: StepResult[] = allAi
+        .slice(0, retryIdx)
+        .map((m, i) => ({
+          provider: m.provider as AIProvider,
+          modeRole: m.mode_role ?? steps[i].label,
+          text: m.content,
+        }));
+
+      // Wipe the retry message and everything after it — the replay will
+      // re-insert each step with fresh content.
+      messageStmts.deleteAfter.run(sessionId, msgId);
+
+      for (let i = retryIdx; i < steps.length; i++) {
+        const step = steps[i];
+        send({ type: 'workflow', status: step.workflowStatus });
+        send({
+          type: 'role',
+          provider: step.provider,
+          role: step.role,
+          label: step.label,
+        });
+        const prompt = step.buildPrompt(userMsg.content, history);
+        const finalPrompt =
+          attachments.length > 0
+            ? buildAttachmentPrefix(attachments) + prompt
+            : prompt;
+        const model = resolveModel(
+          user.tier,
+          step.provider,
+          modelOverrides?.[step.provider],
+        );
+
+        let stepText = '';
+        try {
+          const result = await runCLI({
+            provider: step.provider,
+            model,
+            prompt: finalPrompt,
+            attachments,
+            signal: ctrl.signal,
+            onChunk: (text) => {
+              void send({ type: 'chunk', provider: step.provider, text });
+            },
+          });
+          stepText = result.text;
+        } catch (err) {
+          const message = (err as Error).message;
+          send({ type: 'error', provider: step.provider, message });
+          stepText = `[Error: ${message}]`;
+          // Persist the failure so the retry button has a target next time.
+          const failIns = messageStmts.insert.run(
+            sessionId,
+            'ai',
+            step.provider,
+            step.label,
+            stepText,
+            Math.floor(Date.now() / 1000),
+          );
+          send({
+            type: 'done',
+            provider: step.provider,
+            text: stepText,
+            messageId: Number(failIns.lastInsertRowid),
+          });
+          throw err;
+        }
+
+        const okIns = messageStmts.insert.run(
+          sessionId,
+          'ai',
+          step.provider,
+          step.label,
+          stepText,
+          Math.floor(Date.now() / 1000),
+        );
+        send({
+          type: 'done',
+          provider: step.provider,
+          text: stepText,
+          messageId: Number(okIns.lastInsertRowid),
+        });
+        history.push({
+          provider: step.provider,
+          modeRole: step.label,
+          text: stepText,
+        });
+      }
+      sessionStmts.touch.run(sessionId);
+      send({ type: 'workflow', status: '' });
       send({ type: 'finish' });
     } catch (err) {
+      send({ type: 'workflow', status: '' });
       send({
         type: 'error',
-        provider,
-        message: (err as Error).message || 'regenerate failed',
+        message: (err as Error).message || 'resume failed',
       });
       send({ type: 'finish' });
     }

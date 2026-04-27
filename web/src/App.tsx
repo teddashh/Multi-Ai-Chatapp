@@ -186,6 +186,10 @@ export default function App() {
         break;
       case 'done':
         setMessages((prev) => {
+          // Prefer the persisted DB id when the server sends one — that lets
+          // retry buttons work without needing a session reload first.
+          const stableId =
+            ev.messageId !== undefined ? String(ev.messageId) : null;
           const streaming = prev.find(
             (m) =>
               m.provider === ev.provider &&
@@ -197,7 +201,7 @@ export default function App() {
               m.id === streaming.id
                 ? {
                     ...m,
-                    id: m.id.replace('-streaming', ''),
+                    id: stableId ?? m.id.replace('-streaming', ''),
                     content: ev.text,
                   }
                 : m,
@@ -208,7 +212,7 @@ export default function App() {
           return [
             ...prev,
             {
-              id: `${ev.provider}-${Date.now()}`,
+              id: stableId ?? `${ev.provider}-${Date.now()}`,
               role: 'ai',
               provider: ev.provider,
               modeRole,
@@ -301,40 +305,64 @@ export default function App() {
 
   const handleRegenerate = useCallback(
     async (messageId: string) => {
-      if (regeneratingId) return; // one at a time
+      if (regeneratingId || isProcessing) return;
+      const isSequential = mode !== 'free';
+
+      // Sequential modes replay the whole tail. Drop the retry target plus
+      // anything after it from local state — the streaming handler will
+      // re-add them as new messages just like a fresh chat turn.
+      if (isSequential) {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === messageId);
+          return idx >= 0 ? prev.slice(0, idx) : prev;
+        });
+      }
+
       setRegeneratingId(messageId);
+      if (isSequential) setIsProcessing(true);
       const ctrl = new AbortController();
+      if (isSequential) abortRef.current = ctrl;
       try {
         await streamRegenerate(
           { messageId, modelOverrides },
-          (ev) => {
-            if (ev.type === 'chunk' || ev.type === 'done') {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === messageId ? { ...m, content: ev.text } : m,
-                ),
-              );
-            } else if (ev.type === 'error') {
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `error-${Date.now()}`,
-                  role: 'ai',
-                  content: `[Regenerate Error] ${ev.message}`,
-                  timestamp: Date.now(),
-                },
-              ]);
-            }
-          },
+          isSequential
+            ? handleEvent // reuse streamChat handler — renders the whole tail
+            : (ev) => {
+                // Free mode: in-place rewrite of one cell.
+                if (ev.type === 'chunk' || ev.type === 'done') {
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === messageId ? { ...m, content: ev.text } : m,
+                    ),
+                  );
+                } else if (ev.type === 'error') {
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: `error-${Date.now()}`,
+                      role: 'ai',
+                      content: `[Regenerate Error] ${ev.message}`,
+                      timestamp: Date.now(),
+                    },
+                  ]);
+                }
+              },
           ctrl.signal,
         );
       } catch (err) {
-        alert(`重新作答失敗：${(err as Error).message}`);
+        if ((err as Error).name !== 'AbortError') {
+          alert(`重新作答失敗：${(err as Error).message}`);
+        }
       } finally {
         setRegeneratingId(null);
+        if (isSequential) {
+          setIsProcessing(false);
+          setWorkflowStatus('');
+          if (abortRef.current === ctrl) abortRef.current = null;
+        }
       }
     },
-    [regeneratingId, modelOverrides],
+    [regeneratingId, isProcessing, mode, modelOverrides, handleEvent],
   );
 
   if (resetToken) {

@@ -81,6 +81,7 @@ addColumnIfMissing('users', 'nickname', 'TEXT');
 addColumnIfMissing('users', 'email', 'TEXT');
 addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('chat_sessions', 'roles_json', 'TEXT');
 
 // Tier rename migration (test/standard/super → standard/pro/super).
 // Idempotent: gated on PRAGMA user_version to run exactly once.
@@ -226,6 +227,7 @@ export interface SessionRow {
   mode: string;
   created_at: number;
   updated_at: number;
+  roles_json: string | null;
 }
 
 export interface MessageRow {
@@ -239,8 +241,8 @@ export interface MessageRow {
 }
 
 export const sessionStmts = {
-  insert: db.prepare<[string, number, string, string]>(
-    `INSERT INTO chat_sessions (id, user_id, title, mode) VALUES (?, ?, ?, ?)`,
+  insert: db.prepare<[string, number, string, string, string | null]>(
+    `INSERT INTO chat_sessions (id, user_id, title, mode, roles_json) VALUES (?, ?, ?, ?, ?)`,
   ),
   listForUser: db.prepare<[number]>(
     `SELECT s.id, s.title, s.mode, s.created_at, s.updated_at,
@@ -279,6 +281,18 @@ export const messageStmts = {
     `SELECT * FROM chat_messages
      WHERE session_id = ? AND id < ? AND role = 'user'
      ORDER BY id DESC LIMIT 1`,
+  ),
+  // All AI messages in a session that came AFTER a given user message id,
+  // ordered chronologically. Used to map the chain of replies for a turn.
+  aiAfterUser: db.prepare<[string, number]>(
+    `SELECT * FROM chat_messages
+     WHERE session_id = ? AND id > ? AND role = 'ai'
+     ORDER BY id`,
+  ),
+  // Drop everything after a given message id in a session — used by resume to
+  // wipe stale steps before re-running the tail.
+  deleteAfter: db.prepare<[string, number]>(
+    `DELETE FROM chat_messages WHERE session_id = ? AND id >= ?`,
   ),
   updateContent: db.prepare<[string, number, number]>(
     `UPDATE chat_messages SET content = ?, timestamp = ? WHERE id = ?`,

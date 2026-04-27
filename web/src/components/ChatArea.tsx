@@ -41,7 +41,16 @@ function isLong(text: string): boolean {
 }
 
 export default function ChatArea({ messages, mode, onRegenerate, regeneratingId }: Props) {
-  const canRegenerate = mode === 'free';
+  // Free mode rewrites a single cell. Sequential modes replay the whole tail
+  // from the chosen step, which is how we recover when one AI in the chain
+  // fails (Grok 429, Gemini quota, etc).
+  const canRegenerate = true;
+  const isSequential = mode !== 'free';
+  const retryLabel = isSequential ? '🔄 重試並繼續' : '🔄 重答';
+  const retryBusyLabel = isSequential ? '🔄 重跑中...' : '🔄 重新作答中...';
+  const retryTitle = isSequential
+    ? '從這一步重跑，後面的步驟會用新結果接著跑'
+    : '重新讓這個 AI 回答';
   const endRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const modeInfo = CHAT_MODES[mode];
@@ -176,16 +185,20 @@ export default function ChatArea({ messages, mode, onRegenerate, regeneratingId 
                       {open ? '▲ 收起' : '▼ 展開'}
                     </button>
                   )}
-                  {canRegenerate && onRegenerate && msg.provider && !msg.id.endsWith('-streaming') && (
-                    <button
-                      onClick={() => onRegenerate(msg.id)}
-                      disabled={regeneratingId === msg.id}
-                      className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="重新讓這個 AI 回答"
-                    >
-                      {regeneratingId === msg.id ? '🔄 重新作答中...' : '🔄 重答'}
-                    </button>
-                  )}
+                  {canRegenerate &&
+                    onRegenerate &&
+                    msg.provider &&
+                    !msg.id.endsWith('-streaming') &&
+                    /^\d+$/.test(msg.id) && (
+                      <button
+                        onClick={() => onRegenerate(msg.id)}
+                        disabled={regeneratingId !== null}
+                        className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={retryTitle}
+                      >
+                        {regeneratingId === msg.id ? retryBusyLabel : retryLabel}
+                      </button>
+                    )}
                 </div>
               </div>
             </div>
