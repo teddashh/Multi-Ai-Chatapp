@@ -23,6 +23,7 @@ import {
   streamRegenerate,
   updateProfile,
   type SessionSummary,
+  type ThemeId,
   type User,
 } from './api';
 import Login from './components/Login';
@@ -55,6 +56,25 @@ function loadInitialLang(): Lang {
   return 'zh-TW';
 }
 
+const VALID_THEMES: ThemeId[] = [
+  'winter',
+  'summer',
+  'claude',
+  'gemini',
+  'grok',
+  'chatgpt',
+];
+
+function loadInitialTheme(): ThemeId {
+  try {
+    const v = localStorage.getItem('theme');
+    if (v && (VALID_THEMES as string[]).includes(v)) return v as ThemeId;
+  } catch {
+    // ignore
+  }
+  return 'winter';
+}
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -72,6 +92,21 @@ export default function App() {
       // ignore
     }
   }, []);
+
+  const [theme, setThemeState] = useState<ThemeId>(loadInitialTheme);
+  const setTheme = useCallback((th: ThemeId) => {
+    setThemeState(th);
+    try {
+      localStorage.setItem('theme', th);
+    } catch {
+      // ignore
+    }
+  }, []);
+  // Push the active theme onto <html> so the CSS attribute selectors apply
+  // to the entire page (including the body::before background painter).
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
   // When switching language while logged in, persist server-side too.
   const handleLangToggle = useCallback(
     (l: Lang) => {
@@ -115,8 +150,9 @@ export default function App() {
       setUser(u);
       setAuthChecked(true);
       if (u && u.lang !== lang) setLang(u.lang);
+      if (u && u.theme !== theme) setTheme(u.theme);
     });
-    // Intentionally one-shot; don't refetch on lang flips.
+    // Intentionally one-shot; don't refetch on lang/theme flips.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -181,9 +217,10 @@ export default function App() {
     (updated: User) => {
       setUser(updated);
       setLang(updated.lang);
+      setTheme(updated.theme);
       setAvatarBust(Date.now());
     },
-    [setLang],
+    [setLang, setTheme],
   );
 
   const handleModelSelect = useCallback((provider: AIProvider, model: string) => {

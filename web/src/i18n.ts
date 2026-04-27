@@ -160,10 +160,17 @@ export interface Dict {
   profileSaveFailed: (msg: string) => string;
   profileAvatarTooLarge: (mb: number) => string;
   profileAvatarUnsupported: string;
+  profileTheme: string;
+  themeWinter: string;
+  themeSummer: string;
+  themeClaude: string;
+  themeGemini: string;
+  themeGrok: string;
+  themeChatGPT: string;
 }
 
 const ZH: Dict = {
-  appName: 'Multi-AI Chatapp',
+  appName: 'AI 戰情中心',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -184,7 +191,7 @@ const ZH: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'Multi-AI Chatapp',
+  loginTitle: 'AI 戰情中心',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',
@@ -310,10 +317,17 @@ const ZH: Dict = {
   profileSaveFailed: (msg) => `儲存失敗：${msg}`,
   profileAvatarTooLarge: (mb) => `頭像太大（最大 ${mb}MB）`,
   profileAvatarUnsupported: '不支援的圖片格式',
+  profileTheme: '配色主題',
+  themeWinter: '冬季（預設）',
+  themeSummer: '夏季',
+  themeClaude: 'Team Claude',
+  themeGemini: 'Team Gemini',
+  themeGrok: 'Team Grok',
+  themeChatGPT: 'Team ChatGPT',
 };
 
 const EN: Dict = {
-  appName: 'Multi-AI Chatapp',
+  appName: 'AI War Room',
   loading: 'Loading...',
   cancel: 'Cancel',
   save: 'Save',
@@ -334,7 +348,7 @@ const EN: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'Multi-AI Chatapp',
+  loginTitle: 'AI War Room',
   loginUsernameLabel: 'Username or Email',
   loginPasswordLabel: 'Password',
   loginForgot: 'Forgot password?',
@@ -464,6 +478,13 @@ const EN: Dict = {
   profileSaveFailed: (msg) => `Save failed: ${msg}`,
   profileAvatarTooLarge: (mb) => `Avatar too large (max ${mb}MB)`,
   profileAvatarUnsupported: 'Unsupported image format',
+  profileTheme: 'Color theme',
+  themeWinter: 'Winter (default)',
+  themeSummer: 'Summer',
+  themeClaude: 'Team Claude',
+  themeGemini: 'Team Gemini',
+  themeGrok: 'Team Grok',
+  themeChatGPT: 'Team ChatGPT',
 };
 
 export const DICTS: Record<Lang, Dict> = { 'zh-TW': ZH, en: EN };

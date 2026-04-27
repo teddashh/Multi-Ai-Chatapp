@@ -83,6 +83,7 @@ addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'lang', "TEXT NOT NULL DEFAULT 'zh-TW'");
 addColumnIfMissing('users', 'avatar_path', 'TEXT');
+addColumnIfMissing('users', 'theme', "TEXT NOT NULL DEFAULT 'winter'");
 addColumnIfMissing('chat_sessions', 'roles_json', 'TEXT');
 
 // Tier rename migration (test/standard/super → standard/pro/super).
@@ -132,6 +133,7 @@ export interface UserRow {
   locked_until: number;
   lang: 'zh-TW' | 'en';
   avatar_path: string | null;
+  theme: string;
 }
 
 export interface PasswordResetRow {
@@ -181,6 +183,9 @@ export const userStmts = {
   ),
   updateAvatar: db.prepare<[string | null, number]>(
     'UPDATE users SET avatar_path = ? WHERE id = ?',
+  ),
+  updateTheme: db.prepare<[string, number]>(
+    'UPDATE users SET theme = ? WHERE id = ?',
   ),
   updateNicknameEmail: db.prepare<[string | null, string | null, number]>(
     'UPDATE users SET nickname = ?, email = ? WHERE id = ?',

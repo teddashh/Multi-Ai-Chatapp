@@ -12,6 +12,14 @@ export interface ModelChoices {
   options: string[];
 }
 
+export type ThemeId =
+  | 'winter'
+  | 'summer'
+  | 'claude'
+  | 'gemini'
+  | 'grok'
+  | 'chatgpt';
+
 export interface User {
   username: string;
   nickname: string | null;
@@ -19,6 +27,7 @@ export interface User {
   tier: Tier;
   lang: 'zh-TW' | 'en';
   hasAvatar: boolean;
+  theme: ThemeId;
   models: Record<AIProvider, ModelChoices>;
 }
 
@@ -27,6 +36,7 @@ export async function updateProfile(patch: {
   nickname?: string | null;
   email?: string | null;
   password?: string | null;
+  theme?: ThemeId;
 }): Promise<User> {
   const res = await fetch('/api/auth/profile', {
     method: 'PATCH',

@@ -7,3 +7,209 @@ body,
 #root {
   height: 100%;
 }
+
+/* ================================================================
+   Theme system
+   ================================================================
+   Each theme sets:
+     --bg-image:      file under /themes/, painted full-bleed at low opacity
+     --bg-image-op:   the opacity value
+     --accent / --accent-hover: accent button bg (overrides .bg-blue-600)
+
+   Winter is the default — defined on :root so theme="winter" or no
+   data-theme behaves the same.
+
+   The four "Team X" themes keep the existing dark surfaces (so we don't
+   have to touch every component) and only swap accent + background image.
+   Summer flips to a light palette via attribute selectors.
+   ================================================================ */
+
+:root,
+[data-theme='winter'] {
+  --bg-image: url('/themes/winter.png');
+  --bg-image-op: 0.18;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+}
+
+[data-theme='claude'] {
+  --bg-image: url('/themes/claude.png');
+  --bg-image-op: 0.14;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+}
+
+[data-theme='gemini'] {
+  --bg-image: url('/themes/gemini.png');
+  --bg-image-op: 0.14;
+  --accent: #4285f4;
+  --accent-hover: #1a73e8;
+}
+
+[data-theme='grok'] {
+  --bg-image: url('/themes/grok.png');
+  --bg-image-op: 0.14;
+  --accent: #e11d48;
+  --accent-hover: #be123c;
+}
+
+[data-theme='chatgpt'] {
+  --bg-image: url('/themes/chatgpt.png');
+  --bg-image-op: 0.14;
+  --accent: #10a37f;
+  --accent-hover: #0e8a6b;
+}
+
+[data-theme='summer'] {
+  --bg-image: url('/themes/summer.png');
+  --bg-image-op: 0.22;
+  --accent: #ea580c;
+  --accent-hover: #c2410c;
+}
+
+/* Background image painter — fixed full-bleed, behind everything,
+   `cover` to keep aspect ratio so it never distorts. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: var(--bg-image);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: var(--bg-image-op, 0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+/* Make dark surfaces translucent so the background image bleeds through. */
+[data-theme='winter'] .bg-gray-900,
+[data-theme='claude'] .bg-gray-900,
+[data-theme='gemini'] .bg-gray-900,
+[data-theme='grok'] .bg-gray-900,
+[data-theme='chatgpt'] .bg-gray-900 {
+  background-color: rgba(17, 24, 39, 0.78);
+}
+[data-theme='winter'] .bg-gray-950,
+[data-theme='claude'] .bg-gray-950,
+[data-theme='gemini'] .bg-gray-950,
+[data-theme='grok'] .bg-gray-950,
+[data-theme='chatgpt'] .bg-gray-950 {
+  background-color: rgba(3, 7, 18, 0.78);
+}
+[data-theme='winter'] .bg-gray-800,
+[data-theme='claude'] .bg-gray-800,
+[data-theme='gemini'] .bg-gray-800,
+[data-theme='grok'] .bg-gray-800,
+[data-theme='chatgpt'] .bg-gray-800 {
+  background-color: rgba(31, 41, 55, 0.78);
+}
+
+/* Accent overrides — the four team themes + Winter swap blue-600 to their
+   accent colour. This catches the primary "Send" / "Sign in" / active mode
+   buttons without us having to refactor every component. */
+[data-theme='claude'] .bg-blue-600,
+[data-theme='gemini'] .bg-blue-600,
+[data-theme='grok'] .bg-blue-600,
+[data-theme='chatgpt'] .bg-blue-600,
+[data-theme='summer'] .bg-blue-600 {
+  background-color: var(--accent);
+}
+[data-theme='claude'] .hover\:bg-blue-700:hover,
+[data-theme='gemini'] .hover\:bg-blue-700:hover,
+[data-theme='grok'] .hover\:bg-blue-700:hover,
+[data-theme='chatgpt'] .hover\:bg-blue-700:hover,
+[data-theme='summer'] .hover\:bg-blue-700:hover {
+  background-color: var(--accent-hover);
+}
+[data-theme='claude'] .text-blue-300,
+[data-theme='gemini'] .text-blue-300,
+[data-theme='grok'] .text-blue-300,
+[data-theme='chatgpt'] .text-blue-300,
+[data-theme='summer'] .text-blue-300 {
+  color: var(--accent);
+}
+[data-theme='claude'] .focus\:border-blue-500:focus,
+[data-theme='gemini'] .focus\:border-blue-500:focus,
+[data-theme='grok'] .focus\:border-blue-500:focus,
+[data-theme='chatgpt'] .focus\:border-blue-500:focus,
+[data-theme='summer'] .focus\:border-blue-500:focus {
+  border-color: var(--accent);
+}
+[data-theme='claude'] .bg-blue-600\/20,
+[data-theme='gemini'] .bg-blue-600\/20,
+[data-theme='grok'] .bg-blue-600\/20,
+[data-theme='chatgpt'] .bg-blue-600\/20,
+[data-theme='summer'] .bg-blue-600\/20 {
+  background-color: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+[data-theme='claude'] .border-blue-700\/40,
+[data-theme='gemini'] .border-blue-700\/40,
+[data-theme='grok'] .border-blue-700\/40,
+[data-theme='chatgpt'] .border-blue-700\/40,
+[data-theme='summer'] .border-blue-700\/40 {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* ================================================================
+   Summer = light theme
+   ================================================================
+   Flips dark Tailwind surfaces to soft pastels and bumps text contrast.
+   Kept narrow on purpose — only the Tailwind classes the app actually
+   uses get overridden. */
+[data-theme='summer'] body {
+  color: #1f2937;
+}
+[data-theme='summer'] .bg-gray-900 {
+  background-color: rgba(255, 255, 255, 0.86);
+}
+[data-theme='summer'] .bg-gray-950 {
+  background-color: rgba(255, 247, 237, 0.88);
+}
+[data-theme='summer'] .bg-gray-800 {
+  background-color: rgba(255, 255, 255, 0.88);
+}
+[data-theme='summer'] .bg-gray-700 {
+  background-color: rgba(229, 231, 235, 0.9);
+}
+[data-theme='summer'] .border-gray-700,
+[data-theme='summer'] .border-gray-800 {
+  border-color: rgba(229, 231, 235, 0.95);
+}
+[data-theme='summer'] .text-white {
+  color: #1f2937;
+}
+[data-theme='summer'] .text-gray-200,
+[data-theme='summer'] .text-gray-300 {
+  color: #374151;
+}
+[data-theme='summer'] .text-gray-400 {
+  color: #4b5563;
+}
+[data-theme='summer'] .text-gray-500 {
+  color: #6b7280;
+}
+[data-theme='summer'] .text-gray-600 {
+  color: #9ca3af;
+}
+[data-theme='summer'] input,
+[data-theme='summer'] textarea,
+[data-theme='summer'] select {
+  color: #111827;
+}
+[data-theme='summer'] input::placeholder,
+[data-theme='summer'] textarea::placeholder {
+  color: #9ca3af;
+}
+[data-theme='summer'] .hover\:bg-gray-700:hover,
+[data-theme='summer'] .hover\:bg-gray-800:hover {
+  background-color: rgba(229, 231, 235, 0.9);
+}
+[data-theme='summer'] .hover\:text-white:hover {
+  color: #111827;
+}

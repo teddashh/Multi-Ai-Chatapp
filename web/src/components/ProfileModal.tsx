@@ -4,10 +4,11 @@ import {
   deleteAvatar,
   updateProfile,
   uploadAvatar,
+  type ThemeId,
   type User,
 } from '../api';
 import { useI18n } from '../i18n';
-import type { Lang } from '../i18n';
+import type { Dict, Lang } from '../i18n';
 
 interface Props {
   isOpen: boolean;
@@ -19,17 +20,25 @@ interface Props {
 const MAX_AVATAR_MB = 4;
 const SUPPORTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
 
+const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
+  { id: 'winter', swatch: '#1e3a8a', nameKey: 'themeWinter' },
+  { id: 'summer', swatch: '#fb923c', nameKey: 'themeSummer' },
+  { id: 'claude', swatch: '#d97706', nameKey: 'themeClaude' },
+  { id: 'gemini', swatch: '#4285f4', nameKey: 'themeGemini' },
+  { id: 'grok', swatch: '#e11d48', nameKey: 'themeGrok' },
+  { id: 'chatgpt', swatch: '#10a37f', nameKey: 'themeChatGPT' },
+];
+
 export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props) {
   const { t, setLang } = useI18n();
   const [nickname, setNickname] = useState(user.nickname || '');
   const [email, setEmail] = useState(user.email || '');
   const [password, setPassword] = useState('');
   const [lang, setLocalLang] = useState<Lang>(user.lang);
+  const [theme, setTheme] = useState<ThemeId>(user.theme);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  // Bumps when avatar is replaced — appended as a query string so the browser
-  // refetches instead of serving the cached image.
   const [avatarBust, setAvatarBust] = useState(Date.now());
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -39,6 +48,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setEmail(user.email || '');
       setPassword('');
       setLocalLang(user.lang);
+      setTheme(user.theme);
       setError('');
       setSuccess('');
       setAvatarBust(Date.now());
@@ -62,6 +72,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
         email: email.trim() || null,
         password: password || null,
         lang,
+        theme,
       });
       onUpdate(updated);
       setLang(lang);
@@ -235,7 +246,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
-            <span>🇹🇼</span>
             <span>{t.langZh}</span>
           </button>
           <button
@@ -247,9 +257,36 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
             }`}
           >
-            <span>🇺🇸</span>
             <span>{t.langEn}</span>
           </button>
+        </div>
+
+        {/* Theme */}
+        <label className="block text-xs text-gray-300 mb-1">
+          {t.profileTheme}
+        </label>
+        <div className="grid grid-cols-2 gap-2 mb-4">
+          {THEMES.map((th) => {
+            const active = th.id === theme;
+            return (
+              <button
+                key={th.id}
+                type="button"
+                onClick={() => setTheme(th.id)}
+                className={`py-2 px-2 rounded text-xs flex items-center gap-2 transition-colors ${
+                  active
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                <span
+                  className="w-3 h-3 rounded-full flex-none border border-white/30"
+                  style={{ backgroundColor: th.swatch }}
+                />
+                <span className="truncate">{t[th.nameKey] as string}</span>
+              </button>
+            );
+          })}
         </div>
 
         {error && <p className="text-xs text-red-400 mb-3">{error}</p>}

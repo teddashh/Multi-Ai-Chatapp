@@ -24,6 +24,15 @@ export const authRoute = new Hono<{ Variables: AppVariables }>();
 const FAILED_ATTEMPT_LIMIT = 3;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 
+const VALID_THEMES = new Set([
+  'winter',
+  'summer',
+  'claude',
+  'gemini',
+  'grok',
+  'chatgpt',
+]);
+
 function buildUserDTO(user: UserRow) {
   return {
     username: user.username,
@@ -32,6 +41,7 @@ function buildUserDTO(user: UserRow) {
     tier: user.tier,
     lang: user.lang,
     hasAvatar: !!user.avatar_path,
+    theme: user.theme,
     models: TIER_MODELS[user.tier],
   };
 }
@@ -176,6 +186,7 @@ authRoute.patch('/profile', requireAuth, async (c) => {
         nickname?: string | null;
         email?: string | null;
         password?: string | null;
+        theme?: string;
       }
     | null;
   if (!body) return c.json({ error: 'invalid body' }, 400);
@@ -184,6 +195,9 @@ authRoute.patch('/profile', requireAuth, async (c) => {
 
   if (body.lang === 'zh-TW' || body.lang === 'en') {
     userStmts.updateLang.run(body.lang, user.id);
+  }
+  if (body.theme && VALID_THEMES.has(body.theme)) {
+    userStmts.updateTheme.run(body.theme, user.id);
   }
   if (body.nickname !== undefined || body.email !== undefined) {
     const nick =
