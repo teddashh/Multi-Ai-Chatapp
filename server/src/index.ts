@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { authRoute } from './routes/auth.js';
 import { chatRoute } from './routes/chat.js';
+import { adminRoute } from './routes/admin.js';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 
@@ -12,6 +13,7 @@ app.use('*', logger());
 
 app.route('/api/auth', authRoute);
 app.route('/api/chat', chatRoute);
+app.route('/api/admin', adminRoute);
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 

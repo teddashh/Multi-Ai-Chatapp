@@ -20,6 +20,7 @@ import ModeSelector from './components/ModeSelector';
 import RoleConfig from './components/RoleConfig';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
+import AdminPanel from './components/AdminPanel';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
   debate: DEFAULT_DEBATE_ROLES,
@@ -66,6 +67,7 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingRolesRef = useRef<Record<string, string>>({});
@@ -276,6 +278,15 @@ export default function App() {
                 {user.tier}
               </span>
             </span>
+            {user.tier === 'super' && (
+              <button
+                onClick={() => setShowAdmin(true)}
+                className="text-gray-400 hover:text-white"
+                title="使用者管理"
+              >
+                ⚙️
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="text-gray-500 hover:text-red-400"
@@ -318,6 +329,12 @@ export default function App() {
         onCancel={handleCancel}
         disabled={isProcessing}
         isProcessing={isProcessing}
+      />
+
+      <AdminPanel
+        isOpen={showAdmin}
+        onClose={() => setShowAdmin(false)}
+        currentUsername={user.username}
       />
     </div>
   );
