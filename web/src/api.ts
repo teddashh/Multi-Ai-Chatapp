@@ -7,6 +7,8 @@ export interface ModelChoices {
 
 export interface User {
   username: string;
+  nickname: string | null;
+  email: string | null;
   tier: Tier;
   models: Record<AIProvider, ModelChoices>;
 }
@@ -16,6 +18,8 @@ export interface AdminUser {
   username: string;
   tier: Tier;
   created_at: number;
+  nickname: string | null;
+  email: string | null;
 }
 
 export async function me(): Promise<User | null> {
@@ -42,6 +46,27 @@ export async function login(username: string, password: string): Promise<User> {
 
 export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+}
+
+export async function forgotPassword(identifier: string): Promise<void> {
+  const res = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export async function resetPassword(token: string, password: string): Promise<void> {
+  const res = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, password }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
 }
 
 // === Sessions ===
@@ -127,19 +152,23 @@ export async function listUsers(): Promise<AdminUser[]> {
 }
 
 export async function createUser(
-  username: string,
-  password: string,
-  tier: Tier,
+  fields: {
+    username: string;
+    password: string;
+    tier: Tier;
+    nickname?: string;
+    email?: string;
+  },
 ): Promise<void> {
   await adminFetch('/users', {
     method: 'POST',
-    body: JSON.stringify({ username, password, tier }),
+    body: JSON.stringify(fields),
   });
 }
 
 export async function updateUser(
   username: string,
-  patch: { password?: string; tier?: Tier },
+  patch: { password?: string; tier?: Tier; nickname?: string; email?: string },
 ): Promise<void> {
   await adminFetch(`/users/${encodeURIComponent(username)}`, {
     method: 'PATCH',

@@ -22,6 +22,7 @@ import {
   type User,
 } from './api';
 import Login from './components/Login';
+import ResetPassword from './components/ResetPassword';
 import ProvidersBar from './components/ProvidersBar';
 import ModeSelector from './components/ModeSelector';
 import RoleConfig from './components/RoleConfig';
@@ -40,6 +41,10 @@ const DEFAULT_ROLES: Record<string, ModeRoles> = {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
+  const [resetToken, setResetToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('reset');
+  });
 
   const [mode, setMode] = useState<ChatMode>('free');
   const [roles, setRoles] = useState<ModeRoles>(DEFAULT_DEBATE_ROLES);
@@ -287,6 +292,18 @@ export default function App() {
     setWorkflowStatus('');
   }, []);
 
+  if (resetToken) {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onDone={() => {
+          setResetToken(null);
+          window.history.replaceState({}, '', '/');
+        }}
+      />
+    );
+  }
+
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">
@@ -325,8 +342,8 @@ export default function App() {
             <h1 className="text-lg font-bold">Multi-AI Chatapp</h1>
           </div>
           <div className="flex items-center gap-3 text-xs">
-            <span className="text-gray-400">
-              {user.username}{' '}
+            <span className="text-gray-400" title={user.username}>
+              {user.nickname || user.username}{' '}
               <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase tracking-wider">
                 {user.tier}
               </span>

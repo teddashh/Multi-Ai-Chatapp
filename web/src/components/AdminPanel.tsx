@@ -16,6 +16,13 @@ interface Props {
 
 const TIERS: Tier[] = ['test', 'standard', 'super'];
 
+interface RowEdit {
+  password?: string;
+  tier?: Tier;
+  nickname?: string;
+  email?: string;
+}
+
 export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -24,10 +31,11 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
   // create form
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [newNickname, setNewNickname] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [newTier, setNewTier] = useState<Tier>('test');
 
-  // per-row inline edits (password reset / tier change)
-  const [editing, setEditing] = useState<Record<string, { password?: string; tier?: Tier }>>({});
+  const [editing, setEditing] = useState<Record<string, RowEdit>>({});
 
   const refresh = async () => {
     setLoading(true);
@@ -48,6 +56,8 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
       setEditing({});
       setNewUsername('');
       setNewPassword('');
+      setNewNickname('');
+      setNewEmail('');
       setNewTier('test');
     }
   }, [isOpen]);
@@ -58,9 +68,17 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
     e.preventDefault();
     setError('');
     try {
-      await createUser(newUsername.trim(), newPassword, newTier);
+      await createUser({
+        username: newUsername.trim(),
+        password: newPassword,
+        tier: newTier,
+        nickname: newNickname.trim() || undefined,
+        email: newEmail.trim() || undefined,
+      });
       setNewUsername('');
       setNewPassword('');
+      setNewNickname('');
+      setNewEmail('');
       setNewTier('test');
       await refresh();
     } catch (err) {
@@ -79,13 +97,23 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
     }
   };
 
-  const handleSave = async (username: string) => {
-    const patch = editing[username];
-    if (!patch || (!patch.password && !patch.tier)) return;
+  const handleSave = async (u: AdminUser) => {
+    const patch = editing[u.username];
+    if (!patch) return;
+    const dirty: RowEdit = {};
+    if (patch.password) dirty.password = patch.password;
+    if (patch.tier && patch.tier !== u.tier) dirty.tier = patch.tier;
+    if (patch.nickname !== undefined && patch.nickname !== (u.nickname || '')) {
+      dirty.nickname = patch.nickname;
+    }
+    if (patch.email !== undefined && patch.email !== (u.email || '')) {
+      dirty.email = patch.email;
+    }
+    if (Object.keys(dirty).length === 0) return;
     setError('');
     try {
-      await updateUser(username, patch);
-      setEditing((prev) => ({ ...prev, [username]: {} }));
+      await updateUser(u.username, dirty);
+      setEditing((prev) => ({ ...prev, [u.username]: {} }));
       await refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -98,7 +126,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
       onClick={onClose}
     >
       <div
-        className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto p-4 shadow-xl"
+        className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
@@ -117,7 +145,6 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
           </p>
         )}
 
-        {/* User list */}
         <div className="mb-4">
           <div className="text-xs text-gray-400 mb-2">
             目前帳號 ({users.length})
@@ -125,22 +152,30 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
           {loading ? (
             <div className="text-xs text-gray-500">載入中...</div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-2">
               {users.map((u) => {
                 const e = editing[u.username] || {};
                 const isSelf = u.username === currentUsername;
+                const tierVal = e.tier ?? u.tier;
+                const nickVal = e.nickname ?? u.nickname ?? '';
+                const emailVal = e.email ?? u.email ?? '';
+                const dirty =
+                  !!e.password ||
+                  tierVal !== u.tier ||
+                  nickVal !== (u.nickname || '') ||
+                  emailVal !== (u.email || '');
                 return (
                   <div
                     key={u.id}
                     className="bg-gray-800 border border-gray-700 rounded p-2 text-xs"
                   >
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-2 mb-2">
                       <span className="font-semibold text-white flex-1">
                         {u.username}
                         {isSelf && <span className="ml-1 text-gray-500">(you)</span>}
                       </span>
                       <select
-                        value={e.tier ?? u.tier}
+                        value={tierVal}
                         onChange={(ev) =>
                           setEditing((prev) => ({
                             ...prev,
@@ -157,6 +192,32 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                         ))}
                       </select>
                     </div>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <input
+                        type="text"
+                        placeholder="暱稱"
+                        value={nickVal}
+                        onChange={(ev) =>
+                          setEditing((prev) => ({
+                            ...prev,
+                            [u.username]: { ...e, nickname: ev.target.value },
+                          }))
+                        }
+                        className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                      <input
+                        type="email"
+                        placeholder="email"
+                        value={emailVal}
+                        onChange={(ev) =>
+                          setEditing((prev) => ({
+                            ...prev,
+                            [u.username]: { ...e, email: ev.target.value },
+                          }))
+                        }
+                        className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
                     <div className="flex items-center gap-2">
                       <input
                         type="password"
@@ -171,8 +232,8 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                         className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
                       />
                       <button
-                        onClick={() => handleSave(u.username)}
-                        disabled={!e.password && (!e.tier || e.tier === u.tier)}
+                        onClick={() => handleSave(u)}
+                        disabled={!dirty}
                         className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs"
                       >
                         儲存
@@ -192,10 +253,9 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
           )}
         </div>
 
-        {/* Create new */}
-        <form onSubmit={handleCreate} className="border-t border-gray-700 pt-3">
-          <div className="text-xs text-gray-400 mb-2">新增帳號</div>
-          <div className="grid grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+        <form onSubmit={handleCreate} className="border-t border-gray-700 pt-3 space-y-2">
+          <div className="text-xs text-gray-400">新增帳號</div>
+          <div className="grid grid-cols-2 gap-2">
             <input
               type="text"
               placeholder="username"
@@ -212,6 +272,20 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
               onChange={(e) => setNewPassword(e.target.value)}
               required
               autoComplete="new-password"
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+            />
+            <input
+              type="text"
+              placeholder="暱稱"
+              value={newNickname}
+              onChange={(e) => setNewNickname(e.target.value)}
+              className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
+            />
+            <input
+              type="email"
+              placeholder="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
             />
             <select

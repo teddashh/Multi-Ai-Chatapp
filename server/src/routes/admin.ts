@@ -20,12 +20,30 @@ adminRoute.get('/users', (c) => {
     tier: Tier;
     created_at: number;
   }>;
-  return c.json({ users: rows });
+  // list stmt doesn't include nickname/email — fetch fresh per row to keep the
+  // statement simple.
+  const enriched = rows.map((r) => {
+    const full = userStmts.findByUsername.get(r.username) as
+      | { nickname: string | null; email: string | null }
+      | undefined;
+    return {
+      ...r,
+      nickname: full?.nickname ?? null,
+      email: full?.email ?? null,
+    };
+  });
+  return c.json({ users: enriched });
 });
 
 adminRoute.post('/users', async (c) => {
   const body = (await c.req.json().catch(() => null)) as
-    | { username?: string; password?: string; tier?: Tier }
+    | {
+        username?: string;
+        password?: string;
+        tier?: Tier;
+        nickname?: string;
+        email?: string;
+      }
     | null;
   if (!body?.username || !body?.password || !body?.tier) {
     return c.json({ error: 'username, password, tier required' }, 400);
@@ -38,17 +56,31 @@ adminRoute.post('/users', async (c) => {
   }
   const hash = await hashPassword(body.password);
   userStmts.insert.run(body.username, hash, body.tier);
+  if (body.nickname || body.email) {
+    userStmts.updateProfile.run(
+      body.nickname ?? null,
+      body.email ?? null,
+      body.username,
+    );
+  }
   return c.json({ ok: true });
 });
 
 adminRoute.patch('/users/:username', async (c) => {
   const username = c.req.param('username');
   const body = (await c.req.json().catch(() => null)) as
-    | { password?: string; tier?: Tier }
+    | {
+        password?: string;
+        tier?: Tier;
+        nickname?: string;
+        email?: string;
+      }
     | null;
   if (!body) return c.json({ error: 'body required' }, 400);
 
-  const existing = userStmts.findByUsername.get(username);
+  const existing = userStmts.findByUsername.get(username) as
+    | { nickname: string | null; email: string | null }
+    | undefined;
   if (!existing) return c.json({ error: 'user not found' }, 404);
 
   if (body.password) {
@@ -60,6 +92,13 @@ adminRoute.patch('/users/:username', async (c) => {
       return c.json({ error: 'invalid tier' }, 400);
     }
     userStmts.updateTier.run(body.tier, username);
+  }
+  if (body.nickname !== undefined || body.email !== undefined) {
+    userStmts.updateProfile.run(
+      body.nickname !== undefined ? body.nickname || null : existing.nickname,
+      body.email !== undefined ? body.email || null : existing.email,
+      username,
+    );
   }
   return c.json({ ok: true });
 });

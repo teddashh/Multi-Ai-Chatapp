@@ -20,6 +20,8 @@ export interface SessionUser {
   id: number;
   username: string;
   tier: Tier;
+  nickname: string | null;
+  email: string | null;
 }
 
 export async function hashPassword(plain: string): Promise<string> {
@@ -69,7 +71,13 @@ export async function requireAuth(c: AppContext, next: Next): Promise<Response |
     };
     const user = userStmts.findById.get(decoded.sub) as UserRow | undefined;
     if (!user) return c.json({ error: 'unauthorized' }, 401);
-    c.set('user', { id: user.id, username: user.username, tier: user.tier });
+    c.set('user', {
+      id: user.id,
+      username: user.username,
+      tier: user.tier,
+      nickname: user.nickname,
+      email: user.email,
+    });
     await next();
   } catch {
     return c.json({ error: 'unauthorized' }, 401);
