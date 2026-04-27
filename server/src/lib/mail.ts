@@ -59,7 +59,43 @@ export async function sendResetEmail(p: ResetEmailParams): Promise<void> {
   await transport.sendMail({
     from,
     to: p.to,
-    subject: 'Multi-AI Chat — 密碼重設',
+    subject: 'AI Sisters — 密碼重設',
+    text,
+    html,
+  });
+}
+
+export interface VerifyEmailParams {
+  to: string;
+  nickname: string;
+  verifyUrl: string;
+}
+
+export async function sendVerifyEmail(p: VerifyEmailParams): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    throw new Error('SMTP is not configured (SMTP_HOST/USER/PASSWORD missing)');
+  }
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER || 'no-reply@example.com';
+
+  const html = `<!doctype html>
+<html><body style="font-family: -apple-system, system-ui, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; color: #1f2937;">
+  <h2 style="color: #111827;">AI Sisters — 驗證 Email</h2>
+  <p>嗨 ${p.nickname || ''}，</p>
+  <p>感謝註冊。請點擊下方連結驗證你的 email（24 小時內有效）：</p>
+  <p style="margin: 24px 0;">
+    <a href="${p.verifyUrl}" style="display: inline-block; padding: 10px 16px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px;">驗證 Email</a>
+  </p>
+  <p style="font-size: 12px; color: #6b7280;">如果按鈕沒反應，貼上連結到瀏覽器：<br/><code style="word-break: break-all;">${p.verifyUrl}</code></p>
+  <p style="font-size: 12px; color: #6b7280;">如果這不是你註冊的，忽略此信即可，帳號 24 小時後會自動失效。</p>
+</body></html>`;
+
+  const text = `AI Sisters — 驗證 Email\n\n嗨 ${p.nickname || ''}，\n\n感謝註冊。請打開以下連結驗證你的 email（24 小時內有效）：\n${p.verifyUrl}\n\n如果這不是你註冊的，忽略此信即可。`;
+
+  await transport.sendMail({
+    from,
+    to: p.to,
+    subject: 'AI Sisters — 請驗證 Email',
     text,
     html,
   });

@@ -28,7 +28,34 @@ export interface User {
   lang: 'zh-TW' | 'en';
   hasAvatar: boolean;
   theme: ThemeId;
+  emailVerified: boolean;
   models: Record<AIProvider, ModelChoices>;
+}
+
+export async function verifyEmail(token: string): Promise<User> {
+  const res = await fetch('/api/auth/verify-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const data = (await res.json()) as { user: User };
+  return data.user;
+}
+
+export async function resendVerifyEmail(): Promise<void> {
+  const res = await fetch('/api/auth/resend-verify', {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    throw new Error(data.message || data.error || `${res.status}`);
+  }
 }
 
 export async function updateProfile(patch: {

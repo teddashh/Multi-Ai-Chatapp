@@ -85,6 +85,10 @@ addColumnIfMissing('users', 'lang', "TEXT NOT NULL DEFAULT 'zh-TW'");
 addColumnIfMissing('users', 'avatar_path', 'TEXT');
 addColumnIfMissing('users', 'theme', "TEXT NOT NULL DEFAULT 'winter'");
 addColumnIfMissing('users', 'real_name', 'TEXT');
+// Existing users default to verified (1). New /signup flow flips to 0.
+addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('users', 'verify_token', 'TEXT');
+addColumnIfMissing('users', 'verify_expires_at', 'INTEGER');
 addColumnIfMissing('chat_sessions', 'deleted_at', 'INTEGER');
 
 // Audit trail — admin actions on users / sessions are recorded here. The
@@ -207,6 +211,9 @@ export interface UserRow {
   avatar_path: string | null;
   theme: string;
   real_name: string | null;
+  email_verified: number;
+  verify_token: string | null;
+  verify_expires_at: number | null;
 }
 
 export interface PasswordResetRow {
@@ -268,6 +275,24 @@ export const userStmts = {
   ),
   updateRealName: db.prepare<[string | null, string]>(
     'UPDATE users SET real_name = ? WHERE username = ?',
+  ),
+  // Email verification — set token + expiry on signup / resend, and flip
+  // email_verified to 0 in the same write so the gate catches them.
+  setVerifyToken: db.prepare<[string, number, number]>(
+    `UPDATE users SET verify_token = ?, verify_expires_at = ?, email_verified = 0 WHERE id = ?`,
+  ),
+  // Look up by token to resolve a click-through. Token is single-use; the
+  // markVerified call below clears it.
+  findByVerifyToken: db.prepare<[string]>(
+    'SELECT * FROM users WHERE verify_token = ?',
+  ),
+  markEmailVerified: db.prepare<[number]>(
+    'UPDATE users SET email_verified = 1, verify_token = NULL, verify_expires_at = NULL WHERE id = ?',
+  ),
+  // Hard-delete unverified accounts whose tokens have expired. Run from
+  // a periodic cleanup if we ever wire one up.
+  deleteExpiredUnverified: db.prepare<[number]>(
+    `DELETE FROM users WHERE email_verified = 0 AND verify_expires_at IS NOT NULL AND verify_expires_at < ?`,
   ),
 };
 

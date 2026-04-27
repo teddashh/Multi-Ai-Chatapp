@@ -44,6 +44,12 @@ export interface Dict {
   signupSubmit: string;
   signupSubmitting: string;
   signupTierNote: string;
+  verifyBannerText: string;
+  verifyBannerResend: string;
+  verifyBannerSent: string;
+  verifySuccess: string;
+  verifyFailed: (msg: string) => string;
+  verifyVerifying: string;
   forgotTitle: string;
   forgotPrompt: string;
   forgotSent: string;
@@ -188,7 +194,7 @@ export interface Dict {
 }
 
 const ZH: Dict = {
-  appName: 'AI 戰情中心',
+  appName: 'AI 四人行',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -209,7 +215,7 @@ const ZH: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI 戰情中心',
+  loginTitle: 'AI 四人行',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',
@@ -225,6 +231,12 @@ const ZH: Dict = {
   signupSubmitting: '註冊中...',
   signupTierNote:
     '免費帳號每個模式每天限用 1 次，僅可使用最便宜的模型；如需升級請聯絡管理員。',
+  verifyBannerText: 'Email 尚未驗證，請到信箱點驗證連結後才能開始對話。',
+  verifyBannerResend: '重新寄送',
+  verifyBannerSent: '已重新寄出',
+  verifySuccess: 'Email 驗證成功！',
+  verifyFailed: (msg) => `驗證失敗：${msg}`,
+  verifyVerifying: '驗證中...',
   forgotTitle: '忘記密碼',
   forgotPrompt: '輸入你的帳號或 email，我們會寄重設信過去。',
   forgotSent:
@@ -365,7 +377,7 @@ const ZH: Dict = {
 };
 
 const EN: Dict = {
-  appName: 'AI War Room',
+  appName: 'AI Sisters',
   loading: 'Loading...',
   cancel: 'Cancel',
   save: 'Save',
@@ -386,7 +398,7 @@ const EN: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI War Room',
+  loginTitle: 'AI Sisters',
   loginUsernameLabel: 'Username or Email',
   loginPasswordLabel: 'Password',
   loginForgot: 'Forgot password?',
@@ -402,6 +414,13 @@ const EN: Dict = {
   signupSubmitting: 'Creating...',
   signupTierNote:
     'Free accounts get 1 use per mode per day on the cheapest models. Contact the admin to upgrade.',
+  verifyBannerText:
+    'Email not verified yet — check your inbox and click the link before you can chat.',
+  verifyBannerResend: 'Resend',
+  verifyBannerSent: 'Resent',
+  verifySuccess: 'Email verified!',
+  verifyFailed: (msg) => `Verification failed: ${msg}`,
+  verifyVerifying: 'Verifying...',
   forgotTitle: 'Forgot password',
   forgotPrompt:
     'Enter your username or email and we will send a reset link.',

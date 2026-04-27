@@ -12,18 +12,34 @@ import {
 import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
 import { TIER_MODELS } from '../shared/models.js';
 import { estimateCost } from '../shared/prices.js';
-import { sendResetEmail } from '../lib/mail.js';
+import { sendResetEmail, sendVerifyEmail } from '../lib/mail.js';
 import {
   isSupportedAvatarMime,
   MAX_AVATAR_BYTES,
   readAvatar,
   saveAvatar,
 } from '../lib/uploads.js';
+import { checkAndRecord, clientIp } from '../lib/rateLimit.js';
 
 export const authRoute = new Hono<{ Variables: AppVariables }>();
 
 const FAILED_ATTEMPT_LIMIT = 3;
 const RESET_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
+const VERIFY_TOKEN_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+
+// Public signup is open to anyone, so it gets rate-limited per IP. Two
+// nested limits: a tight short-window cap to swat scripts, plus a wider
+// daily cap so a bad actor can't grind the limit forever.
+const SIGNUP_RATE_LIMITS = [
+  { windowMs: 60 * 60 * 1000, max: 3 }, // 3 / hour
+  { windowMs: 24 * 60 * 60 * 1000, max: 5 }, // 5 / day
+];
+
+// Resend verification is even cheaper to spam (each one fires an email),
+// so be stricter.
+const RESEND_RATE_LIMITS = [
+  { windowMs: 5 * 60 * 1000, max: 1 }, // 1 / 5 min per user
+];
 
 const VALID_THEMES = new Set([
   'winter',
@@ -43,8 +59,23 @@ function buildUserDTO(user: UserRow) {
     lang: user.lang,
     hasAvatar: !!user.avatar_path,
     theme: user.theme,
+    emailVerified: !!user.email_verified,
     models: TIER_MODELS[user.tier],
   };
+}
+
+async function issueVerifyTokenAndEmail(user: UserRow): Promise<void> {
+  if (!user.email) return;
+  const token = randomBytes(32).toString('hex');
+  const expiresAt = Math.floor(Date.now() / 1000) + VERIFY_TOKEN_TTL_SECONDS;
+  userStmts.setVerifyToken.run(token, expiresAt, user.id);
+  const publicUrl = process.env.PUBLIC_URL || 'https://chat.ted-h.com';
+  const verifyUrl = `${publicUrl}/?verify=${token}`;
+  await sendVerifyEmail({
+    to: user.email,
+    nickname: user.nickname || user.username,
+    verifyUrl,
+  });
 }
 
 async function issueResetTokenAndEmail(
@@ -152,6 +183,21 @@ authRoute.post('/logout', (c) => {
 // Public sign-up — anyone can create a free-tier account and start using
 // the cheapest models with a daily quota. Admin can later upgrade them.
 authRoute.post('/signup', async (c) => {
+  // Rate-limit per source IP first — cheap signups are easy to spam.
+  const ip = clientIp(c.req.raw);
+  const gate = checkAndRecord(`signup:${ip}`, SIGNUP_RATE_LIMITS);
+  if (!gate.ok) {
+    return c.json(
+      {
+        error: 'too_many_requests',
+        message: '註冊過於頻繁，請稍後再試。',
+        messageEn: 'Too many signup attempts. Please try again later.',
+        retryAfterMs: gate.retryAfterMs,
+      },
+      429,
+    );
+  }
+
   const body = (await c.req.json().catch(() => null)) as
     | {
         email?: string;
@@ -169,8 +215,7 @@ authRoute.post('/signup', async (c) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return c.json({ error: 'invalid email' }, 400);
   }
-  // Username is just the email — login already accepts either.
-  // Check for collision against both username AND email columns.
+
   const existing = userStmts.findByEmailOrUsername.get(email, email) as
     | UserRow
     | undefined;
@@ -180,9 +225,18 @@ authRoute.post('/signup', async (c) => {
   const hash = await hashPassword(body.password);
   userStmts.insert.run(email, hash, 'free');
   userStmts.updateProfile.run(body.nickname?.trim() || null, email, email);
-
+  // Free signups must verify before chat will run for them. setVerifyToken
+  // also flips email_verified to 0 atomically (see db.ts).
+  const fresh0 = userStmts.findByUsername.get(email) as UserRow;
+  try {
+    await issueVerifyTokenAndEmail(fresh0);
+  } catch (err) {
+    console.error('verify email send failed', (err as Error).message);
+  }
   const fresh = userStmts.findByUsername.get(email) as UserRow;
-  // Auto-login: drop a session cookie so the client lands signed in.
+
+  // Auto-login: drop a session cookie so the client lands signed in (but
+  // the chat surface will show a "verify email" banner).
   issueSession(c, {
     id: fresh.id,
     username: fresh.username,
@@ -192,18 +246,64 @@ authRoute.post('/signup', async (c) => {
     lang: fresh.lang,
     avatarPath: fresh.avatar_path,
   });
-  return c.json({
-    user: {
-      username: fresh.username,
-      nickname: fresh.nickname,
-      email: fresh.email,
-      tier: fresh.tier,
-      lang: fresh.lang,
-      hasAvatar: !!fresh.avatar_path,
-      theme: fresh.theme,
-      models: TIER_MODELS[fresh.tier],
-    },
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+// Click-through verification. Marks the user verified if the token matches
+// and isn't expired. Returns the freshly-built DTO so the client can
+// dismiss any "please verify" banner without a reload.
+authRoute.post('/verify-email', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { token?: string } | null;
+  if (!body?.token) return c.json({ error: 'token required' }, 400);
+  const row = userStmts.findByVerifyToken.get(body.token) as UserRow | undefined;
+  if (!row) return c.json({ error: 'invalid token' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  if (row.verify_expires_at && row.verify_expires_at < now) {
+    return c.json({ error: 'token expired' }, 400);
+  }
+  userStmts.markEmailVerified.run(row.id);
+  const fresh = userStmts.findByUsername.get(row.username) as UserRow;
+  // Auto-login on verify so a user who clicks the link from email lands
+  // straight into the app instead of being asked to log in again.
+  issueSession(c, {
+    id: fresh.id,
+    username: fresh.username,
+    tier: fresh.tier,
+    nickname: fresh.nickname,
+    email: fresh.email,
+    lang: fresh.lang,
+    avatarPath: fresh.avatar_path,
   });
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+// Resend the verification email — only available to the logged-in,
+// unverified user. Rate-limited per user so spam-clicking can't flood
+// their inbox.
+authRoute.post('/resend-verify', requireAuth, async (c) => {
+  const session = c.get('user');
+  const gate = checkAndRecord(`resend-verify:${session.id}`, RESEND_RATE_LIMITS);
+  if (!gate.ok) {
+    return c.json(
+      {
+        error: 'too_many_requests',
+        message: '請稍候再重新寄送。',
+        messageEn: 'Please wait before resending.',
+        retryAfterMs: gate.retryAfterMs,
+      },
+      429,
+    );
+  }
+  const user = userStmts.findById.get(session.id) as UserRow | undefined;
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+  if (user.email_verified) {
+    return c.json({ ok: true, alreadyVerified: true });
+  }
+  if (!user.email) {
+    return c.json({ error: 'no email on file' }, 400);
+  }
+  await issueVerifyTokenAndEmail(user);
+  return c.json({ ok: true });
 });
 
 authRoute.get('/me', requireAuth, (c) => {

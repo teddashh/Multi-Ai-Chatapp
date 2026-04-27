@@ -14,6 +14,7 @@ import {
   attachmentStmts,
   messageStmts,
   sessionStmts,
+  userStmts,
   type AttachmentRow,
   type MessageRow,
   type SessionRow,
@@ -60,6 +61,19 @@ function deriveTitle(text: string): string {
 
 chatRoute.post('/send', requireAuth, async (c) => {
   const user = c.get('user');
+  // Block unverified accounts before they can rack up usage.
+  const fullUser = userStmts.findById.get(user.id) as { email_verified: number } | undefined;
+  if (fullUser && !fullUser.email_verified) {
+    return c.json(
+      {
+        error: 'email_not_verified',
+        message: '請先到信箱點驗證連結，才能使用對話功能。',
+        messageEn:
+          'Please verify your email before using chat. Check your inbox for the verification link.',
+      },
+      403,
+    );
+  }
   const body = (await c.req.json().catch(() => null)) as
     | {
         text?: string;

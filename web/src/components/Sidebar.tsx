@@ -76,7 +76,7 @@ export default function Sidebar({
       const detail = await getSession(s.id);
       const m = detail.session.mode as ChatMode;
       const lines: string[] = [
-        `# AI War Room — ${detail.session.title}`,
+        `# AI Sisters — ${detail.session.title}`,
         `> Mode: ${modeName(t, m)}`,
         `> Exported: ${new Date().toLocaleString()}`,
         '',

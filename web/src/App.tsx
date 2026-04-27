@@ -19,9 +19,11 @@ import {
   listSessions,
   logout,
   me,
+  resendVerifyEmail,
   streamChat,
   streamRegenerate,
   updateProfile,
+  verifyEmail,
   type SessionSummary,
   type ThemeId,
   type User,
@@ -82,6 +84,21 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('reset');
   });
+  // Email verification token from `?verify=...` link. Handled once the
+  // user is loaded so we can update their state in place.
+  const [verifyToken, setVerifyToken] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('verify');
+  });
+  const [verifyState, setVerifyState] = useState<
+    | { kind: 'idle' }
+    | { kind: 'verifying' }
+    | { kind: 'ok' }
+    | { kind: 'err'; msg: string }
+  >({ kind: 'idle' });
+  const [resendState, setResendState] = useState<
+    'idle' | 'sending' | 'sent' | 'err'
+  >('idle');
 
   const [lang, setLangState] = useState<Lang>(loadInitialLang);
   const setLang = useCallback((l: Lang) => {
@@ -166,6 +183,39 @@ export default function App() {
     });
     // Intentionally one-shot; don't refetch on lang/theme flips.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Resolve `?verify=` exactly once. We want this to fire whether the user
+  // is logged in or not — verifyEmail accepts the token directly and
+  // returns the freshly-verified user DTO.
+  useEffect(() => {
+    if (!verifyToken) return;
+    setVerifyState({ kind: 'verifying' });
+    verifyEmail(verifyToken)
+      .then((u) => {
+        setUser(u);
+        setVerifyState({ kind: 'ok' });
+      })
+      .catch((err: Error) => {
+        setVerifyState({ kind: 'err', msg: err.message });
+      })
+      .finally(() => {
+        setVerifyToken(null);
+        // Strip the param so a refresh doesn't try again.
+        window.history.replaceState({}, '', '/');
+      });
+  }, [verifyToken]);
+
+  const handleResendVerify = useCallback(async () => {
+    setResendState('sending');
+    try {
+      await resendVerifyEmail();
+      setResendState('sent');
+      setTimeout(() => setResendState('idle'), 4000);
+    } catch {
+      setResendState('err');
+      setTimeout(() => setResendState('idle'), 4000);
+    }
   }, []);
 
   const t = DICTS[lang];
@@ -578,6 +628,38 @@ export default function App() {
               <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
             )}
           </div>
+
+          {!user.emailVerified && (
+            <div className="flex-none border-b border-yellow-700/40 bg-yellow-900/20 px-3 py-2 text-xs text-yellow-200 flex flex-wrap items-center gap-2">
+              <span className="flex-1">{t.verifyBannerText}</span>
+              <button
+                onClick={handleResendVerify}
+                disabled={resendState === 'sending' || resendState === 'sent'}
+                className="px-2 py-0.5 rounded bg-yellow-700/40 hover:bg-yellow-700/60 disabled:opacity-50"
+              >
+                {resendState === 'sending'
+                  ? t.loading
+                  : resendState === 'sent'
+                    ? t.verifyBannerSent
+                    : t.verifyBannerResend}
+              </button>
+            </div>
+          )}
+          {verifyState.kind !== 'idle' && (
+            <div
+              className={`flex-none border-b px-3 py-2 text-xs ${
+                verifyState.kind === 'ok'
+                  ? 'border-emerald-700/40 bg-emerald-900/20 text-emerald-200'
+                  : verifyState.kind === 'err'
+                    ? 'border-red-700/40 bg-red-900/20 text-red-200'
+                    : 'border-blue-700/40 bg-blue-900/20 text-blue-200'
+              }`}
+            >
+              {verifyState.kind === 'verifying' && t.verifyVerifying}
+              {verifyState.kind === 'ok' && t.verifySuccess}
+              {verifyState.kind === 'err' && t.verifyFailed(verifyState.msg)}
+            </div>
+          )}
 
           <ChatArea
             messages={messages}
