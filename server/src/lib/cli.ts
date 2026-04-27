@@ -41,6 +41,26 @@ interface ProviderConfig {
   promptOverride?: string;
 }
 
+// Render a CLI-friendly transcript header from the conversation history.
+// Returns empty string if there's no history. This gets prepended to the
+// prompt before we hand it off to the CLI binaries.
+function renderHistoryPrefix(history: ChatHistoryTurn[] | undefined): string {
+  if (!history || history.length === 0) return '';
+  const lines: string[] = ['[Earlier turns in this conversation — for context]'];
+  for (const t of history) {
+    if (t.role === 'user') {
+      lines.push(`User: ${t.content}`);
+    } else {
+      lines.push(`You: ${t.content}`);
+    }
+  }
+  lines.push('[End of history]');
+  lines.push('');
+  lines.push('[New message]');
+  lines.push('');
+  return lines.join('\n');
+}
+
 function buildConfig(
   provider: AIProvider,
   model: string,
@@ -118,6 +138,11 @@ function buildConfig(
   }
 }
 
+export interface ChatHistoryTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface CLIRunOptions {
   provider: AIProvider;
   model: string;
@@ -129,6 +154,9 @@ export interface CLIRunOptions {
   // dashboard can show per-user / per-model totals.
   userId?: number;
   mode?: ChatMode;
+  // Earlier turns of the same session for THIS provider. xAI gets these
+  // as a real messages array; CLIs see a transcript prepended to the prompt.
+  history?: ChatHistoryTurn[];
 }
 
 export interface CLIRunResult {
@@ -178,7 +206,13 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
     return runXAIChat(opts);
   }
 
-  const { provider, prompt, onChunk, signal } = opts;
+  const { provider, onChunk, signal } = opts;
+  // Prepend the conversation history (if any) so the CLI sees a
+  // transcript before the new question. We do this here rather than in
+  // buildConfig so the original `opts.prompt` stays untouched for usage
+  // logging and so providers that need image headers add them on top.
+  const historyPrefix = renderHistoryPrefix(opts.history);
+  const prompt = historyPrefix + opts.prompt;
   const cfg = buildConfig(provider, opts.model, prompt, opts.attachments ?? []);
   const stdinPrompt = cfg.promptOverride ?? prompt;
   const bin = CLI_BINARY[provider];
@@ -268,13 +302,17 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
     throw new Error('XAI_API_KEY is not set in server/.env');
   }
 
-  // Build OpenAI-compatible messages. If there are images, switch to the
-  // structured content array; otherwise pass the prompt as a plain string
-  // (slightly cheaper to serialize).
+  // Build OpenAI-compatible messages. xAI accepts a proper multi-turn
+  // messages array, so we feed the conversation history as real
+  // user/assistant turns rather than baking it into a prompt prefix.
   const images = imageAttachments(opts.attachments ?? []);
-  let messages: unknown;
+  const history = opts.history ?? [];
+  const messages: Array<unknown> = history.map((t) => ({
+    role: t.role,
+    content: t.content,
+  }));
   if (images.length === 0) {
-    messages = [{ role: 'user', content: opts.prompt }];
+    messages.push({ role: 'user', content: opts.prompt });
   } else {
     const content: Array<
       | { type: 'text'; text: string }
@@ -287,7 +325,7 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
         image_url: { url: `data:${mediaType};base64,${data}` },
       });
     }
-    messages = [{ role: 'user', content }];
+    messages.push({ role: 'user', content });
   }
 
   const response = await fetch('https://api.x.ai/v1/chat/completions', {

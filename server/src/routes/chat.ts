@@ -3,6 +3,8 @@ import { streamSSE } from 'hono/streaming';
 import { randomUUID } from 'node:crypto';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import {
+  buildPerProviderHistory,
+  buildSharedHistoryPrefix,
   buildStepList,
   defaultRolesFor,
   runMode,
@@ -223,9 +225,26 @@ chatRoute.post('/send', requireAuth, async (c) => {
       send(event);
     };
 
+    // Load earlier turns for memory continuity. Free mode: each AI sees
+    // its own thread. Sequential modes: a flattened transcript is
+    // prefixed onto the user's text so each step's prompt embeds the
+    // prior context naturally.
+    const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
+      .filter((m) => m.id < userMsgId);
+    let runText = text;
+    let perProviderHistory:
+      | Partial<Record<AIProvider, Array<{ role: 'user' | 'assistant'; content: string }>>>
+      | undefined = undefined;
+    if (mode === 'free') {
+      perProviderHistory = buildPerProviderHistory(priorMsgs);
+    } else {
+      const prefix = buildSharedHistoryPrefix(priorMsgs, user.lang);
+      if (prefix) runText = prefix + text;
+    }
+
     try {
       await runMode({
-        text,
+        text: runText,
         mode,
         roles,
         modelOverrides,
@@ -233,6 +252,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         tier: user.tier,
         lang: user.lang,
         userId: user.id,
+        history: perProviderHistory,
         emit: recordingSend,
         signal: controller.signal,
       });
@@ -306,6 +326,11 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
       attachments.length > 0
         ? buildAttachmentPrefix(attachments) + userMsg.content
         : userMsg.content;
+    // Prior turns of THIS provider's thread (everything before the user
+    // message we're retrying against).
+    const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
+      .filter((m) => m.id < userMsg.id);
+    const perProviderHistory = buildPerProviderHistory(priorMsgs);
 
     return streamSSE(c, async (stream) => {
       const ctrl = new AbortController();
@@ -325,6 +350,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           },
           userId: user.id,
           mode: 'free',
+          history: perProviderHistory[provider],
         });
         messageStmts.updateContent.run(
           result.text,
@@ -375,6 +401,14 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
     return c.json({ error: 'retry index past end of step list' }, 400);
   }
 
+  // Cross-turn memory: prefix the user's question with a transcript of
+  // earlier turns in this session so each step's prompt sees the same
+  // context the original /send had.
+  const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
+    .filter((m) => m.id < userMsg.id);
+  const historyPrefix = buildSharedHistoryPrefix(priorMsgs, user.lang);
+  const userText = historyPrefix + userMsg.content;
+
   return streamSSE(c, async (stream) => {
     const ctrl = new AbortController();
     stream.onAbort(() => ctrl.abort());
@@ -404,7 +438,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           role: step.role,
           label: step.label,
         });
-        const prompt = step.buildPrompt(userMsg.content, history);
+        const prompt = step.buildPrompt(userText, history);
         const finalPrompt =
           attachments.length > 0
             ? buildAttachmentPrefix(attachments) + prompt

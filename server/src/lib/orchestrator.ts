@@ -1,6 +1,7 @@
 import { runCLI } from './cli.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
+import type { MessageRow } from './db.js';
 import {
   buildAttachmentPrefix,
   type PreparedAttachment,
@@ -17,6 +18,112 @@ import type {
   Tier,
 } from '../shared/types.js';
 
+// One step in a multi-turn conversation. Used both for the Grok messages
+// array we ship to xAI and for the prompt-prefix transcript we build for
+// the CLI providers.
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+// Skip rows whose AI output was an error so we don't feed garbage back
+// to the next turn as if it were real conversation history.
+function isUsableMessage(m: MessageRow): boolean {
+  if (m.role === 'user') return true;
+  return !m.content.startsWith('[Error:');
+}
+
+// Per-provider history for Free mode — each AI gets its own thread
+// (their replies + every user message). We cap to the most recent
+// MAX_HISTORY_TURNS turns so we don't hand the model a 100-turn novel.
+const MAX_HISTORY_TURNS = 12;
+
+export function buildPerProviderHistory(
+  messages: MessageRow[],
+): Partial<Record<AIProvider, ChatTurn[]>> {
+  const usable = messages.filter(isUsableMessage);
+  const out: Partial<Record<AIProvider, ChatTurn[]>> = {};
+  const providers: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+  for (const p of providers) {
+    const turns: ChatTurn[] = [];
+    let pendingUser: string | null = null;
+    for (const m of usable) {
+      if (m.role === 'user') {
+        // Always include user msgs — but only emit them once we have a
+        // following assistant response from this provider, otherwise the
+        // assistant would see "user x4 in a row" with no replies.
+        pendingUser = m.content;
+      } else if (m.provider === p && pendingUser !== null) {
+        turns.push({ role: 'user', content: pendingUser });
+        turns.push({ role: 'assistant', content: m.content });
+        pendingUser = null;
+      }
+    }
+    if (turns.length > 0) {
+      // Keep only the last MAX_HISTORY_TURNS pairs (each pair = 2 entries).
+      const trimmed = turns.slice(-MAX_HISTORY_TURNS * 2);
+      out[p] = trimmed;
+    }
+  }
+  return out;
+}
+
+// Shared history for sequential modes — flatten into a brief transcript
+// prefix that gets inserted before the user's current question. Picks
+// the FINAL AI message of each prior turn (i.e., the synthesis step) so
+// the new turn sees one coherent answer per past turn rather than every
+// intermediate step.
+export function buildSharedHistoryPrefix(
+  messages: MessageRow[],
+  lang: Lang,
+): string {
+  const usable = messages.filter(isUsableMessage);
+  // Walk forward, group by "turn" = run of msgs starting at a user msg.
+  type Turn = { user: string; finalAi: string | null; provider: string | null };
+  const turns: Turn[] = [];
+  let cur: Turn | null = null;
+  for (const m of usable) {
+    if (m.role === 'user') {
+      if (cur) turns.push(cur);
+      cur = { user: m.content, finalAi: null, provider: null };
+    } else if (cur) {
+      // Last AI msg in the turn wins — overwrite as we walk.
+      cur.finalAi = m.content;
+      cur.provider = m.provider;
+    }
+  }
+  if (cur) turns.push(cur);
+
+  // Drop turns that didn't produce any AI output (unfinished / errored).
+  const completed = turns.filter((t) => t.finalAi);
+  if (completed.length === 0) return '';
+
+  const recent = completed.slice(-MAX_HISTORY_TURNS);
+  const lines: string[] = [];
+  if (lang === 'en') {
+    lines.push('[Earlier conversation in this session — for context]');
+    for (const t of recent) {
+      lines.push(`User: ${t.user}`);
+      lines.push(`Assistant (${t.provider ?? 'AI'}): ${t.finalAi}`);
+    }
+    lines.push('[End of history]');
+    lines.push('');
+    lines.push('[Current question]');
+    lines.push('');
+    return lines.join('\n');
+  }
+  lines.push('[以下是這個 session 先前的對話，請延續 context]');
+  for (const t of recent) {
+    lines.push(`使用者：${t.user}`);
+    lines.push(`${t.provider ?? 'AI'}：${t.finalAi}`);
+  }
+  lines.push('[歷史結束]');
+  lines.push('');
+  lines.push('[新的提問]');
+  lines.push('');
+  return lines.join('\n');
+}
+
 export interface OrchestratorParams {
   text: string;
   mode: ChatMode;
@@ -28,6 +135,11 @@ export interface OrchestratorParams {
   attachments?: PreparedAttachment[];
   emit: (event: SSEEvent) => void;
   signal: AbortSignal;
+  // Per-provider conversation history from earlier turns of the same
+  // session. Free mode passes this through so each AI sees its own
+  // thread; sequential modes embed a flattened transcript into `text`
+  // before calling runMode, leaving this empty.
+  history?: Partial<Record<AIProvider, ChatTurn[]>>;
 }
 
 export const DEFAULT_DEBATE_ROLES: DebateRoles = {
@@ -247,6 +359,7 @@ export async function runOne(
       onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
       userId: p.userId,
       mode: p.mode,
+      history: p.history?.[provider],
     });
     p.emit({ type: 'done', provider, text: result.text });
     return result.text;
