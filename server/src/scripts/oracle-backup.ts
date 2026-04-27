@@ -276,10 +276,10 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
     await conn.execute(
       `INSERT INTO MAC_SESSIONS
          (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-       VALUES (:sid, :uid, :title, :cmode, :cdate, :udate, 0)`,
+       VALUES (:sid, :userid, :title, :cmode, :cdate, :udate, 0)`,
       {
         sid: s.id,
-        uid: s.user_id,
+        userid: s.user_id,
         title: s.title,
         cmode: s.mode,
         cdate: s.created_at,
@@ -322,10 +322,10 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       await conn.execute(
         `INSERT INTO MAC_SESSIONS
            (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-         VALUES (:sid, :uid, :title, :cmode, :cdate, :udate, 1)`,
+         VALUES (:sid, :userid, :title, :cmode, :cdate, :udate, 1)`,
         {
           sid: r.SESSION_ID,
-          uid: x.USER_ID,
+          userid: x.USER_ID,
           title: x.TITLE,
           cmode: x.CHAT_MODE,
           cdate: x.SRC_CREATED_AT,
