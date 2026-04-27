@@ -177,14 +177,14 @@ authRoute.post('/forgot-password', async (c) => {
 });
 
 // === Profile (self) ===
-// PATCH lang / nickname / email / password — any subset.
+// User-side edit: only nickname, password, lang, theme, avatar are mutable.
+// Identity fields (username, email, real_name) are admin-only.
 authRoute.patch('/profile', requireAuth, async (c) => {
   const session = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
     | {
         lang?: 'zh-TW' | 'en';
         nickname?: string | null;
-        email?: string | null;
         password?: string | null;
         theme?: string;
       }
@@ -199,12 +199,12 @@ authRoute.patch('/profile', requireAuth, async (c) => {
   if (body.theme && VALID_THEMES.has(body.theme)) {
     userStmts.updateTheme.run(body.theme, user.id);
   }
-  if (body.nickname !== undefined || body.email !== undefined) {
-    const nick =
-      body.nickname === undefined ? user.nickname : (body.nickname || null);
-    const email =
-      body.email === undefined ? user.email : (body.email || null);
-    userStmts.updateNicknameEmail.run(nick, email, user.id);
+  if (body.nickname !== undefined) {
+    userStmts.updateNicknameEmail.run(
+      body.nickname || null,
+      user.email,
+      user.id,
+    );
   }
   if (body.password) {
     if (body.password.length < 6) {

@@ -23,6 +23,7 @@ export interface OrchestratorParams {
   roles?: ModeRoles;
   tier: Tier;
   lang: Lang;
+  userId: number;
   modelOverrides?: Partial<Record<AIProvider, string>>;
   attachments?: PreparedAttachment[];
   emit: (event: SSEEvent) => void;
@@ -244,6 +245,8 @@ export async function runOne(
       attachments,
       signal: p.signal,
       onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
+      userId: p.userId,
+      mode: p.mode,
     });
     p.emit({ type: 'done', provider, text: result.text });
     return result.text;

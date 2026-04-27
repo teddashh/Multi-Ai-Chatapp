@@ -3,12 +3,13 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import type { AIProvider } from '../shared/types.js';
+import type { AIProvider, ChatMode } from '../shared/types.js';
 import {
   imageAttachments,
   readImageBase64,
   type PreparedAttachment,
 } from './uploads.js';
+import { usageStmts } from './db.js';
 
 const CLI_BINARY: Record<AIProvider, string> = {
   claude: process.env.CLI_CLAUDE || 'claude',
@@ -124,11 +125,51 @@ export interface CLIRunOptions {
   attachments?: PreparedAttachment[];
   onChunk?: (text: string) => void;
   signal?: AbortSignal;
+  // When set, runCLI persists a usage_log row on success so the admin
+  // dashboard can show per-user / per-model totals.
+  userId?: number;
+  mode?: ChatMode;
 }
 
 export interface CLIRunResult {
   text: string;
   exitCode: number;
+}
+
+// Rough heuristic — ~3 chars per token works well enough for mixed
+// CJK / English / code, which is what this app sees. Marked as estimated
+// in the DB so the admin UI can flag it.
+function estimateTokens(chars: number): number {
+  return Math.max(1, Math.round(chars / 3));
+}
+
+function recordUsage(
+  opts: CLIRunOptions,
+  promptChars: number,
+  completionChars: number,
+  realTokensIn: number | null,
+  realTokensOut: number | null,
+): void {
+  if (!opts.userId) return;
+  const isEstimated = realTokensIn === null || realTokensOut === null;
+  const tokensIn = realTokensIn ?? estimateTokens(promptChars);
+  const tokensOut = realTokensOut ?? estimateTokens(completionChars);
+  try {
+    usageStmts.insert.run(
+      opts.userId,
+      opts.provider,
+      opts.model,
+      opts.mode ?? null,
+      promptChars,
+      completionChars,
+      tokensIn,
+      tokensOut,
+      isEstimated ? 1 : 0,
+    );
+  } catch (err) {
+    // Don't let usage logging break a real request.
+    console.error('usage_log insert failed', (err as Error).message);
+  }
 }
 
 export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
@@ -205,6 +246,7 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
         // Surface one final chunk so the SSE stream gets the assembled response
         // for non-streaming providers.
         if (cfg.finalize && onChunk) onChunk(text);
+        recordUsage(opts, prompt.length, text.length, null, null);
         resolve({ text, exitCode: code ?? 0 });
       } catch (err) {
         reject(err as Error);
@@ -258,6 +300,9 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
       model: opts.model,
       messages,
       stream: true,
+      // Ask xAI to include real token counts in the final SSE chunk so
+      // we can record exact usage instead of estimating.
+      stream_options: { include_usage: true },
     }),
     signal: opts.signal,
   });
@@ -271,6 +316,8 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
   const decoder = new TextDecoder();
   let buffer = '';
   let fullText = '';
+  let promptTokens: number | null = null;
+  let completionTokens: number | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -287,11 +334,20 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
       try {
         const json = JSON.parse(data) as {
           choices?: Array<{ delta?: { content?: string } }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
         const delta = json.choices?.[0]?.delta?.content;
         if (delta) {
           fullText += delta;
           opts.onChunk?.(fullText);
+        }
+        if (json.usage) {
+          if (typeof json.usage.prompt_tokens === 'number') {
+            promptTokens = json.usage.prompt_tokens;
+          }
+          if (typeof json.usage.completion_tokens === 'number') {
+            completionTokens = json.usage.completion_tokens;
+          }
         }
       } catch {
         // ignore malformed SSE chunks
@@ -299,5 +355,13 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
     }
   }
 
-  return { text: fullText.trim(), exitCode: 0 };
+  const finalText = fullText.trim();
+  recordUsage(
+    opts,
+    opts.prompt.length,
+    finalText.length,
+    promptTokens,
+    completionTokens,
+  );
+  return { text: finalText, exitCode: 0 };
 }

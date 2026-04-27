@@ -187,6 +187,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         attachments: reloadedAttachments,
         tier: user.tier,
         lang: user.lang,
+        userId: user.id,
         emit: recordingSend,
         signal: controller.signal,
       });
@@ -277,6 +278,8 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           onChunk: (text) => {
             void send({ type: 'chunk', provider, text });
           },
+          userId: user.id,
+          mode: 'free',
         });
         messageStmts.updateContent.run(
           result.text,
@@ -378,6 +381,8 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
             onChunk: (text) => {
               void send({ type: 'chunk', provider: step.provider, text });
             },
+            userId: user.id,
+            mode: modeStr,
           });
           stepText = result.text;
         } catch (err) {

@@ -7,7 +7,6 @@ import {
   type MessageRow,
   type SessionRow,
 } from '../lib/db.js';
-import { deleteSessionFiles } from '../lib/uploads.js';
 
 export const sessionsRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -90,14 +89,16 @@ sessionsRoute.patch('/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+// Soft-delete only: the row stays so admin audit can still pull the
+// transcript later. Files on disk are kept intact for the same reason —
+// admin needs to see what was attached. Hard purge would be a separate
+// admin-only operation.
 sessionsRoute.delete('/:id', (c) => {
   const user = c.get('user');
-  const id = c.req.param('id');
-  // Confirm ownership BEFORE we touch files
+  const id = c.req.param('id') ?? '';
+  if (!id) return c.json({ error: 'id required' }, 400);
   const owned = sessionStmts.findOwned.get(id, user.id);
   if (!owned) return c.json({ error: 'not found' }, 404);
-  // Wipe binary attachments from disk (DB cascade handles the metadata)
-  deleteSessionFiles(id, user.username);
-  sessionStmts.delete.run(id, user.id);
+  sessionStmts.softDelete.run(id, user.id);
   return c.json({ ok: true });
 });

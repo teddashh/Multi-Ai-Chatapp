@@ -33,7 +33,7 @@ import ModeSelector from './components/ModeSelector';
 import RoleConfig from './components/RoleConfig';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
-import AdminPanel from './components/AdminPanel';
+import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
 import LangToggle from './components/LangToggle';
 import ProfileModal from './components/ProfileModal';
@@ -107,6 +107,18 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Browser back/forward (pushState navigation between / and /admin) needs
+  // a popstate listener — pathname state is otherwise stuck at first load.
+  useEffect(() => {
+    const onPop = () => setPathname(window.location.pathname);
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  const navigate = useCallback((path: string) => {
+    window.history.pushState({}, '', path);
+    setPathname(path);
+  }, []);
   // When switching language while logged in, persist server-side too.
   const handleLangToggle = useCallback(
     (l: Lang) => {
@@ -124,8 +136,8 @@ export default function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [pathname, setPathname] = useState(window.location.pathname);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -467,6 +479,13 @@ export default function App() {
     );
   } else if (!user) {
     content = <Login onLogin={setUser} />;
+  } else if (pathname === '/admin' && user.tier === 'super') {
+    content = (
+      <AdminPage
+        currentUser={user}
+        onExit={() => navigate('/')}
+      />
+    );
   } else {
     const displayName = user.nickname || user.username;
     const avatarSrc = user.hasAvatar
@@ -523,7 +542,7 @@ export default function App() {
                 </button>
                 {user.tier === 'super' && (
                   <button
-                    onClick={() => setShowAdmin(true)}
+                    onClick={() => navigate('/admin')}
                     className="text-gray-400 hover:text-white"
                     title={t.manageUsers}
                   >
@@ -582,11 +601,6 @@ export default function App() {
             isProcessing={isProcessing}
           />
 
-          <AdminPanel
-            isOpen={showAdmin}
-            onClose={() => setShowAdmin(false)}
-            currentUsername={user.username}
-          />
           <ProfileModal
             isOpen={showProfile}
             user={user}

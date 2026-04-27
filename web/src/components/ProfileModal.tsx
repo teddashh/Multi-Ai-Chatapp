@@ -32,7 +32,6 @@ const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
 export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props) {
   const { t, setLang } = useI18n();
   const [nickname, setNickname] = useState(user.nickname || '');
-  const [email, setEmail] = useState(user.email || '');
   const [password, setPassword] = useState('');
   const [lang, setLocalLang] = useState<Lang>(user.lang);
   const [theme, setTheme] = useState<ThemeId>(user.theme);
@@ -45,7 +44,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   useEffect(() => {
     if (isOpen) {
       setNickname(user.nickname || '');
-      setEmail(user.email || '');
       setPassword('');
       setLocalLang(user.lang);
       setTheme(user.theme);
@@ -69,7 +67,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
     try {
       const updated = await updateProfile({
         nickname: nickname.trim() || null,
-        email: email.trim() || null,
         password: password || null,
         lang,
         theme,
@@ -205,17 +202,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           type="text"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
-        />
-
-        {/* Email */}
-        <label className="block text-xs text-gray-300 mb-1">
-          {t.profileEmail}
-        </label>
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
           className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
         />
 

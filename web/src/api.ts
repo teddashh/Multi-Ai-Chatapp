@@ -34,7 +34,6 @@ export interface User {
 export async function updateProfile(patch: {
   lang?: 'zh-TW' | 'en';
   nickname?: string | null;
-  email?: string | null;
   password?: string | null;
   theme?: ThemeId;
 }): Promise<User> {
@@ -89,6 +88,70 @@ export interface AdminUser {
   created_at: number;
   nickname: string | null;
   email: string | null;
+  real_name: string | null;
+  has_avatar: boolean;
+}
+
+export interface AdminSessionSummary {
+  id: string;
+  title: string;
+  mode: ChatMode;
+  created_at: number;
+  updated_at: number;
+  deleted_at: number | null;
+  msg_count: number;
+}
+
+export interface AdminSessionDetail {
+  session: {
+    id: string;
+    title: string;
+    mode: ChatMode;
+    created_at: number;
+    updated_at: number;
+    deleted_at: number | null;
+    owner: {
+      username: string;
+      nickname: string | null;
+      real_name: string | null;
+    } | null;
+  };
+  messages: SessionDetail['messages'];
+}
+
+export interface AuditEntry {
+  id: number;
+  admin: string | null;
+  target_user: string | null;
+  target_session_id: string | null;
+  action: string;
+  metadata: Record<string, unknown> | null;
+  timestamp: number;
+}
+
+export interface UsageRow {
+  id: number;
+  username: string;
+  real_name: string | null;
+  nickname: string | null;
+  tier: Tier;
+  totals: {
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    prompt_chars: number;
+    completion_chars: number;
+  };
+  by_model: Array<{
+    provider: AIProvider;
+    model: string;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    prompt_chars: number;
+    completion_chars: number;
+    is_estimated: boolean;
+  }>;
 }
 
 export async function me(): Promise<User | null> {
@@ -296,6 +359,7 @@ export async function createUser(
     tier: Tier;
     nickname?: string;
     email?: string;
+    real_name?: string;
   },
 ): Promise<void> {
   await adminFetch('/users', {
@@ -304,9 +368,31 @@ export async function createUser(
   });
 }
 
+export async function inviteUser(
+  fields: {
+    username: string;
+    email: string;
+    tier: Tier;
+    nickname?: string;
+    real_name?: string;
+  },
+): Promise<{ inviteUrl: string }> {
+  const data = (await adminFetch('/users/invite', {
+    method: 'POST',
+    body: JSON.stringify(fields),
+  })) as { inviteUrl: string };
+  return data;
+}
+
 export async function updateUser(
   username: string,
-  patch: { password?: string; tier?: Tier; nickname?: string; email?: string },
+  patch: {
+    password?: string;
+    tier?: Tier;
+    nickname?: string;
+    email?: string;
+    real_name?: string;
+  },
 ): Promise<void> {
   await adminFetch(`/users/${encodeURIComponent(username)}`, {
     method: 'PATCH',
@@ -318,6 +404,33 @@ export async function deleteUser(username: string): Promise<void> {
   await adminFetch(`/users/${encodeURIComponent(username)}`, {
     method: 'DELETE',
   });
+}
+
+export async function adminListUserSessions(
+  username: string,
+): Promise<AdminSessionSummary[]> {
+  const data = (await adminFetch(
+    `/users/${encodeURIComponent(username)}/sessions`,
+  )) as { sessions: AdminSessionSummary[] };
+  return data.sessions;
+}
+
+export async function adminGetSession(id: string): Promise<AdminSessionDetail> {
+  const data = (await adminFetch(`/sessions/${encodeURIComponent(id)}`)) as
+    AdminSessionDetail;
+  return data;
+}
+
+export async function adminListAudit(limit = 200): Promise<AuditEntry[]> {
+  const data = (await adminFetch(`/audit?limit=${limit}`)) as {
+    audit: AuditEntry[];
+  };
+  return data.audit;
+}
+
+export async function adminGetUsage(): Promise<UsageRow[]> {
+  const data = (await adminFetch('/usage')) as { users: UsageRow[] };
+  return data.users;
 }
 
 // Streams chat events via SSE. Calls onEvent for each SSEEvent until 'finish'
