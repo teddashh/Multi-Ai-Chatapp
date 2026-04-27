@@ -62,20 +62,24 @@ body,
 
 [data-theme='summer'] {
   --bg-image: url('/themes/summer.png');
-  --bg-image-op: 0.22;
-  --accent: #ea580c;
-  --accent-hover: #c2410c;
+  --bg-image-op: 0.28;
+  /* Sky-cyan accent reads "summer/beach" much better than the previous
+     orange, which fought with the warm light surfaces. */
+  --accent: #0891b2;
+  --accent-hover: #0e7490;
 }
 
 /* Background image painter — fixed full-bleed, behind everything,
-   `cover` to keep aspect ratio so it never distorts. */
+   `cover` to keep aspect ratio so it never distorts. Anchor to the TOP so
+   character faces (upper portion of the artwork) stay visible on the
+   typical 16:9 widescreen rather than getting cropped off. */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   background-image: var(--bg-image);
   background-size: cover;
-  background-position: center;
+  background-position: var(--bg-image-pos, center top);
   background-repeat: no-repeat;
   opacity: var(--bg-image-op, 0);
   pointer-events: none;
@@ -159,57 +163,67 @@ body::before {
 /* ================================================================
    Summer = light theme
    ================================================================
-   Flips dark Tailwind surfaces to soft pastels and bumps text contrast.
-   Kept narrow on purpose — only the Tailwind classes the app actually
-   uses get overridden. */
+   Light, breezy palette — warm white surfaces with soft sky tints. Kept
+   narrow on purpose: only the Tailwind classes the app actually uses get
+   overridden, so we don't break things we haven't reviewed. */
+[data-theme='summer'] {
+  color-scheme: light;
+}
 [data-theme='summer'] body {
-  color: #1f2937;
+  background-color: #f0f9ff;
+  color: #0f172a;
 }
 [data-theme='summer'] .bg-gray-900 {
-  background-color: rgba(255, 255, 255, 0.86);
+  background-color: rgba(255, 255, 255, 0.92);
 }
 [data-theme='summer'] .bg-gray-950 {
-  background-color: rgba(255, 247, 237, 0.88);
+  background-color: rgba(236, 254, 255, 0.92);
 }
 [data-theme='summer'] .bg-gray-800 {
-  background-color: rgba(255, 255, 255, 0.88);
+  background-color: rgba(255, 255, 255, 0.92);
 }
 [data-theme='summer'] .bg-gray-700 {
-  background-color: rgba(229, 231, 235, 0.9);
+  background-color: rgba(207, 250, 254, 0.9);
 }
 [data-theme='summer'] .border-gray-700,
 [data-theme='summer'] .border-gray-800 {
-  border-color: rgba(229, 231, 235, 0.95);
+  border-color: rgba(186, 230, 253, 0.95);
 }
 [data-theme='summer'] .text-white {
-  color: #1f2937;
+  color: #0f172a;
 }
 [data-theme='summer'] .text-gray-200,
 [data-theme='summer'] .text-gray-300 {
-  color: #374151;
+  color: #1e293b;
 }
 [data-theme='summer'] .text-gray-400 {
-  color: #4b5563;
+  color: #475569;
 }
 [data-theme='summer'] .text-gray-500 {
-  color: #6b7280;
+  color: #64748b;
 }
 [data-theme='summer'] .text-gray-600 {
-  color: #9ca3af;
+  color: #94a3b8;
 }
 [data-theme='summer'] input,
 [data-theme='summer'] textarea,
 [data-theme='summer'] select {
-  color: #111827;
+  color: #0f172a;
 }
 [data-theme='summer'] input::placeholder,
 [data-theme='summer'] textarea::placeholder {
-  color: #9ca3af;
+  color: #94a3b8;
 }
 [data-theme='summer'] .hover\:bg-gray-700:hover,
 [data-theme='summer'] .hover\:bg-gray-800:hover {
-  background-color: rgba(229, 231, 235, 0.9);
+  background-color: rgba(207, 250, 254, 0.9);
 }
 [data-theme='summer'] .hover\:text-white:hover {
-  color: #111827;
+  color: #0f172a;
+}
+[data-theme='summer'] .text-yellow-300 {
+  color: #0891b2;
+}
+[data-theme='summer'] .bg-red-600 {
+  background-color: #ef4444;
 }

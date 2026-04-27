@@ -320,10 +320,10 @@ const ZH: Dict = {
   profileTheme: '配色主題',
   themeWinter: '冬季（預設）',
   themeSummer: '夏季',
-  themeClaude: 'Team Claude',
-  themeGemini: 'Team Gemini',
-  themeGrok: 'Team Grok',
-  themeChatGPT: 'Team ChatGPT',
+  themeClaude: 'Claude 小隊',
+  themeGemini: 'Gemini 小隊',
+  themeGrok: 'Grok 小隊',
+  themeChatGPT: 'ChatGPT 小隊',
 };
 
 const EN: Dict = {
