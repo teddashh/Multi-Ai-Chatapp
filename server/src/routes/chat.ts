@@ -11,6 +11,7 @@ import {
 } from '../lib/db.js';
 import {
   loadAttachments,
+  relocateToSession,
   saveUpload,
   MAX_FILE_BYTES,
   MAX_FILES_PER_MESSAGE,
@@ -96,7 +97,22 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const userMsgId = Number(userMsgRes.lastInsertRowid);
   for (const att of attachments) {
     attachmentStmts.attachToMessage.run(userMsgId, att.id, user.id);
+    // Move file from _pending/<id>/ to <username>/<session_id>/<id>/ for
+    // human-browsable / rsync-friendly layout.
+    try {
+      relocateToSession(att.id, user.id, user.username, sessionId);
+      // Refresh the path on the in-memory attachment so any downstream
+      // provider invocation reads the new location.
+      att.path = att.path.replace(/_pending/, ''); // best-effort; orchestrator re-loads anyway
+    } catch (err) {
+      console.error('attachment relocation failed', (err as Error).message);
+    }
   }
+  // Re-load attachments so paths reflect the post-move state.
+  const reloadedAttachments = loadAttachments(
+    attachments.map((a) => a.id),
+    user.id,
+  );
 
   return streamSSE(c, async (stream) => {
     const controller = new AbortController();
@@ -153,7 +169,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         mode,
         roles,
         modelOverrides,
-        attachments,
+        attachments: reloadedAttachments,
         tier: user.tier,
         emit: recordingSend,
         signal: controller.signal,

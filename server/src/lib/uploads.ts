@@ -1,11 +1,24 @@
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { AttachmentKind, AttachmentRow } from './db.js';
-import { attachmentStmts } from './db.js';
+import { attachmentStmts, db } from './db.js';
 
-const UPLOAD_ROOT = resolve(process.env.UPLOAD_DIR || './data/uploads');
+export const UPLOAD_ROOT = resolve(process.env.UPLOAD_DIR || './data/uploads');
 mkdirSync(UPLOAD_ROOT, { recursive: true });
+mkdirSync(join(UPLOAD_ROOT, '_pending'), { recursive: true });
+
+// Filesystem-safe slug for usernames (which might contain @ etc.)
+function sanitizeForPath(s: string): string {
+  const cleaned = s.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 100);
+  return cleaned || '_';
+}
 
 export const MAX_FILE_BYTES = parseInt(process.env.MAX_UPLOAD_BYTES || `${20 * 1024 * 1024}`, 10);
 export const MAX_FILES_PER_MESSAGE = 5;
@@ -57,7 +70,9 @@ export async function saveUpload(
   }
   const id = randomUUID();
   const safeName = filename.replace(/[\\/:*?"<>|]/g, '_').slice(0, 200) || 'unnamed';
-  const dir = join(UPLOAD_ROOT, id);
+  // Initial location: _pending/<id>/<filename>. Moves to
+  // <username>/<session_id>/<id>/<filename> when attached to a sent message.
+  const dir = join(UPLOAD_ROOT, '_pending', id);
   mkdirSync(dir, { recursive: true });
   const path = join(dir, safeName);
   writeFileSync(path, bytes);
@@ -170,4 +185,57 @@ export function imageAttachments(attachments: PreparedAttachment[]): PreparedAtt
 export function readImageBase64(a: PreparedAttachment): { mediaType: string; data: string } {
   const data = readFileSync(a.path).toString('base64');
   return { mediaType: a.mimeType, data };
+}
+
+const updatePathStmt = db.prepare<[string, string]>(
+  `UPDATE chat_attachments SET path = ? WHERE id = ?`,
+);
+
+// Moves an uploaded attachment file from _pending/<id>/<file> to
+// <username>/<session_id>/<id>/<file>, then updates the path stored in DB.
+// Idempotent: if it has already been moved, this is a no-op.
+export function relocateToSession(
+  attachmentId: string,
+  userId: number,
+  username: string,
+  sessionId: string,
+): void {
+  const row = attachmentStmts.findOwned.get(attachmentId, userId) as
+    | AttachmentRow
+    | undefined;
+  if (!row) return;
+  const cleanUser = sanitizeForPath(username);
+  const cleanSession = sanitizeForPath(sessionId);
+  const expectedDir = join(UPLOAD_ROOT, cleanUser, cleanSession, attachmentId);
+  const expectedPath = join(expectedDir, row.filename);
+  if (row.path === expectedPath) return; // already in place
+  mkdirSync(expectedDir, { recursive: true });
+  try {
+    renameSync(row.path, expectedPath);
+  } catch (err) {
+    // If rename across devices fails fall back to copy + delete
+    const data = readFileSync(row.path);
+    writeFileSync(expectedPath, data);
+    rmSync(row.path, { force: true });
+  }
+  updatePathStmt.run(expectedPath, attachmentId);
+  // Try to remove the now-empty pending directory
+  try {
+    rmSync(dirname(row.path), { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
+// Walk all attachments for a session and remove their files from disk. Called
+// before deleting the session row in DB so we don't leave orphaned files.
+export function deleteSessionFiles(sessionId: string, username: string): void {
+  const cleanUser = sanitizeForPath(username);
+  const cleanSession = sanitizeForPath(sessionId);
+  const dir = join(UPLOAD_ROOT, cleanUser, cleanSession);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // ignore — directory may not exist
+  }
 }

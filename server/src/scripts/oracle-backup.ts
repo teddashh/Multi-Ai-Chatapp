@@ -79,6 +79,24 @@ const DDL: string[] = [
    )`,
   `CREATE INDEX IX_MAC_MSG_SESSION ON MAC_MESSAGES (SESSION_ID)`,
 
+  // Append-only attachment metadata. Binary content stays on the server's
+  // filesystem (under <username>/<session_id>/<id>/<filename>) for audit /
+  // rsync-to-elsewhere; this table just lets you correlate by ID.
+  `CREATE TABLE MAC_ATTACHMENTS (
+     ATTACHMENT_ID  VARCHAR2(64) PRIMARY KEY,
+     USER_ID        NUMBER NOT NULL,
+     MESSAGE_ID     NUMBER,
+     FILENAME       VARCHAR2(500) NOT NULL,
+     MIME_TYPE      VARCHAR2(255) NOT NULL,
+     SIZE_BYTES     NUMBER NOT NULL,
+     PATH           VARCHAR2(2000) NOT NULL,
+     KIND           VARCHAR2(16) NOT NULL,
+     SRC_CREATED_AT NUMBER NOT NULL,
+     SYNCED_AT      TIMESTAMP DEFAULT SYSTIMESTAMP
+   )`,
+  `CREATE INDEX IX_MAC_ATT_MSG ON MAC_ATTACHMENTS (MESSAGE_ID)`,
+  `CREATE INDEX IX_MAC_ATT_USR ON MAC_ATTACHMENTS (USER_ID)`,
+
   `CREATE TABLE MAC_BACKUP_LOG (
      RUN_ID         NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
      RUN_AT         TIMESTAMP DEFAULT SYSTIMESTAMP,
@@ -86,9 +104,16 @@ const DDL: string[] = [
      USERS_ADDED    NUMBER DEFAULT 0,
      SESSIONS_ADDED NUMBER DEFAULT 0,
      MESSAGES_ADDED NUMBER DEFAULT 0,
+     ATTACHMENTS_ADDED NUMBER DEFAULT 0,
      DURATION_MS    NUMBER,
      ERROR_MESSAGE  VARCHAR2(2000)
    )`,
+];
+
+// Idempotent ALTER TABLE statements for incrementally adding columns to
+// already-created backup tables. ORA-01430 = column already exists.
+const COLUMN_ADDS: string[] = [
+  `ALTER TABLE MAC_BACKUP_LOG ADD (ATTACHMENTS_ADDED NUMBER DEFAULT 0)`,
 ];
 
 async function ensureTables(conn: oracledb.Connection): Promise<void> {
@@ -104,6 +129,17 @@ async function ensureTables(conn: oracledb.Connection): Promise<void> {
       }
     }
   }
+  for (const stmt of COLUMN_ADDS) {
+    try {
+      await conn.execute(stmt);
+    } catch (err) {
+      const msg = (err as Error).message;
+      // ORA-01430: column already exists / ORA-00942: table missing on first run
+      if (!msg.includes('ORA-01430') && !msg.includes('ORA-00942')) {
+        throw err;
+      }
+    }
+  }
   await conn.commit();
 }
 
@@ -115,6 +151,18 @@ interface SqliteUser {
   created_at: number;
   nickname: string;
   email: string;
+}
+
+interface SqliteAttachment {
+  id: string;
+  user_id: number;
+  message_id: number | null;
+  filename: string;
+  mime_type: string;
+  size: number;
+  path: string;
+  kind: string;
+  created_at: number;
 }
 
 interface SqliteMessage {
@@ -376,6 +424,57 @@ async function syncMessages(conn: oracledb.Connection): Promise<number> {
   return rows.length;
 }
 
+async function syncAttachments(conn: oracledb.Connection): Promise<number> {
+  // Fetch all attachment IDs already in Oracle, then insert any in SQLite that
+  // are missing. Path/message_id can change after upload (relocation, attach
+  // to message), so we MERGE-update those columns rather than ignoring.
+  const existing = await conn.execute<{ ATTACHMENT_ID: string }>(
+    `SELECT ATTACHMENT_ID FROM MAC_ATTACHMENTS`,
+    {},
+    { outFormat: oracledb.OUT_FORMAT_OBJECT },
+  );
+  const known = new Set((existing.rows ?? []).map((r) => r.ATTACHMENT_ID));
+
+  const rows = db
+    .prepare(
+      `SELECT id, user_id, message_id, filename, mime_type, size, path, kind, created_at
+         FROM chat_attachments`,
+    )
+    .all() as SqliteAttachment[];
+
+  let added = 0;
+  for (const a of rows) {
+    if (known.has(a.id)) {
+      // Update path / message_id in case they changed since first sync.
+      await conn.execute(
+        `UPDATE MAC_ATTACHMENTS
+            SET MESSAGE_ID = :mid, PATH = :path
+          WHERE ATTACHMENT_ID = :aid`,
+        { mid: a.message_id, path: a.path, aid: a.id },
+      );
+      continue;
+    }
+    await conn.execute(
+      `INSERT INTO MAC_ATTACHMENTS
+         (ATTACHMENT_ID, USER_ID, MESSAGE_ID, FILENAME, MIME_TYPE, SIZE_BYTES, PATH, KIND, SRC_CREATED_AT)
+       VALUES (:aid, :userid, :mid, :fname, :mtype, :sz, :path, :kind, :cdate)`,
+      {
+        aid: a.id,
+        userid: a.user_id,
+        mid: a.message_id,
+        fname: a.filename,
+        mtype: a.mime_type,
+        sz: a.size,
+        path: a.path,
+        kind: a.kind,
+        cdate: a.created_at,
+      },
+    );
+    added++;
+  }
+  return added;
+}
+
 async function main() {
   const env = readEnv();
   if (!env) {
@@ -388,6 +487,7 @@ async function main() {
   let usersAdded = 0;
   let sessionsAdded = 0;
   let messagesAdded = 0;
+  let attachmentsAdded = 0;
   let status = 'ok';
   let errMsg: string | null = null;
 
@@ -405,6 +505,7 @@ async function main() {
     usersAdded = await syncUsers(conn);
     sessionsAdded = await syncSessions(conn);
     messagesAdded = await syncMessages(conn);
+    attachmentsAdded = await syncAttachments(conn);
     await conn.commit();
   } catch (err) {
     status = 'error';
@@ -419,13 +520,14 @@ async function main() {
     try {
       await conn.execute(
         `INSERT INTO MAC_BACKUP_LOG
-           (STATUS, USERS_ADDED, SESSIONS_ADDED, MESSAGES_ADDED, DURATION_MS, ERROR_MESSAGE)
-         VALUES (:st, :u, :s, :m, :d, :e)`,
+           (STATUS, USERS_ADDED, SESSIONS_ADDED, MESSAGES_ADDED, ATTACHMENTS_ADDED, DURATION_MS, ERROR_MESSAGE)
+         VALUES (:st, :u, :s, :m, :a, :d, :e)`,
         {
           st: status,
           u: usersAdded,
           s: sessionsAdded,
           m: messagesAdded,
+          a: attachmentsAdded,
           d: durationMs,
           e: errMsg ? errMsg.slice(0, 2000) : null,
         },
@@ -438,7 +540,7 @@ async function main() {
   }
 
   console.log(
-    `[oracle-backup] status=${status} users+=${usersAdded} sessions+=${sessionsAdded} messages+=${messagesAdded} ${durationMs}ms`,
+    `[oracle-backup] status=${status} users+=${usersAdded} sessions+=${sessionsAdded} messages+=${messagesAdded} attachments+=${attachmentsAdded} ${durationMs}ms`,
   );
 
   if (status !== 'ok') process.exit(1);

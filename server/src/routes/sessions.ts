@@ -7,6 +7,7 @@ import {
   type MessageRow,
   type SessionRow,
 } from '../lib/db.js';
+import { deleteSessionFiles } from '../lib/uploads.js';
 
 export const sessionsRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -92,7 +93,11 @@ sessionsRoute.patch('/:id', async (c) => {
 sessionsRoute.delete('/:id', (c) => {
   const user = c.get('user');
   const id = c.req.param('id');
-  const result = sessionStmts.delete.run(id, user.id);
-  if (result.changes === 0) return c.json({ error: 'not found' }, 404);
+  // Confirm ownership BEFORE we touch files
+  const owned = sessionStmts.findOwned.get(id, user.id);
+  if (!owned) return c.json({ error: 'not found' }, 404);
+  // Wipe binary attachments from disk (DB cascade handles the metadata)
+  deleteSessionFiles(id, user.username);
+  sessionStmts.delete.run(id, user.id);
   return c.json({ ok: true });
 });
