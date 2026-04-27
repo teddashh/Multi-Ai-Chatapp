@@ -47,4 +47,5 @@ export type SSEEvent =
   | { type: 'chunk'; provider: AIProvider; text: string }
   | { type: 'done'; provider: AIProvider; text: string }
   | { type: 'error'; provider?: AIProvider; message: string }
+  | { type: 'session'; sessionId: string; isNew: boolean }
   | { type: 'finish' };

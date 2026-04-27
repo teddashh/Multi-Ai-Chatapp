@@ -44,6 +44,68 @@ export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 }
 
+// === Sessions ===
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  mode: ChatMode;
+  created_at: number;
+  updated_at: number;
+  msg_count: number;
+}
+
+export interface SessionDetail {
+  session: {
+    id: string;
+    title: string;
+    mode: ChatMode;
+    created_at: number;
+    updated_at: number;
+  };
+  messages: Array<{
+    id: string;
+    role: 'user' | 'ai';
+    provider?: AIProvider;
+    modeRole?: string;
+    content: string;
+    timestamp: number;
+  }>;
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  const res = await fetch('/api/sessions', { credentials: 'include' });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = (await res.json()) as { sessions: SessionSummary[] };
+  return data.sessions;
+}
+
+export async function getSession(id: string): Promise<SessionDetail> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<SessionDetail>;
+}
+
+export async function renameSession(id: string, title: string): Promise<void> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
 // === Admin (super tier only) ===
 
 async function adminFetch(path: string, init?: RequestInit): Promise<unknown> {
@@ -99,6 +161,7 @@ export async function streamChat(
     mode: ChatMode;
     roles?: ModeRoles;
     modelOverrides?: Partial<Record<AIProvider, string>>;
+    sessionId?: string;
   },
   onEvent: (event: SSEEvent) => void,
   signal: AbortSignal,

@@ -14,7 +14,15 @@ import {
   DEFAULT_DEBATE_ROLES,
   DEFAULT_ROUNDTABLE_ROLES,
 } from './shared/constants';
-import { logout, me, streamChat, type User } from './api';
+import {
+  getSession,
+  listSessions,
+  logout,
+  me,
+  streamChat,
+  type SessionSummary,
+  type User,
+} from './api';
 import Login from './components/Login';
 import ProvidersBar from './components/ProvidersBar';
 import ModeSelector from './components/ModeSelector';
@@ -22,6 +30,7 @@ import RoleConfig from './components/RoleConfig';
 import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import AdminPanel from './components/AdminPanel';
+import Sidebar from './components/Sidebar';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
   debate: DEFAULT_DEBATE_ROLES,
@@ -69,6 +78,9 @@ export default function App() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modelOverrides, setModelOverrides] = useState<Partial<Record<AIProvider, string>>>(
     () => {
       try {
@@ -88,6 +100,44 @@ export default function App() {
       setUser(u);
       setAuthChecked(true);
     });
+  }, []);
+
+  const refreshSessions = useCallback(async () => {
+    try {
+      const list = await listSessions();
+      setSessions(list);
+    } catch {
+      // ignore (likely 401 on initial load)
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) refreshSessions();
+  }, [user, refreshSessions]);
+
+  const handleSelectSession = useCallback(async (id: string) => {
+    try {
+      const detail = await getSession(id);
+      setActiveSessionId(detail.session.id);
+      setMode(detail.session.mode as ChatMode);
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          provider: m.provider,
+          modeRole: m.modeRole,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+      );
+    } catch (err) {
+      alert(`載入失敗：${(err as Error).message}`);
+    }
+  }, []);
+
+  const handleNewChat = useCallback(() => {
+    setActiveSessionId(null);
+    setMessages([]);
   }, []);
 
   useEffect(() => {
@@ -116,6 +166,10 @@ export default function App() {
 
   const handleEvent = useCallback((ev: SSEEvent) => {
     switch (ev.type) {
+      case 'session':
+        setActiveSessionId(ev.sessionId);
+        if (ev.isNew) refreshSessions();
+        break;
       case 'workflow':
         setWorkflowStatus(ev.status);
         if (!ev.status) setIsProcessing(false);
@@ -203,9 +257,11 @@ export default function App() {
       case 'finish':
         setIsProcessing(false);
         setWorkflowStatus('');
+        // Refresh session list so the sidebar updated_at order reflects this turn
+        refreshSessions();
         break;
     }
-  }, []);
+  }, [refreshSessions]);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -229,6 +285,7 @@ export default function App() {
             mode,
             roles: mode !== 'free' ? roles : undefined,
             modelOverrides,
+            sessionId: activeSessionId ?? undefined,
           },
           handleEvent,
           ctrl.signal,
@@ -251,7 +308,7 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [mode, roles, isProcessing, modelOverrides, handleEvent],
+    [mode, roles, isProcessing, modelOverrides, activeSessionId, handleEvent],
   );
 
   const handleCancel = useCallback(() => {
@@ -286,11 +343,30 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen max-w-3xl mx-auto">
+    <div className="flex h-screen">
+      <Sidebar
+        sessions={sessions}
+        activeId={activeSessionId}
+        onSelect={handleSelectSession}
+        onNew={handleNewChat}
+        onRefresh={refreshSessions}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
+      <div className="flex flex-col flex-1 min-w-0">
       {/* Header */}
       <div className="flex-none border-b border-gray-800 p-3">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-lg font-bold">Multi-AI Chatapp</h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden text-gray-400 hover:text-white"
+              title="開啟側邊欄"
+            >
+              ☰
+            </button>
+            <h1 className="text-lg font-bold">Multi-AI Chatapp</h1>
+          </div>
           <div className="flex items-center gap-3 text-xs">
             <button
               onClick={handleExport}
@@ -368,6 +444,7 @@ export default function App() {
         onClose={() => setShowAdmin(false)}
         currentUsername={user.username}
       />
+      </div>
     </div>
   );
 }
