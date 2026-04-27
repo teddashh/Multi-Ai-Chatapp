@@ -1,6 +1,10 @@
 import { runCLI } from './cli.js';
 import { resolveModel } from '../shared/models.js';
 import { PROMPTS, PROVIDER_NAMES } from '../shared/prompts.js';
+import {
+  buildAttachmentPrefix,
+  type PreparedAttachment,
+} from './uploads.js';
 import type {
   AIProvider,
   ChatMode,
@@ -19,6 +23,7 @@ export interface OrchestratorParams {
   roles?: ModeRoles;
   tier: Tier;
   modelOverrides?: Partial<Record<AIProvider, string>>;
+  attachments?: PreparedAttachment[];
   emit: (event: SSEEvent) => void;
   signal: AbortSignal;
 }
@@ -57,11 +62,20 @@ async function runOne(
   prompt: string,
 ): Promise<string> {
   const model = resolveModel(p.tier, provider, p.modelOverrides?.[provider]);
+  // Only the FIRST round-trip of a session sees the attachments — they're tied
+  // to the user's original message, not synthetic prompts the orchestrator
+  // builds for downstream roles. We detect that by matching `p.text` inside
+  // the prompt; simpler, attach to all rounds and let providers ignore extras.
+  const attachments = p.attachments ?? [];
+  const finalPrompt = attachments.length > 0
+    ? buildAttachmentPrefix(attachments) + prompt
+    : prompt;
   try {
     const result = await runCLI({
       provider,
       model,
-      prompt,
+      prompt: finalPrompt,
+      attachments,
       signal: p.signal,
       onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
     });

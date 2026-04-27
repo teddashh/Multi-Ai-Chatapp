@@ -4,13 +4,43 @@ import { randomUUID } from 'node:crypto';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import { runMode } from '../lib/orchestrator.js';
 import {
+  attachmentStmts,
   messageStmts,
   sessionStmts,
   type SessionRow,
 } from '../lib/db.js';
+import {
+  loadAttachments,
+  saveUpload,
+  MAX_FILE_BYTES,
+  MAX_FILES_PER_MESSAGE,
+} from '../lib/uploads.js';
 import type { AIProvider, ChatMode, ModeRoles, SSEEvent } from '../shared/types.js';
 
 export const chatRoute = new Hono<{ Variables: AppVariables }>();
+
+chatRoute.post('/upload', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = await c.req.parseBody().catch(() => null);
+  if (!body) return c.json({ error: 'multipart body required' }, 400);
+  const file = body['file'];
+  if (!(file instanceof File)) {
+    return c.json({ error: 'file required' }, 400);
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return c.json(
+      { error: `檔案過大（最大 ${Math.round(MAX_FILE_BYTES / 1024 / 1024)}MB）` },
+      413,
+    );
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  try {
+    const saved = await saveUpload(user.id, file.name, file.type || 'application/octet-stream', buffer);
+    return c.json({ attachment: saved });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
 
 function deriveTitle(text: string): string {
   const trimmed = text.replace(/\s+/g, ' ').trim();
@@ -26,6 +56,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         roles?: ModeRoles;
         modelOverrides?: Partial<Record<AIProvider, string>>;
         sessionId?: string;
+        attachmentIds?: string[];
       }
     | null;
 
@@ -37,6 +68,8 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const mode = body.mode;
   const roles = body.roles;
   const modelOverrides = body.modelOverrides;
+  const attachmentIds = (body.attachmentIds || []).slice(0, MAX_FILES_PER_MESSAGE);
+  const attachments = loadAttachments(attachmentIds, user.id);
 
   // Resolve session: reuse if user owns it, else create a fresh one.
   let sessionId = body.sessionId ?? '';
@@ -59,7 +92,11 @@ chatRoute.post('/send', requireAuth, async (c) => {
 
   // Persist the user message immediately
   const now = Math.floor(Date.now() / 1000);
-  messageStmts.insert.run(sessionId, 'user', null, null, text, now);
+  const userMsgRes = messageStmts.insert.run(sessionId, 'user', null, null, text, now);
+  const userMsgId = Number(userMsgRes.lastInsertRowid);
+  for (const att of attachments) {
+    attachmentStmts.attachToMessage.run(userMsgId, att.id, user.id);
+  }
 
   return streamSSE(c, async (stream) => {
     const controller = new AbortController();
@@ -116,6 +153,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         mode,
         roles,
         modelOverrides,
+        attachments,
         tier: user.tier,
         emit: recordingSend,
         signal: controller.signal,

@@ -3,6 +3,7 @@ import type {
   AIProvider,
   ChatMessage,
   ChatMode,
+  MessageAttachment,
   ModeRoles,
   SSEEvent,
 } from './shared/types';
@@ -103,6 +104,7 @@ export default function App() {
           modeRole: m.modeRole,
           content: m.content,
           timestamp: m.timestamp,
+          attachments: m.attachments,
         })),
       );
     } catch (err) {
@@ -239,13 +241,15 @@ export default function App() {
   }, [refreshSessions]);
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: MessageAttachment[]) => {
       if (isProcessing) return;
+      if (!text && attachments.length === 0) return;
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
         role: 'user',
         content: text,
         timestamp: Date.now(),
+        attachments,
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsProcessing(true);
@@ -261,6 +265,7 @@ export default function App() {
             roles: mode !== 'free' ? roles : undefined,
             modelOverrides,
             sessionId: activeSessionId ?? undefined,
+            attachmentIds: attachments.map((a) => a.id),
           },
           handleEvent,
           ctrl.signal,

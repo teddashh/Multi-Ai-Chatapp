@@ -28,6 +28,14 @@ export interface RoundtableRoles {
 }
 export type ModeRoles = DebateRoles | ConsultRoles | CodingRoles | RoundtableRoles;
 
+export interface MessageAttachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  kind: 'image' | 'pdf' | 'text' | 'other';
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'ai';
@@ -35,6 +43,7 @@ export interface ChatMessage {
   modeRole?: string;
   content: string;
   timestamp: number;
+  attachments?: MessageAttachment[];
 }
 
 export type SSEEvent =

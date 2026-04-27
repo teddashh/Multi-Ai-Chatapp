@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import type { AIProvider } from '../shared/types.js';
+import {
+  imageAttachments,
+  readImageBase64,
+  type PreparedAttachment,
+} from './uploads.js';
 
 const CLI_BINARY: Record<AIProvider, string> = {
   claude: process.env.CLI_CLAUDE || 'claude',
@@ -31,36 +36,53 @@ interface ProviderConfig {
   argv: string[];
   useStdin: boolean;
   finalize?: () => Promise<string>;
+  // If set, this is what we actually feed via stdin (overrides the prompt arg).
+  promptOverride?: string;
 }
 
 function buildConfig(
   provider: AIProvider,
   model: string,
   prompt: string,
+  attachments: PreparedAttachment[],
 ): ProviderConfig {
+  const images = imageAttachments(attachments);
+
   switch (provider) {
-    case 'claude':
-      // Claude Code: -p with --output-format text streams plain text to stdout.
-      // Prompt comes from stdin.
+    case 'claude': {
+      // Claude Code: -p reads prompt from stdin, --add-dir gives the CLI
+      // permission to read each upload directory so file paths embedded in
+      // the prompt resolve. We prepend a header listing image paths so the
+      // model knows where to look.
+      const argv: string[] = ['-p', '--model', model, '--output-format', 'text'];
+      const dirs = new Set<string>();
+      for (const img of images) dirs.add(dirname(img.path));
+      for (const d of dirs) argv.push('--add-dir', d);
+      const header = images.length > 0
+        ? '請查看以下圖片附件：\n' + images.map((i) => `- ${i.path}`).join('\n') + '\n\n'
+        : '';
       return {
-        argv: ['-p', '--model', model, '--output-format', 'text'],
+        argv,
         useStdin: true,
+        promptOverride: header + prompt,
       };
+    }
 
     case 'chatgpt': {
-      // OpenAI Codex CLI: stdout is verbose (banners, warnings, intermediate
-      // messages). --output-last-message writes only the final assistant text
-      // to a file, which is what we read.
+      // OpenAI Codex CLI: -i FILE attaches each image. PDF/text are already
+      // inlined in the prompt by buildAttachmentPrefix.
       const outFile = tempFile('codex-out');
+      const argv: string[] = [
+        'exec',
+        '--skip-git-repo-check',
+        '--model',
+        model,
+        '--output-last-message',
+        outFile,
+      ];
+      for (const img of images) argv.push('-i', img.path);
       return {
-        argv: [
-          'exec',
-          '--skip-git-repo-check',
-          '--model',
-          model,
-          '--output-last-message',
-          outFile,
-        ],
+        argv,
         useStdin: true,
         finalize: async () => {
           try {
@@ -73,15 +95,22 @@ function buildConfig(
       };
     }
 
-    case 'gemini':
-      // Gemini CLI: -p REQUIRES a value (won't read stdin alone). Pass prompt
-      // as argv — spawn() doesn't go through a shell so multi-line / special
-      // chars are safe. --skip-trust suppresses the trusted-directory check
-      // since we run from /tmp.
-      return {
-        argv: ['-m', model, '--skip-trust', '-p', prompt],
-        useStdin: false,
-      };
+    case 'gemini': {
+      // Gemini CLI: --include-directories grants the workspace access to each
+      // upload directory; we mention paths in the prompt so the model picks
+      // them up.
+      const argv: string[] = ['-m', model, '--skip-trust'];
+      const dirs = new Set<string>();
+      for (const img of images) dirs.add(dirname(img.path));
+      if (dirs.size > 0) {
+        argv.push('--include-directories', Array.from(dirs).join(','));
+      }
+      const header = images.length > 0
+        ? '請查看以下圖片附件：\n' + images.map((i) => `- ${i.path}`).join('\n') + '\n\n'
+        : '';
+      argv.push('-p', header + prompt);
+      return { argv, useStdin: false };
+    }
 
     default:
       throw new Error(`unsupported CLI provider: ${provider}`);
@@ -92,6 +121,7 @@ export interface CLIRunOptions {
   provider: AIProvider;
   model: string;
   prompt: string;
+  attachments?: PreparedAttachment[];
   onChunk?: (text: string) => void;
   signal?: AbortSignal;
 }
@@ -108,7 +138,8 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
   }
 
   const { provider, prompt, onChunk, signal } = opts;
-  const cfg = buildConfig(provider, opts.model, prompt);
+  const cfg = buildConfig(provider, opts.model, prompt, opts.attachments ?? []);
+  const stdinPrompt = cfg.promptOverride ?? prompt;
   const bin = CLI_BINARY[provider];
 
   return new Promise<CLIRunResult>((resolve, reject) => {
@@ -181,7 +212,7 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
     });
 
     if (cfg.useStdin) {
-      child.stdin.write(prompt);
+      child.stdin.write(stdinPrompt);
     }
     child.stdin.end();
   });
@@ -195,6 +226,28 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
     throw new Error('XAI_API_KEY is not set in server/.env');
   }
 
+  // Build OpenAI-compatible messages. If there are images, switch to the
+  // structured content array; otherwise pass the prompt as a plain string
+  // (slightly cheaper to serialize).
+  const images = imageAttachments(opts.attachments ?? []);
+  let messages: unknown;
+  if (images.length === 0) {
+    messages = [{ role: 'user', content: opts.prompt }];
+  } else {
+    const content: Array<
+      | { type: 'text'; text: string }
+      | { type: 'image_url'; image_url: { url: string } }
+    > = [{ type: 'text', text: opts.prompt }];
+    for (const img of images) {
+      const { mediaType, data } = readImageBase64(img);
+      content.push({
+        type: 'image_url',
+        image_url: { url: `data:${mediaType};base64,${data}` },
+      });
+    }
+    messages = [{ role: 'user', content }];
+  }
+
   const response = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -203,7 +256,7 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
     },
     body: JSON.stringify({
       model: opts.model,
-      messages: [{ role: 'user', content: opts.prompt }],
+      messages,
       stream: true,
     }),
     signal: opts.signal,

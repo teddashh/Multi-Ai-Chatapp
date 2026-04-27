@@ -53,6 +53,21 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
   CREATE INDEX IF NOT EXISTS idx_resets_user ON password_resets(user_id, expires_at);
+
+  CREATE TABLE IF NOT EXISTS chat_attachments (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    message_id INTEGER REFERENCES chat_messages(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('image','pdf','text','other')),
+    text_content TEXT,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_attachments_message ON chat_attachments(message_id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_orphaned ON chat_attachments(user_id, message_id);
 `);
 
 // One-shot, idempotent column additions for existing DBs.
@@ -155,6 +170,37 @@ export const userStmts = {
   ),
   setPasswordHash: db.prepare<[string, number]>(
     'UPDATE users SET password_hash = ?, failed_attempts = 0, locked_until = 0 WHERE id = ?',
+  ),
+};
+
+export type AttachmentKind = 'image' | 'pdf' | 'text' | 'other';
+
+export interface AttachmentRow {
+  id: string;
+  user_id: number;
+  message_id: number | null;
+  filename: string;
+  mime_type: string;
+  size: number;
+  path: string;
+  kind: AttachmentKind;
+  text_content: string | null;
+  created_at: number;
+}
+
+export const attachmentStmts = {
+  insert: db.prepare<[string, number, string, string, number, string, AttachmentKind, string | null]>(
+    `INSERT INTO chat_attachments (id, user_id, filename, mime_type, size, path, kind, text_content)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  findOwned: db.prepare<[string, number]>(
+    `SELECT * FROM chat_attachments WHERE id = ? AND user_id = ?`,
+  ),
+  attachToMessage: db.prepare<[number, string, number]>(
+    `UPDATE chat_attachments SET message_id = ? WHERE id = ? AND user_id = ?`,
+  ),
+  listForMessage: db.prepare<[number]>(
+    `SELECT id, filename, mime_type, size, kind FROM chat_attachments WHERE message_id = ? ORDER BY created_at`,
   ),
 };
 

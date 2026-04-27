@@ -1,4 +1,11 @@
-import type { AIProvider, ChatMode, ModeRoles, SSEEvent, Tier } from './shared/types';
+import type {
+  AIProvider,
+  ChatMode,
+  MessageAttachment,
+  ModeRoles,
+  SSEEvent,
+  Tier,
+} from './shared/types';
 
 export interface ModelChoices {
   default: string;
@@ -69,6 +76,24 @@ export async function resetPassword(token: string, password: string): Promise<vo
   }
 }
 
+// === Attachments ===
+
+export async function uploadFile(file: File): Promise<MessageAttachment> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/chat/upload', {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const data = (await res.json()) as { attachment: MessageAttachment };
+  return data.attachment;
+}
+
 // === Sessions ===
 
 export interface SessionSummary {
@@ -95,6 +120,7 @@ export interface SessionDetail {
     modeRole?: string;
     content: string;
     timestamp: number;
+    attachments?: MessageAttachment[];
   }>;
 }
 
@@ -191,6 +217,7 @@ export async function streamChat(
     roles?: ModeRoles;
     modelOverrides?: Partial<Record<AIProvider, string>>;
     sessionId?: string;
+    attachmentIds?: string[];
   },
   onEvent: (event: SSEEvent) => void,
   signal: AbortSignal,

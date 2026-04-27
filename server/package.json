@@ -19,7 +19,8 @@
     "hono": "^4.6.13",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.16",
-    "oracledb": "^6.7.0"
+    "oracledb": "^6.7.0",
+    "pdf-parse": "^1.1.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -28,6 +29,7 @@
     "@types/node": "^22.10.2",
     "@types/nodemailer": "^6.4.17",
     "@types/oracledb": "^6.5.2",
+    "@types/pdf-parse": "^1.1.4",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

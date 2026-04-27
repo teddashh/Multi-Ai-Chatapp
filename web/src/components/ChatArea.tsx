@@ -84,12 +84,47 @@ export default function ChatArea({ messages, mode }: Props) {
         messages.map((msg) => {
           if (msg.role === 'user') {
             return (
-              <div
-                key={msg.id}
-                className="flex justify-end"
-              >
+              <div key={msg.id} className="flex justify-end">
                 <div className="bg-blue-600/20 border border-blue-700/40 rounded-lg p-3 text-sm whitespace-pre-wrap max-w-[85%]">
-                  {msg.content}
+                  {msg.content && <div>{msg.content}</div>}
+                  {msg.attachments && msg.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {msg.attachments.map((a) => {
+                        if (a.kind === 'image') {
+                          return (
+                            <a
+                              key={a.id}
+                              href={`/api/sessions/attachments/${a.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={a.filename}
+                            >
+                              <img
+                                src={`/api/sessions/attachments/${a.id}`}
+                                alt={a.filename}
+                                className="max-h-32 max-w-[160px] rounded object-cover border border-blue-800/40"
+                              />
+                            </a>
+                          );
+                        }
+                        return (
+                          <a
+                            key={a.id}
+                            href={`/api/sessions/attachments/${a.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 bg-blue-900/30 border border-blue-800/40 rounded px-2 py-1 text-xs hover:bg-blue-900/50"
+                            title={a.filename}
+                          >
+                            <span>
+                              {a.kind === 'pdf' ? '📕' : a.kind === 'text' ? '📝' : '📎'}
+                            </span>
+                            <span className="max-w-[140px] truncate">{a.filename}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             );

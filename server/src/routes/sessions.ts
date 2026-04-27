@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireAuth, type AppVariables } from '../lib/auth.js';
 import {
+  attachmentStmts,
   messageStmts,
   sessionStmts,
   type MessageRow,
@@ -32,14 +33,49 @@ sessionsRoute.get('/:id', (c) => {
   const messages = messageStmts.listForSession.all(id) as MessageRow[];
   return c.json({
     session,
-    messages: messages.map((m) => ({
-      id: `${m.id}`,
-      role: m.role,
-      provider: m.provider ?? undefined,
-      modeRole: m.mode_role ?? undefined,
-      content: m.content,
-      timestamp: m.timestamp * 1000,
-    })),
+    messages: messages.map((m) => {
+      const attachments = attachmentStmts.listForMessage.all(m.id) as Array<{
+        id: string;
+        filename: string;
+        mime_type: string;
+        size: number;
+        kind: string;
+      }>;
+      return {
+        id: `${m.id}`,
+        role: m.role,
+        provider: m.provider ?? undefined,
+        modeRole: m.mode_role ?? undefined,
+        content: m.content,
+        timestamp: m.timestamp * 1000,
+        attachments: attachments.map((a) => ({
+          id: a.id,
+          filename: a.filename,
+          mimeType: a.mime_type,
+          size: a.size,
+          kind: a.kind,
+        })),
+      };
+    }),
+  });
+});
+
+// Serve a saved attachment file (only the owner can fetch). Used by the web
+// UI's image previews when reloading old sessions.
+sessionsRoute.get('/attachments/:id', async (c) => {
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const row = attachmentStmts.findOwned.get(id, user.id) as
+    | { path: string; mime_type: string; filename: string }
+    | undefined;
+  if (!row) return c.json({ error: 'not found' }, 404);
+  const fs = await import('node:fs');
+  const stream = fs.createReadStream(row.path);
+  return new Response(stream as unknown as ReadableStream, {
+    headers: {
+      'Content-Type': row.mime_type,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(row.filename)}"`,
+    },
   });
 });
 
