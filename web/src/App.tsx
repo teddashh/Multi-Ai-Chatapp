@@ -102,29 +102,6 @@ export default function App() {
   >('idle');
   const [connectionLost, setConnectionLost] = useState(false);
 
-  // Pulled out so the SSE-drop recovery can use it. Reloads the active
-  // session from DB so any messages the server persisted while we were
-  // disconnected show up in the UI.
-  const reloadActiveSession = useCallback(async () => {
-    if (!activeSessionId) return;
-    try {
-      const detail = await getSession(activeSessionId);
-      setMessages(
-        detail.messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          provider: m.provider,
-          modeRole: m.modeRole,
-          content: m.content,
-          timestamp: m.timestamp,
-          attachments: m.attachments,
-        })),
-      );
-    } catch {
-      // best-effort
-    }
-  }, [activeSessionId]);
-
   const [lang, setLangState] = useState<Lang>(loadInitialLang);
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
@@ -195,6 +172,29 @@ export default function App() {
       }
     },
   );
+
+  // Pulled out so the SSE-drop recovery can use it. Reloads the active
+  // session from DB so any messages the server persisted while we were
+  // disconnected show up in the UI.
+  const reloadActiveSession = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      const detail = await getSession(activeSessionId);
+      setMessages(
+        detail.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          provider: m.provider,
+          modeRole: m.modeRole,
+          content: m.content,
+          timestamp: m.timestamp,
+          attachments: m.attachments,
+        })),
+      );
+    } catch {
+      // best-effort
+    }
+  }, [activeSessionId]);
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingRolesRef = useRef<Record<string, string>>({});
