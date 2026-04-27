@@ -276,12 +276,12 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
     await conn.execute(
       `INSERT INTO MAC_SESSIONS
          (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-       VALUES (:sid, :uid, :title, :mode, :created, :updated, 0)`,
+       VALUES (:sid, :uid, :title, :cmode, :created, :updated, 0)`,
       {
         sid: s.id,
         uid: s.user_id,
         title: s.title,
-        mode: s.mode,
+        cmode: s.mode,
         created: s.created_at,
         updated: s.updated_at,
       },
@@ -322,12 +322,12 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       await conn.execute(
         `INSERT INTO MAC_SESSIONS
            (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
-         VALUES (:sid, :uid, :title, :mode, :created, :updated, 1)`,
+         VALUES (:sid, :uid, :title, :cmode, :created, :updated, 1)`,
         {
           sid: r.SESSION_ID,
           uid: x.USER_ID,
           title: x.TITLE,
-          mode: x.CHAT_MODE,
+          cmode: x.CHAT_MODE,
           created: x.SRC_CREATED_AT,
           updated: x.SRC_UPDATED_AT,
         },
@@ -360,13 +360,13 @@ async function syncMessages(conn: oracledb.Connection): Promise<number> {
     await conn.execute(
       `INSERT INTO MAC_MESSAGES
          (MSG_ID, SESSION_ID, MSG_ROLE, PROVIDER, MODE_ROLE, CONTENT, TS)
-       VALUES (:id, :sid, :role, :provider, :modeRole, :content, :ts)`,
+       VALUES (:id, :sid, :msgrole, :provider, :moderole, :content, :ts)`,
       {
         id: m.id,
         sid: m.session_id,
-        role: m.role,
+        msgrole: m.role,
         provider: m.provider,
-        modeRole: m.mode_role,
+        moderole: m.mode_role,
         content: m.content,
         ts: m.timestamp,
       },
