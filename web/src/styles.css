@@ -79,7 +79,7 @@ body::before {
   inset: 0;
   background-image: var(--bg-image);
   background-size: cover;
-  background-position: var(--bg-image-pos, center top);
+  background-position: var(--bg-image-pos, center 15%);
   background-repeat: no-repeat;
   opacity: var(--bg-image-op, 0);
   pointer-events: none;
