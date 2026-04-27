@@ -76,10 +76,13 @@ const SUPER: Record<AIProvider, ModelChoices> = {
   },
 };
 
+// Admin tier === Super tier model-wise (admin is purely a permission flag,
+// not a separate model bracket).
 export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> = {
   standard: STANDARD,
   pro: PRO,
   super: SUPER,
+  admin: SUPER,
 };
 
 export function defaultModel(tier: Tier, provider: AIProvider): string {

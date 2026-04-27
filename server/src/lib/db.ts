@@ -155,6 +155,44 @@ if (ver < 1) {
   `);
 }
 
+// v2: drop tier CHECK constraint so we can introduce 'admin' (and any future
+// tier) without another rebuild. Validation moves to the app layer.
+const ver2 = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver2 < 2) {
+  // Re-collect every column the table currently has — earlier addColumnIfMissing
+  // calls may have grown it, and we have to copy the lot through.
+  const cols = (db.prepare('PRAGMA table_info(users)').all() as Array<{ name: string }>).map(
+    (c) => c.name,
+  );
+  const colList = cols.join(', ');
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE users_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      tier TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      nickname TEXT,
+      email TEXT,
+      failed_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until INTEGER NOT NULL DEFAULT 0,
+      lang TEXT NOT NULL DEFAULT 'zh-TW',
+      avatar_path TEXT,
+      theme TEXT NOT NULL DEFAULT 'winter',
+      real_name TEXT
+    );
+    INSERT INTO users_new (${colList})
+    SELECT ${colList} FROM users;
+    DROP TABLE users;
+    ALTER TABLE users_new RENAME TO users;
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+    PRAGMA user_version = 2;
+  `);
+}
+
 export interface UserRow {
   id: number;
   username: string;
@@ -255,6 +293,10 @@ export const attachmentStmts = {
   ),
   findOwned: db.prepare<[string, number]>(
     `SELECT * FROM chat_attachments WHERE id = ? AND user_id = ?`,
+  ),
+  // Admin lookup — bypasses ownership.
+  findById: db.prepare<[string]>(
+    `SELECT * FROM chat_attachments WHERE id = ?`,
   ),
   attachToMessage: db.prepare<[number, string, number]>(
     `UPDATE chat_attachments SET message_id = ? WHERE id = ? AND user_id = ?`,

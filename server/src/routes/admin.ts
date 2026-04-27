@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
 import {
   hashPassword,
-  requireSuper,
+  requireAdmin,
   type AppVariables,
 } from '../lib/auth.js';
 import {
@@ -14,6 +14,7 @@ import {
   usageStmts,
   userStmts,
   type AuditRow,
+  type AttachmentRow,
   type MessageRow,
   type SessionRow,
   type UserRow,
@@ -23,10 +24,10 @@ import type { Tier } from '../shared/types.js';
 
 export const adminRoute = new Hono<{ Variables: AppVariables }>();
 
-const VALID_TIERS: Tier[] = ['standard', 'pro', 'super'];
+const VALID_TIERS: Tier[] = ['standard', 'pro', 'super', 'admin'];
 const RESET_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days for invites
 
-adminRoute.use('*', requireSuper);
+adminRoute.use('*', requireAdmin);
 
 function audit(
   adminId: number,
@@ -343,6 +344,28 @@ adminRoute.get('/sessions/:id', (c) => {
         : null,
     },
     messages: enriched,
+  });
+});
+
+// Stream any attachment (image/pdf/text) without the ownership check the
+// user-facing route enforces. Admin needs to see what people uploaded.
+adminRoute.get('/attachments/:id', async (c) => {
+  const id = c.req.param('id') ?? '';
+  if (!id) return c.json({ error: 'id required' }, 400);
+  const row = attachmentStmts.findById.get(id) as AttachmentRow | undefined;
+  if (!row) return c.json({ error: 'not found' }, 404);
+  const fs = await import('node:fs');
+  let stream;
+  try {
+    stream = fs.createReadStream(row.path);
+  } catch {
+    return c.json({ error: 'file missing on disk' }, 404);
+  }
+  return new Response(stream as unknown as ReadableStream, {
+    headers: {
+      'Content-Type': row.mime_type,
+      'Content-Disposition': `inline; filename="${encodeURIComponent(row.filename)}"`,
+    },
   });
 });
 

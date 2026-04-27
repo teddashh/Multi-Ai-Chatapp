@@ -27,7 +27,7 @@ interface Props {
 
 type View = 'users' | 'audit' | 'stats' | 'user-detail' | 'session-viewer';
 
-const TIERS: Tier[] = ['standard', 'pro', 'super'];
+const TIERS: Tier[] = ['standard', 'pro', 'super', 'admin'];
 
 function fmtTime(epochSeconds: number): string {
   return new Date(epochSeconds * 1000).toLocaleString();
@@ -642,6 +642,49 @@ function SessionViewer({
               >
                 <div className="text-[10px] text-gray-500 mb-1">👤 user</div>
                 {m.content}
+                {m.attachments && m.attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {m.attachments.map((a) => {
+                      // Admin endpoint bypasses ownership check.
+                      const url = `/api/admin/attachments/${a.id}`;
+                      if (a.kind === 'image') {
+                        return (
+                          <a
+                            key={a.id}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={a.filename}
+                          >
+                            <img
+                              src={url}
+                              alt={a.filename}
+                              className="max-h-32 max-w-[180px] rounded object-cover border border-blue-800/40"
+                            />
+                          </a>
+                        );
+                      }
+                      const icon =
+                        a.kind === 'pdf' ? '📕' : a.kind === 'text' ? '📝' : '📎';
+                      return (
+                        <a
+                          key={a.id}
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1.5 bg-blue-900/30 border border-blue-800/40 rounded px-2 py-1 text-xs hover:bg-blue-900/50"
+                          title={a.filename}
+                        >
+                          <span>{icon}</span>
+                          <span className="max-w-[160px] truncate">{a.filename}</span>
+                          <span className="text-[10px] text-gray-400">
+                            ({Math.round(a.size / 1024)}KB)
+                          </span>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           }

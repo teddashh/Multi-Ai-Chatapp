@@ -479,7 +479,7 @@ export default function App() {
     );
   } else if (!user) {
     content = <Login onLogin={setUser} />;
-  } else if (pathname === '/admin' && user.tier === 'super') {
+  } else if (pathname === '/admin' && user.tier === 'admin') {
     content = (
       <AdminPage
         currentUser={user}
@@ -540,7 +540,7 @@ export default function App() {
                     {user.tier}
                   </span>
                 </button>
-                {user.tier === 'super' && (
+                {user.tier === 'admin' && (
                   <button
                     onClick={() => navigate('/admin')}
                     className="text-gray-400 hover:text-white"

@@ -88,11 +88,12 @@ export async function requireAuth(c: AppContext, next: Next): Promise<Response |
   }
 }
 
-export async function requireSuper(c: AppContext, next: Next): Promise<Response | void> {
+// Admin tier is the gate for /admin endpoints. Super tier just unlocks
+// top-end models; it is NOT enough to manage other users.
+export async function requireAdmin(c: AppContext, next: Next): Promise<Response | void> {
   return requireAuth(c, async () => {
     const user = c.get('user');
-    if (user.tier !== 'super') {
-      // Wrap response so the inner middleware signature stays Promise<void>
+    if (user.tier !== 'admin') {
       throw new ForbiddenError();
     }
     await next();

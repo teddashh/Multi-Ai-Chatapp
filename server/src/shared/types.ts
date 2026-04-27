@@ -1,6 +1,6 @@
 export type AIProvider = 'chatgpt' | 'claude' | 'gemini' | 'grok';
 
-export type Tier = 'standard' | 'pro' | 'super';
+export type Tier = 'standard' | 'pro' | 'super' | 'admin';
 
 export type ChatMode = 'free' | 'debate' | 'consult' | 'coding' | 'roundtable';
 
