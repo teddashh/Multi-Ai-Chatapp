@@ -5,10 +5,11 @@ import {
   issueSession,
   requireAuth,
   verifyPassword,
+  type AppVariables,
   type SessionUser,
 } from '../lib/auth.js';
 
-export const authRoute = new Hono();
+export const authRoute = new Hono<{ Variables: AppVariables }>();
 
 authRoute.post('/login', async (c) => {
   const body = (await c.req.json().catch(() => null)) as
@@ -40,6 +41,6 @@ authRoute.post('/logout', (c) => {
 });
 
 authRoute.get('/me', requireAuth, (c) => {
-  const user = c.get('user') as SessionUser;
+  const user = c.get('user');
   return c.json({ user: { username: user.username, tier: user.tier } });
 });

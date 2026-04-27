@@ -1,13 +1,13 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { requireAuth, type SessionUser } from '../lib/auth.js';
+import { requireAuth, type AppVariables } from '../lib/auth.js';
 import { runMode } from '../lib/orchestrator.js';
 import type { ChatMode, ModeRoles, SSEEvent } from '../shared/types.js';
 
-export const chatRoute = new Hono();
+export const chatRoute = new Hono<{ Variables: AppVariables }>();
 
 chatRoute.post('/send', requireAuth, async (c) => {
-  const user = c.get('user') as SessionUser;
+  const user = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
     | { text?: string; mode?: ChatMode; roles?: ModeRoles }
     | null;
