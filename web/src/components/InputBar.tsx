@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { uploadFile } from '../api';
 import type { MessageAttachment } from '../shared/types';
+import { useT } from '../i18n';
 
 interface Props {
   onSend: (text: string, attachments: MessageAttachment[]) => void;
@@ -22,6 +23,7 @@ function kindIcon(kind: MessageAttachment['kind']): string {
 }
 
 export default function InputBar({ onSend, onCancel, disabled, isProcessing }: Props) {
+  const t = useT();
   const [text, setText] = useState('');
   const [pending, setPending] = useState<MessageAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -42,7 +44,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
       const uploaded: MessageAttachment[] = [];
       for (const f of incoming) {
         if (f.size > MAX_BYTES) {
-          setError(`${f.name} 超過 20MB 上限`);
+          setError(t.inputFileTooLarge(f.name, MAX_BYTES / (1024 * 1024)));
           continue;
         }
         const att = await uploadFile(f);
@@ -90,7 +92,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
               <button
                 onClick={() => removeAttachment(a.id)}
                 className="text-gray-500 hover:text-red-400 ml-1"
-                title="移除"
+                title={t.remove}
               >
                 ✕
               </button>
@@ -99,7 +101,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
         </div>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
-      {uploading && <p className="text-xs text-gray-500">上傳中...</p>}
+      {uploading && <p className="text-xs text-gray-500">{t.uploading}</p>}
 
       <div className="flex items-end gap-2">
         <button
@@ -107,7 +109,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
           onClick={handlePick}
           disabled={disabled || uploading || pending.length >= MAX_FILES}
           className="flex-none px-3 py-2 text-gray-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-          title={`附加檔案 (${pending.length}/${MAX_FILES})`}
+          title={t.inputAttachTitle(pending.length, MAX_FILES)}
         >
           📎
         </button>
@@ -124,9 +126,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={
-            isProcessing
-              ? '處理中...'
-              : '輸入訊息... (Enter 送出, Shift+Enter 換行)'
+            isProcessing ? t.inputPlaceholderProcessing : t.inputPlaceholderIdle
           }
           rows={2}
           disabled={disabled && !isProcessing}
@@ -137,7 +137,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
             onClick={onCancel}
             className="flex-none px-4 py-2 bg-red-600 hover:bg-red-700 rounded text-sm font-medium"
           >
-            Stop
+            {t.stop}
           </button>
         ) : (
           <button
@@ -145,7 +145,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
             disabled={(!text.trim() && pending.length === 0) || disabled}
             className="flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm font-medium"
           >
-            送出
+            {t.send}
           </button>
         )}
       </div>

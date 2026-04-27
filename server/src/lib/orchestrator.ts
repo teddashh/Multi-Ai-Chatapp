@@ -1,6 +1,6 @@
 import { runCLI } from './cli.js';
 import { resolveModel } from '../shared/models.js';
-import { PROMPTS, PROVIDER_NAMES } from '../shared/prompts.js';
+import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
 import {
   buildAttachmentPrefix,
   type PreparedAttachment,
@@ -22,6 +22,7 @@ export interface OrchestratorParams {
   mode: ChatMode;
   roles?: ModeRoles;
   tier: Tier;
+  lang: Lang;
   modelOverrides?: Partial<Record<AIProvider, string>>;
   attachments?: PreparedAttachment[];
   emit: (event: SSEEvent) => void;
@@ -83,7 +84,147 @@ export interface StepSpec {
 }
 
 const ALL_PROVIDERS: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
-const ROUND_LABELS = ['開場立論', '交叉質疑', '攻防深化', '核心收斂', '真理浮現'];
+
+// === Lang-aware static labels for sequential modes ===
+// These show up in the UI as `mode_role` and in workflow status. Persisted
+// alongside the AI message content in the DB; resume can look them up by
+// position so they don't need to round-trip through anything.
+interface ModeLabels {
+  roundLabels: string[];
+  debate: { pro: string; con: string; judge: string; summary: string };
+  consult: { first: string; second: string; reviewer: string; summary: string };
+  coding: {
+    planner: string;
+    reviewerSpec: string;
+    coder: string;
+    codeReview: string;
+    tester: string;
+    coderV2: string;
+    accept: string;
+    final: string;
+  };
+  roundLabel: (round: number) => string;
+  // Workflow status formatters.
+  fmt: {
+    free: (names: string[]) => string;
+    debatePro: (name: string) => string;
+    debateCon: (name: string) => string;
+    debateJudge: (name: string) => string;
+    debateSummary: (name: string) => string;
+    consultFirst: (name: string) => string;
+    consultSecond: (name: string) => string;
+    consultReviewer: (name: string) => string;
+    consultSummary: (name: string) => string;
+    codingStep: (n: number, name: string, what: string) => string;
+    codingWords: {
+      plannerSpec: string;
+      reviewerSpec: string;
+      coderV1: string;
+      reviewerCode: string;
+      tester: string;
+      coderV2: string;
+      accept: string;
+      final: string;
+    };
+    roundtable: (round: number, roundName: string, name: string) => string;
+  };
+}
+
+const LABELS_ZH: ModeLabels = {
+  roundLabels: ['開場立論', '交叉質疑', '攻防深化', '核心收斂', '真理浮現'],
+  debate: { pro: '正方', con: '反方', judge: '判官', summary: '總結' },
+  consult: { first: '先答 A', second: '先答 B', reviewer: '審查', summary: '總結' },
+  coding: {
+    planner: '規劃師',
+    reviewerSpec: '審查者',
+    coder: 'Coder',
+    codeReview: 'Code Review',
+    tester: 'Tester',
+    coderV2: 'v2 修正',
+    accept: '驗收',
+    final: '最終版',
+  },
+  roundLabel: (r) => `第${r}輪`,
+  fmt: {
+    free: (names) => `⚡ ${names.join('、')} 同時作答中...`,
+    debatePro: (n) => `⚔️ 正方 ${n} 論述中...`,
+    debateCon: (n) => `⚔️ 反方 ${n} 反駁中...`,
+    debateJudge: (n) => `⚔️ 判官 ${n} 評析中...`,
+    debateSummary: (n) => `⚔️ ${n} 歸納總結中...`,
+    consultFirst: (n) => `🔍 ${n} 回答中...`,
+    consultSecond: (n) => `🔍 ${n} 回答中...`,
+    consultReviewer: (n) => `🔍 ${n} 審查中...`,
+    consultSummary: (n) => `🔍 ${n} 總結中...`,
+    codingStep: (n, name, what) => `💻 Step ${n}/8 — ${name} ${what}`,
+    codingWords: {
+      plannerSpec: '撰寫規格中...',
+      reviewerSpec: '審查規格中...',
+      coderV1: '撰寫 v1 中...',
+      reviewerCode: 'Code Review 中...',
+      tester: '測試分析中...',
+      coderV2: '修正 → v2 中...',
+      accept: '驗收中...',
+      final: '最終修正中...',
+    },
+    roundtable: (round, rName, n) => `🔄 第${round}輪「${rName}」— ${n} 發言中...`,
+  },
+};
+
+const LABELS_EN: ModeLabels = {
+  roundLabels: [
+    'Opening',
+    'Cross-Examination',
+    'Deepening',
+    'Convergence',
+    'Truth Emerges',
+  ],
+  debate: { pro: 'Pro', con: 'Con', judge: 'Judge', summary: 'Summary' },
+  consult: {
+    first: 'First A',
+    second: 'First B',
+    reviewer: 'Reviewer',
+    summary: 'Summary',
+  },
+  coding: {
+    planner: 'Planner',
+    reviewerSpec: 'Spec Review',
+    coder: 'Coder',
+    codeReview: 'Code Review',
+    tester: 'Tester',
+    coderV2: 'v2',
+    accept: 'Acceptance',
+    final: 'Final',
+  },
+  roundLabel: (r) => `Round ${r}`,
+  fmt: {
+    free: (names) => `⚡ ${names.join(', ')} answering in parallel...`,
+    debatePro: (n) => `⚔️ Pro side — ${n} arguing...`,
+    debateCon: (n) => `⚔️ Con side — ${n} rebutting...`,
+    debateJudge: (n) => `⚔️ Judge ${n} analyzing...`,
+    debateSummary: (n) => `⚔️ ${n} synthesizing...`,
+    consultFirst: (n) => `🔍 ${n} answering...`,
+    consultSecond: (n) => `🔍 ${n} answering...`,
+    consultReviewer: (n) => `🔍 ${n} reviewing...`,
+    consultSummary: (n) => `🔍 ${n} summarizing...`,
+    codingStep: (n, name, what) => `💻 Step ${n}/8 — ${name} ${what}`,
+    codingWords: {
+      plannerSpec: 'writing spec...',
+      reviewerSpec: 'reviewing spec...',
+      coderV1: 'writing v1...',
+      reviewerCode: 'doing code review...',
+      tester: 'analyzing tests...',
+      coderV2: 'producing v2...',
+      accept: 'doing acceptance...',
+      final: 'final polish...',
+    },
+    roundtable: (round, rName, n) =>
+      `🔄 Round ${round} "${rName}" — ${n} speaking...`,
+  },
+};
+
+function labelsFor(lang: Lang): ModeLabels {
+  return lang === 'en' ? LABELS_EN : LABELS_ZH;
+}
 
 export async function runOne(
   p: OrchestratorParams,
@@ -114,7 +255,13 @@ export async function runOne(
   }
 }
 
-export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
+export function buildStepList(
+  mode: ChatMode,
+  roles: ModeRoles,
+  lang: Lang = 'zh-TW',
+): StepSpec[] {
+  const L = labelsFor(lang);
+  const P = getPrompts(lang);
   switch (mode) {
     case 'debate': {
       const r = roles as DebateRoles;
@@ -126,31 +273,31 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
         {
           provider: r.pro,
           role: 'pro',
-          label: '正方',
-          workflowStatus: `⚔️ 正方 ${proName} 論述中...`,
-          buildPrompt: (q) => PROMPTS.debate.pro(q),
+          label: L.debate.pro,
+          workflowStatus: L.fmt.debatePro(proName),
+          buildPrompt: (q) => P.debate.pro(q),
         },
         {
           provider: r.con,
           role: 'con',
-          label: '反方',
-          workflowStatus: `⚔️ 反方 ${conName} 反駁中...`,
-          buildPrompt: (q, h) => PROMPTS.debate.con(q, h[0].text),
+          label: L.debate.con,
+          workflowStatus: L.fmt.debateCon(conName),
+          buildPrompt: (q, h) => P.debate.con(q, h[0].text),
         },
         {
           provider: r.judge,
           role: 'judge',
-          label: '判官',
-          workflowStatus: `⚔️ 判官 ${judgeName} 評析中...`,
-          buildPrompt: (q, h) => PROMPTS.debate.judge(q, h[0].text, h[1].text),
+          label: L.debate.judge,
+          workflowStatus: L.fmt.debateJudge(judgeName),
+          buildPrompt: (q, h) => P.debate.judge(q, h[0].text, h[1].text),
         },
         {
           provider: r.summary,
           role: 'summary',
-          label: '總結',
-          workflowStatus: `⚔️ ${sumName} 歸納總結中...`,
+          label: L.debate.summary,
+          workflowStatus: L.fmt.debateSummary(sumName),
           buildPrompt: (q, h) =>
-            PROMPTS.debate.summary(q, h[0].text, h[1].text, h[2].text),
+            P.debate.summary(q, h[0].text, h[1].text, h[2].text),
         },
       ];
     }
@@ -164,24 +311,24 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
         {
           provider: r.first,
           role: 'first',
-          label: '先答 A',
-          workflowStatus: `🔍 ${firstName} 回答中...`,
-          buildPrompt: (q) => PROMPTS.consult.first(q),
+          label: L.consult.first,
+          workflowStatus: L.fmt.consultFirst(firstName),
+          buildPrompt: (q) => P.consult.first(q),
         },
         {
           provider: r.second,
           role: 'second',
-          label: '先答 B',
-          workflowStatus: `🔍 ${secondName} 回答中...`,
-          buildPrompt: (q) => PROMPTS.consult.second(q),
+          label: L.consult.second,
+          workflowStatus: L.fmt.consultSecond(secondName),
+          buildPrompt: (q) => P.consult.second(q),
         },
         {
           provider: r.reviewer,
           role: 'reviewer',
-          label: '審查',
-          workflowStatus: `🔍 ${reviewerName} 審查中...`,
+          label: L.consult.reviewer,
+          workflowStatus: L.fmt.consultReviewer(reviewerName),
           buildPrompt: (q, h) =>
-            PROMPTS.consult.reviewer(
+            P.consult.reviewer(
               q,
               h[0].text,
               firstName,
@@ -192,10 +339,10 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
         {
           provider: r.summary,
           role: 'summary',
-          label: '總結',
-          workflowStatus: `🔍 ${sumName} 總結中...`,
+          label: L.consult.summary,
+          workflowStatus: L.fmt.consultSummary(sumName),
           buildPrompt: (q, h) =>
-            PROMPTS.consult.summary(
+            P.consult.summary(
               q,
               h[0].text,
               firstName,
@@ -213,29 +360,30 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
       const reviewerName = PROVIDER_NAMES[r.reviewer];
       const coderName = PROVIDER_NAMES[r.coder];
       const testerName = PROVIDER_NAMES[r.tester];
+      const W = L.fmt.codingWords;
       return [
         {
           provider: r.planner,
           role: 'planner',
-          label: '規劃師',
-          workflowStatus: `💻 Step 1/8 — ${plannerName} 撰寫規格中...`,
-          buildPrompt: (q) => PROMPTS.coding.plannerSpec(q),
+          label: L.coding.planner,
+          workflowStatus: L.fmt.codingStep(1, plannerName, W.plannerSpec),
+          buildPrompt: (q) => P.coding.plannerSpec(q),
         },
         {
           provider: r.reviewer,
           role: 'reviewer',
-          label: '審查者',
-          workflowStatus: `💻 Step 2/8 — ${reviewerName} 審查規格中...`,
+          label: L.coding.reviewerSpec,
+          workflowStatus: L.fmt.codingStep(2, reviewerName, W.reviewerSpec),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.reviewerSpec(q, h[0].text, plannerName),
+            P.coding.reviewerSpec(q, h[0].text, plannerName),
         },
         {
           provider: r.coder,
           role: 'coder',
-          label: 'Coder',
-          workflowStatus: `💻 Step 3/8 — ${coderName} 撰寫 v1 中...`,
+          label: L.coding.coder,
+          workflowStatus: L.fmt.codingStep(3, coderName, W.coderV1),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.coderV1(
+            P.coding.coderV1(
               q,
               h[0].text,
               plannerName,
@@ -246,26 +394,26 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
         {
           provider: r.reviewer,
           role: 'reviewer',
-          label: 'Code Review',
-          workflowStatus: `💻 Step 4/8 — ${reviewerName} Code Review 中...`,
+          label: L.coding.codeReview,
+          workflowStatus: L.fmt.codingStep(4, reviewerName, W.reviewerCode),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.reviewerCode(q, h[2].text, coderName),
+            P.coding.reviewerCode(q, h[2].text, coderName),
         },
         {
           provider: r.tester,
           role: 'tester',
-          label: 'Tester',
-          workflowStatus: `💻 Step 5/8 — ${testerName} 測試分析中...`,
+          label: L.coding.tester,
+          workflowStatus: L.fmt.codingStep(5, testerName, W.tester),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.testerCases(q, h[2].text, coderName),
+            P.coding.testerCases(q, h[2].text, coderName),
         },
         {
           provider: r.coder,
           role: 'coder',
-          label: 'v2 修正',
-          workflowStatus: `💻 Step 6/8 — ${coderName} 修正 → v2 中...`,
+          label: L.coding.coderV2,
+          workflowStatus: L.fmt.codingStep(6, coderName, W.coderV2),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.coderV2(
+            P.coding.coderV2(
               q,
               h[2].text,
               h[3].text,
@@ -277,18 +425,18 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
         {
           provider: r.planner,
           role: 'planner',
-          label: '驗收',
-          workflowStatus: `💻 Step 7/8 — ${plannerName} 驗收中...`,
+          label: L.coding.accept,
+          workflowStatus: L.fmt.codingStep(7, plannerName, W.accept),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.plannerAcceptance(q, h[5].text, coderName, h[0].text),
+            P.coding.plannerAcceptance(q, h[5].text, coderName, h[0].text),
         },
         {
           provider: r.coder,
           role: 'coder',
-          label: '最終版',
-          workflowStatus: `💻 Step 8/8 — ${coderName} 最終修正中...`,
+          label: L.coding.final,
+          workflowStatus: L.fmt.codingStep(8, coderName, W.final),
           buildPrompt: (q, h) =>
-            PROMPTS.coding.coderFinal(q, h[5].text, h[6].text, plannerName),
+            P.coding.coderFinal(q, h[5].text, h[6].text, plannerName),
         },
       ];
     }
@@ -299,20 +447,20 @@ export function buildStepList(mode: ChatMode, roles: ModeRoles): StepSpec[] {
       for (let round = 1; round <= 5; round++) {
         for (const speaker of speakers) {
           const speakerName = PROVIDER_NAMES[speaker];
-          const roundLabel = ROUND_LABELS[round - 1];
+          const roundName = L.roundLabels[round - 1];
           const cur = round;
           steps.push({
             provider: speaker,
             role: `R${cur}`,
-            label: `第${cur}輪`,
-            workflowStatus: `🔄 第${cur}輪「${roundLabel}」— ${speakerName} 發言中...`,
+            label: L.roundLabel(cur),
+            workflowStatus: L.fmt.roundtable(cur, roundName, speakerName),
             buildPrompt: (q, h) => {
               const rtHistory = h.map((s) => ({
                 name: PROVIDER_NAMES[s.provider],
                 round: parseInt(s.modeRole.replace(/[^0-9]/g, ''), 10) || 0,
                 text: s.text,
               }));
-              return PROMPTS.roundtable.buildPrompt(q, cur, speakerName, rtHistory);
+              return P.roundtable.buildPrompt(q, cur, speakerName, rtHistory);
             },
           });
         }
@@ -333,14 +481,15 @@ export async function runMode(p: OrchestratorParams): Promise<void> {
   if (!roles) {
     throw new Error(`unknown mode ${p.mode}`);
   }
-  const steps = buildStepList(p.mode, roles);
+  const steps = buildStepList(p.mode, roles, p.lang);
   await runSequential(p, steps);
 }
 
 async function runFree(p: OrchestratorParams): Promise<void> {
+  const L = labelsFor(p.lang);
   p.emit({
     type: 'workflow',
-    status: `⚡ ${ALL_PROVIDERS.map((x) => PROVIDER_NAMES[x]).join('、')} 同時作答中...`,
+    status: L.fmt.free(ALL_PROVIDERS.map((x) => PROVIDER_NAMES[x])),
   });
   await Promise.all(
     ALL_PROVIDERS.map((provider) => runOne(p, provider, p.text).catch(() => {})),

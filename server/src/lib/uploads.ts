@@ -13,6 +13,51 @@ import { attachmentStmts, db } from './db.js';
 export const UPLOAD_ROOT = resolve(process.env.UPLOAD_DIR || './data/uploads');
 mkdirSync(UPLOAD_ROOT, { recursive: true });
 mkdirSync(join(UPLOAD_ROOT, '_pending'), { recursive: true });
+mkdirSync(join(UPLOAD_ROOT, '_avatars'), { recursive: true });
+
+const AVATAR_DIR = join(UPLOAD_ROOT, '_avatars');
+const AVATAR_MIME_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+export const MAX_AVATAR_BYTES = 4 * 1024 * 1024;
+
+export function isSupportedAvatarMime(mime: string): boolean {
+  return mime in AVATAR_MIME_EXT;
+}
+
+// Saves the avatar bytes for a user, replacing any prior file. Returns the
+// absolute path that should be persisted in users.avatar_path.
+export function saveAvatar(
+  userId: number,
+  mime: string,
+  buffer: Buffer,
+): string {
+  const ext = AVATAR_MIME_EXT[mime];
+  if (!ext) throw new Error(`unsupported avatar mime ${mime}`);
+  // Wipe any prior file (different ext) so we don't accumulate stale variants.
+  for (const e of Object.values(AVATAR_MIME_EXT)) {
+    try {
+      rmSync(join(AVATAR_DIR, `${userId}.${e}`));
+    } catch {
+      // ignore — file may not exist
+    }
+  }
+  const path = join(AVATAR_DIR, `${userId}.${ext}`);
+  writeFileSync(path, buffer);
+  return path;
+}
+
+export function readAvatar(path: string): Buffer | null {
+  try {
+    return readFileSync(path);
+  } catch {
+    return null;
+  }
+}
 
 // Filesystem-safe slug for usernames (which might contain @ etc.)
 function sanitizeForPath(s: string): string {

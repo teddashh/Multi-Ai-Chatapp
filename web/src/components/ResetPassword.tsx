@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { resetPassword } from '../api';
+import { useT } from '../i18n';
 
 interface Props {
   token: string;
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function ResetPassword({ token, onDone }: Props) {
+  const t = useT();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
@@ -17,11 +19,11 @@ export default function ResetPassword({ token, onDone }: Props) {
     e.preventDefault();
     setError('');
     if (password !== confirm) {
-      setError('兩次輸入的密碼不一致');
+      setError(t.passwordsDontMatch);
       return;
     }
     if (password.length < 6) {
-      setError('密碼至少 6 個字元');
+      setError(t.passwordTooShort);
       return;
     }
     setLoading(true);
@@ -38,20 +40,22 @@ export default function ResetPassword({ token, onDone }: Props) {
   return (
     <div className="min-h-screen flex items-center justify-center p-6">
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-6 w-full max-w-sm shadow-xl">
-        <h1 className="text-xl font-bold mb-4">重設密碼</h1>
+        <h1 className="text-xl font-bold mb-4">{t.resetTitle}</h1>
         {success ? (
           <>
-            <p className="text-sm text-gray-300 mb-4">密碼已重設，請用新密碼登入。</p>
+            <p className="text-sm text-gray-300 mb-4">{t.resetSuccess}</p>
             <button
               onClick={onDone}
               className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
             >
-              回登入頁
+              {t.resetBackLogin}
             </button>
           </>
         ) : (
           <form onSubmit={handleSubmit}>
-            <label className="block text-xs text-gray-300 mb-1">新密碼</label>
+            <label className="block text-xs text-gray-300 mb-1">
+              {t.resetNewLabel}
+            </label>
             <input
               type="password"
               value={password}
@@ -60,7 +64,9 @@ export default function ResetPassword({ token, onDone }: Props) {
               autoComplete="new-password"
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
             />
-            <label className="block text-xs text-gray-300 mb-1">確認新密碼</label>
+            <label className="block text-xs text-gray-300 mb-1">
+              {t.resetConfirmLabel}
+            </label>
             <input
               type="password"
               value={confirm}
@@ -74,7 +80,7 @@ export default function ResetPassword({ token, onDone }: Props) {
               disabled={loading || !password || !confirm}
               className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded text-sm font-medium"
             >
-              {loading ? '重設中...' : '確定'}
+              {loading ? t.resetting : t.resetSubmit}
             </button>
           </form>
         )}

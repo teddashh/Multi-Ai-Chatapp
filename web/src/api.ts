@@ -17,7 +17,59 @@ export interface User {
   nickname: string | null;
   email: string | null;
   tier: Tier;
+  lang: 'zh-TW' | 'en';
+  hasAvatar: boolean;
   models: Record<AIProvider, ModelChoices>;
+}
+
+export async function updateProfile(patch: {
+  lang?: 'zh-TW' | 'en';
+  nickname?: string | null;
+  email?: string | null;
+  password?: string | null;
+}): Promise<User> {
+  const res = await fetch('/api/auth/profile', {
+    method: 'PATCH',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const data = (await res.json()) as { user: User };
+  return data.user;
+}
+
+export async function uploadAvatar(file: File): Promise<User> {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch('/api/auth/avatar', {
+    method: 'POST',
+    credentials: 'include',
+    body: form,
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const data = (await res.json()) as { user: User };
+  return data.user;
+}
+
+export async function deleteAvatar(): Promise<User> {
+  const res = await fetch('/api/auth/avatar', {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = (await res.json()) as { user: User };
+  return data.user;
+}
+
+export function avatarUrl(username: string, bust: number = Date.now()): string {
+  return `/api/auth/avatar/${encodeURIComponent(username)}?t=${bust}`;
 }
 
 export interface AdminUser {

@@ -1,6 +1,8 @@
 import React from 'react';
 import type { AIProvider, ChatMode, ModeRoles } from '../shared/types';
 import { AI_PROVIDERS } from '../shared/constants';
+import { useT } from '../i18n';
+import type { Dict } from '../i18n';
 
 interface Props {
   mode: ChatMode;
@@ -8,17 +10,46 @@ interface Props {
   onRolesChange: (roles: ModeRoles) => void;
 }
 
-const ROLE_LABELS: Record<string, Record<string, string>> = {
-  debate: { pro: '正方', con: '反方', judge: '判官', summary: '總結' },
-  consult: { first: '先答 A', second: '先答 B', reviewer: '審查', summary: '總結' },
-  coding: { planner: '規劃', reviewer: '審查', coder: 'Coder', tester: 'Tester' },
-  roundtable: { first: '第一', second: '第二', third: '第三', fourth: '第四' },
-};
-
 const PROVIDERS: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
 
+function labelsFor(t: Dict, mode: ChatMode): Record<string, string> | null {
+  switch (mode) {
+    case 'debate':
+      return {
+        pro: t.roleDebatePro,
+        con: t.roleDebateCon,
+        judge: t.roleDebateJudge,
+        summary: t.roleDebateSummary,
+      };
+    case 'consult':
+      return {
+        first: t.roleConsultFirst,
+        second: t.roleConsultSecond,
+        reviewer: t.roleConsultReviewer,
+        summary: t.roleConsultSummary,
+      };
+    case 'coding':
+      return {
+        planner: t.roleCodingPlanner,
+        reviewer: t.roleCodingReviewer,
+        coder: t.roleCodingCoder,
+        tester: t.roleCodingTester,
+      };
+    case 'roundtable':
+      return {
+        first: t.roleRoundtable1,
+        second: t.roleRoundtable2,
+        third: t.roleRoundtable3,
+        fourth: t.roleRoundtable4,
+      };
+    default:
+      return null;
+  }
+}
+
 export default function RoleConfig({ mode, roles, onRolesChange }: Props) {
-  const labels = ROLE_LABELS[mode];
+  const t = useT();
+  const labels = labelsFor(t, mode);
   if (!labels) return null;
 
   const handleChange = (roleKey: string, provider: AIProvider) => {
@@ -40,9 +71,7 @@ export default function RoleConfig({ mode, roles, onRolesChange }: Props) {
                   key={p}
                   onClick={() => handleChange(roleKey, p)}
                   className={`px-2 py-0.5 rounded text-xs transition-colors text-center ${
-                    isSelected
-                      ? 'font-bold'
-                      : 'text-gray-500 hover:text-gray-300'
+                    isSelected ? 'font-bold' : 'text-gray-500 hover:text-gray-300'
                   }`}
                   style={
                     isSelected

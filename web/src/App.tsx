@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AIProvider,
   ChatMessage,
@@ -14,12 +14,14 @@ import {
   DEFAULT_ROUNDTABLE_ROLES,
 } from './shared/constants';
 import {
+  avatarUrl,
   getSession,
   listSessions,
   logout,
   me,
   streamChat,
   streamRegenerate,
+  updateProfile,
   type SessionSummary,
   type User,
 } from './api';
@@ -32,6 +34,9 @@ import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import AdminPanel from './components/AdminPanel';
 import Sidebar from './components/Sidebar';
+import LangToggle from './components/LangToggle';
+import ProfileModal from './components/ProfileModal';
+import { DICTS, I18nContext, type Lang } from './i18n';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
   debate: DEFAULT_DEBATE_ROLES,
@@ -39,6 +44,16 @@ const DEFAULT_ROLES: Record<string, ModeRoles> = {
   coding: DEFAULT_CODING_ROLES,
   roundtable: DEFAULT_ROUNDTABLE_ROLES,
 };
+
+function loadInitialLang(): Lang {
+  try {
+    const v = localStorage.getItem('lang');
+    if (v === 'en' || v === 'zh-TW') return v;
+  } catch {
+    // ignore
+  }
+  return 'zh-TW';
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -48,6 +63,26 @@ export default function App() {
     return params.get('reset');
   });
 
+  const [lang, setLangState] = useState<Lang>(loadInitialLang);
+  const setLang = useCallback((l: Lang) => {
+    setLangState(l);
+    try {
+      localStorage.setItem('lang', l);
+    } catch {
+      // ignore
+    }
+  }, []);
+  // When switching language while logged in, persist server-side too.
+  const handleLangToggle = useCallback(
+    (l: Lang) => {
+      setLang(l);
+      if (user && user.lang !== l) {
+        updateProfile({ lang: l }).then(setUser).catch(() => {});
+      }
+    },
+    [user, setLang],
+  );
+
   const [mode, setMode] = useState<ChatMode>('free');
   const [roles, setRoles] = useState<ModeRoles>(DEFAULT_DEBATE_ROLES);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,10 +90,12 @@ export default function App() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [avatarBust, setAvatarBust] = useState(Date.now());
   const [modelOverrides, setModelOverrides] = useState<Partial<Record<AIProvider, string>>>(
     () => {
       try {
@@ -77,8 +114,14 @@ export default function App() {
     me().then((u) => {
       setUser(u);
       setAuthChecked(true);
+      if (u && u.lang !== lang) setLang(u.lang);
     });
+    // Intentionally one-shot; don't refetch on lang flips.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const t = DICTS[lang];
+  const i18nValue = useMemo(() => ({ lang, setLang, t }), [lang, setLang, t]);
 
   const refreshSessions = useCallback(async () => {
     try {
@@ -93,26 +136,29 @@ export default function App() {
     if (user) refreshSessions();
   }, [user, refreshSessions]);
 
-  const handleSelectSession = useCallback(async (id: string) => {
-    try {
-      const detail = await getSession(id);
-      setActiveSessionId(detail.session.id);
-      setMode(detail.session.mode as ChatMode);
-      setMessages(
-        detail.messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          provider: m.provider,
-          modeRole: m.modeRole,
-          content: m.content,
-          timestamp: m.timestamp,
-          attachments: m.attachments,
-        })),
-      );
-    } catch (err) {
-      alert(`載入失敗：${(err as Error).message}`);
-    }
-  }, []);
+  const handleSelectSession = useCallback(
+    async (id: string) => {
+      try {
+        const detail = await getSession(id);
+        setActiveSessionId(detail.session.id);
+        setMode(detail.session.mode as ChatMode);
+        setMessages(
+          detail.messages.map((m) => ({
+            id: m.id,
+            role: m.role,
+            provider: m.provider,
+            modeRole: m.modeRole,
+            content: m.content,
+            timestamp: m.timestamp,
+            attachments: m.attachments,
+          })),
+        );
+      } catch (err) {
+        alert(t.loadFailed((err as Error).message));
+      }
+    },
+    [t],
+  );
 
   const handleNewChat = useCallback(() => {
     setActiveSessionId(null);
@@ -130,6 +176,15 @@ export default function App() {
     setUser(null);
     setMessages([]);
   };
+
+  const handleProfileUpdate = useCallback(
+    (updated: User) => {
+      setUser(updated);
+      setLang(updated.lang);
+      setAvatarBust(Date.now());
+    },
+    [setLang],
+  );
 
   const handleModelSelect = useCallback((provider: AIProvider, model: string) => {
     setModelOverrides((prev) => {
@@ -186,8 +241,6 @@ export default function App() {
         break;
       case 'done':
         setMessages((prev) => {
-          // Prefer the persisted DB id when the server sends one — that lets
-          // retry buttons work without needing a session reload first.
           const stableId =
             ev.messageId !== undefined ? String(ev.messageId) : null;
           const streaming = prev.find(
@@ -223,10 +276,7 @@ export default function App() {
         });
         break;
       case 'error':
-        if (ev.provider) {
-          // Provider-specific error already surfaced via 'done' with [Error: ...]
-          break;
-        }
+        if (ev.provider) break;
         setMessages((prev) => [
           ...prev,
           {
@@ -240,7 +290,6 @@ export default function App() {
       case 'finish':
         setIsProcessing(false);
         setWorkflowStatus('');
-        // Refresh session list so the sidebar updated_at order reflects this turn
         refreshSessions();
         break;
     }
@@ -308,9 +357,6 @@ export default function App() {
       if (regeneratingId || isProcessing) return;
       const isSequential = mode !== 'free';
 
-      // Sequential modes replay the whole tail. Drop the retry target plus
-      // anything after it from local state — the streaming handler will
-      // re-add them as new messages just like a fresh chat turn.
       if (isSequential) {
         setMessages((prev) => {
           const idx = prev.findIndex((m) => m.id === messageId);
@@ -326,9 +372,8 @@ export default function App() {
         await streamRegenerate(
           { messageId, modelOverrides },
           isSequential
-            ? handleEvent // reuse streamChat handler — renders the whole tail
+            ? handleEvent
             : (ev) => {
-                // Free mode: in-place rewrite of one cell.
                 if (ev.type === 'chunk' || ev.type === 'done') {
                   setMessages((prev) =>
                     prev.map((m) =>
@@ -351,7 +396,7 @@ export default function App() {
         );
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
-          alert(`重新作答失敗：${(err as Error).message}`);
+          alert(t.retryFailed((err as Error).message));
         }
       } finally {
         setRegeneratingId(null);
@@ -362,11 +407,13 @@ export default function App() {
         }
       }
     },
-    [regeneratingId, isProcessing, mode, modelOverrides, handleEvent],
+    [regeneratingId, isProcessing, mode, modelOverrides, handleEvent, t],
   );
 
+  // === Render ===
+  let content: React.ReactNode;
   if (resetToken) {
-    return (
+    content = (
       <ResetPassword
         token={resetToken}
         onDone={() => {
@@ -375,120 +422,146 @@ export default function App() {
         }}
       />
     );
-  }
-
-  if (!authChecked) {
-    return (
+  } else if (!authChecked) {
+    content = (
       <div className="min-h-screen flex items-center justify-center text-gray-500 text-sm">
-        Loading...
+        {t.loading}
+      </div>
+    );
+  } else if (!user) {
+    content = <Login onLogin={setUser} />;
+  } else {
+    const displayName = user.nickname || user.username;
+    const avatarSrc = user.hasAvatar
+      ? avatarUrl(user.username, avatarBust)
+      : null;
+    content = (
+      <div className="flex h-screen">
+        <Sidebar
+          sessions={sessions}
+          activeId={activeSessionId}
+          onSelect={handleSelectSession}
+          onNew={handleNewChat}
+          onRefresh={refreshSessions}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+        />
+        <div className="flex flex-col flex-1 min-w-0">
+          <div className="flex-none border-b border-gray-800 p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSidebarOpen(true)}
+                  className="lg:hidden text-gray-400 hover:text-white"
+                  title={t.sidebarOpen}
+                >
+                  ☰
+                </button>
+                <h1 className="text-lg font-bold">{t.appName}</h1>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <LangToggle lang={lang} onChange={handleLangToggle} />
+                <button
+                  onClick={() => setShowProfile(true)}
+                  title={t.profile}
+                  className="flex items-center gap-1.5 hover:bg-gray-800 rounded px-1.5 py-0.5 transition-colors"
+                >
+                  {avatarSrc ? (
+                    <img
+                      src={avatarSrc}
+                      alt={displayName}
+                      className="w-6 h-6 rounded-full object-cover border border-gray-700"
+                    />
+                  ) : (
+                    <span className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold">
+                      {displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="text-gray-300 hidden sm:inline" title={user.username}>
+                    {displayName}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase tracking-wider">
+                    {user.tier}
+                  </span>
+                </button>
+                {user.tier === 'super' && (
+                  <button
+                    onClick={() => setShowAdmin(true)}
+                    className="text-gray-400 hover:text-white"
+                    title={t.manageUsers}
+                  >
+                    ⚙️
+                  </button>
+                )}
+                <button
+                  onClick={handleLogout}
+                  className="text-gray-500 hover:text-red-400"
+                >
+                  {t.logout}
+                </button>
+              </div>
+            </div>
+            <ProvidersBar
+              models={user.models}
+              selected={modelOverrides}
+              onSelect={handleModelSelect}
+            />
+          </div>
+
+          <div className="flex-none border-b border-gray-800 p-2">
+            <ModeSelector mode={mode} onModeChange={setMode} />
+            {mode !== 'free' && (
+              <button
+                onClick={() => setShowRoleConfig((s) => !s)}
+                className="text-xs text-gray-400 hover:text-white mt-1 ml-1"
+              >
+                {showRoleConfig ? t.roleConfigHide : t.roleConfigShow}
+              </button>
+            )}
+            {showRoleConfig && mode !== 'free' && (
+              <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
+            )}
+          </div>
+
+          <ChatArea
+            messages={messages}
+            mode={mode}
+            onRegenerate={handleRegenerate}
+            regeneratingId={regeneratingId}
+          />
+
+          {workflowStatus && (
+            <div className="flex-none border-t border-gray-800 px-3 py-1.5 bg-gray-900 text-center">
+              <span className="text-xs text-yellow-300 animate-pulse">
+                {workflowStatus}
+              </span>
+            </div>
+          )}
+
+          <InputBar
+            onSend={handleSend}
+            onCancel={handleCancel}
+            disabled={isProcessing}
+            isProcessing={isProcessing}
+          />
+
+          <AdminPanel
+            isOpen={showAdmin}
+            onClose={() => setShowAdmin(false)}
+            currentUsername={user.username}
+          />
+          <ProfileModal
+            isOpen={showProfile}
+            user={user}
+            onClose={() => setShowProfile(false)}
+            onUpdate={handleProfileUpdate}
+          />
+        </div>
       </div>
     );
   }
 
-  if (!user) {
-    return <Login onLogin={setUser} />;
-  }
-
   return (
-    <div className="flex h-screen">
-      <Sidebar
-        sessions={sessions}
-        activeId={activeSessionId}
-        onSelect={handleSelectSession}
-        onNew={handleNewChat}
-        onRefresh={refreshSessions}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
-      <div className="flex flex-col flex-1 min-w-0">
-      {/* Header */}
-      <div className="flex-none border-b border-gray-800 p-3">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setSidebarOpen(true)}
-              className="lg:hidden text-gray-400 hover:text-white"
-              title="開啟側邊欄"
-            >
-              ☰
-            </button>
-            <h1 className="text-lg font-bold">Multi-AI Chatapp</h1>
-          </div>
-          <div className="flex items-center gap-3 text-xs">
-            <span className="text-gray-400" title={user.username}>
-              {user.nickname || user.username}{' '}
-              <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase tracking-wider">
-                {user.tier}
-              </span>
-            </span>
-            {user.tier === 'super' && (
-              <button
-                onClick={() => setShowAdmin(true)}
-                className="text-gray-400 hover:text-white"
-                title="使用者管理"
-              >
-                ⚙️
-              </button>
-            )}
-            <button
-              onClick={handleLogout}
-              className="text-gray-500 hover:text-red-400"
-            >
-              登出
-            </button>
-          </div>
-        </div>
-        <ProvidersBar
-          models={user.models}
-          selected={modelOverrides}
-          onSelect={handleModelSelect}
-        />
-      </div>
-
-      {/* Mode + Roles */}
-      <div className="flex-none border-b border-gray-800 p-2">
-        <ModeSelector mode={mode} onModeChange={setMode} />
-        {mode !== 'free' && (
-          <button
-            onClick={() => setShowRoleConfig((s) => !s)}
-            className="text-xs text-gray-400 hover:text-white mt-1 ml-1"
-          >
-            {showRoleConfig ? '▲ 收起角色設定' : '▼ 角色設定'}
-          </button>
-        )}
-        {showRoleConfig && mode !== 'free' && (
-          <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
-        )}
-      </div>
-
-      <ChatArea
-        messages={messages}
-        mode={mode}
-        onRegenerate={handleRegenerate}
-        regeneratingId={regeneratingId}
-      />
-
-      {workflowStatus && (
-        <div className="flex-none border-t border-gray-800 px-3 py-1.5 bg-gray-900 text-center">
-          <span className="text-xs text-yellow-300 animate-pulse">
-            {workflowStatus}
-          </span>
-        </div>
-      )}
-
-      <InputBar
-        onSend={handleSend}
-        onCancel={handleCancel}
-        disabled={isProcessing}
-        isProcessing={isProcessing}
-      />
-
-      <AdminPanel
-        isOpen={showAdmin}
-        onClose={() => setShowAdmin(false)}
-        currentUsername={user.username}
-      />
-      </div>
-    </div>
+    <I18nContext.Provider value={i18nValue}>{content}</I18nContext.Provider>
   );
 }

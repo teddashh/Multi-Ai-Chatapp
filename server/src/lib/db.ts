@@ -81,6 +81,8 @@ addColumnIfMissing('users', 'nickname', 'TEXT');
 addColumnIfMissing('users', 'email', 'TEXT');
 addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'lang', "TEXT NOT NULL DEFAULT 'zh-TW'");
+addColumnIfMissing('users', 'avatar_path', 'TEXT');
 addColumnIfMissing('chat_sessions', 'roles_json', 'TEXT');
 
 // Tier rename migration (test/standard/super → standard/pro/super).
@@ -128,6 +130,8 @@ export interface UserRow {
   email: string | null;
   failed_attempts: number;
   locked_until: number;
+  lang: 'zh-TW' | 'en';
+  avatar_path: string | null;
 }
 
 export interface PasswordResetRow {
@@ -171,6 +175,18 @@ export const userStmts = {
   ),
   setPasswordHash: db.prepare<[string, number]>(
     'UPDATE users SET password_hash = ?, failed_attempts = 0, locked_until = 0 WHERE id = ?',
+  ),
+  updateLang: db.prepare<[string, number]>(
+    'UPDATE users SET lang = ? WHERE id = ?',
+  ),
+  updateAvatar: db.prepare<[string | null, number]>(
+    'UPDATE users SET avatar_path = ? WHERE id = ?',
+  ),
+  updateNicknameEmail: db.prepare<[string | null, string | null, number]>(
+    'UPDATE users SET nickname = ?, email = ? WHERE id = ?',
+  ),
+  setOwnPassword: db.prepare<[string, number]>(
+    'UPDATE users SET password_hash = ? WHERE id = ?',
   ),
 };
 

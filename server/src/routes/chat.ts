@@ -186,6 +186,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         modelOverrides,
         attachments: reloadedAttachments,
         tier: user.tier,
+        lang: user.lang,
         emit: recordingSend,
         signal: controller.signal,
       });
@@ -311,7 +312,7 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
   if (!roles) {
     return c.json({ error: `unsupported mode ${modeStr}` }, 400);
   }
-  const steps = buildStepList(modeStr, roles);
+  const steps = buildStepList(modeStr, roles, user.lang);
   if (steps.length === 0) {
     return c.json({ error: 'no steps for mode' }, 400);
   }

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { AI_PROVIDERS, CHAT_MODES } from '../shared/constants';
+import { AI_PROVIDERS, MODE_ICONS } from '../shared/constants';
 import type { SessionSummary } from '../api';
 import { deleteSession, getSession, renameSession } from '../api';
+import { modeName, useT } from '../i18n';
+import type { Dict } from '../i18n';
+import type { ChatMode } from '../shared/types';
 
 interface Props {
   sessions: SessionSummary[];
@@ -13,12 +16,12 @@ interface Props {
   onClose: () => void;
 }
 
-function relativeTime(epochSeconds: number): string {
+function relativeTime(t: Dict, epochSeconds: number): string {
   const diff = Math.floor(Date.now() / 1000 - epochSeconds);
-  if (diff < 60) return '剛剛';
-  if (diff < 3600) return `${Math.floor(diff / 60)} 分鐘前`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} 小時前`;
-  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} 天前`;
+  if (diff < 60) return t.timeJustNow;
+  if (diff < 3600) return t.timeMinAgo(Math.floor(diff / 60));
+  if (diff < 86400) return t.timeHourAgo(Math.floor(diff / 3600));
+  if (diff < 86400 * 7) return t.timeDayAgo(Math.floor(diff / 86400));
   return new Date(epochSeconds * 1000).toLocaleDateString();
 }
 
@@ -31,6 +34,7 @@ export default function Sidebar({
   isOpen,
   onClose,
 }: Props) {
+  const t = useT();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
@@ -50,19 +54,19 @@ export default function Sidebar({
       await renameSession(id, title);
       onRefresh();
     } catch (err) {
-      alert(`改名失敗：${(err as Error).message}`);
+      alert(t.renameFailed((err as Error).message));
     }
     setRenamingId(null);
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm('刪除這個對話？')) return;
+    if (!confirm(t.sidebarConfirmDelete)) return;
     try {
       await deleteSession(id);
       onRefresh();
     } catch (err) {
-      alert(`刪除失敗：${(err as Error).message}`);
+      alert(t.deleteFailed((err as Error).message));
     }
   };
 
@@ -70,26 +74,27 @@ export default function Sidebar({
     e.stopPropagation();
     try {
       const detail = await getSession(s.id);
-      const modeInfo = CHAT_MODES[detail.session.mode];
+      const m = detail.session.mode as ChatMode;
+      const icon = MODE_ICONS[m];
       const lines: string[] = [
-        `# Multi-AI Chat — ${modeInfo?.icon ?? ''} ${detail.session.title}`,
-        `> Mode: ${modeInfo?.name ?? detail.session.mode}`,
+        `# Multi-AI Chat — ${icon} ${detail.session.title}`,
+        `> Mode: ${modeName(t, m)}`,
         `> Exported: ${new Date().toLocaleString()}`,
         '',
         '---',
         '',
       ];
-      for (const m of detail.messages) {
-        if (m.role === 'user') {
-          lines.push('## 👤 User');
+      for (const msg of detail.messages) {
+        if (msg.role === 'user') {
+          lines.push(t.exportUserHeading);
           lines.push('');
-          lines.push(...m.content.split('\n').map((l) => `> ${l}`));
+          lines.push(...msg.content.split('\n').map((l) => `> ${l}`));
         } else {
-          const name = m.provider ? AI_PROVIDERS[m.provider].name : 'AI';
-          const role = m.modeRole ? ` (${m.modeRole})` : '';
+          const name = msg.provider ? AI_PROVIDERS[msg.provider].name : 'AI';
+          const role = msg.modeRole ? ` (${msg.modeRole})` : '';
           lines.push(`## 🤖 ${name}${role}`);
           lines.push('');
-          lines.push(m.content);
+          lines.push(msg.content);
         }
         lines.push('');
         lines.push('---');
@@ -107,13 +112,12 @@ export default function Sidebar({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      alert(`匯出失敗：${(err as Error).message}`);
+      alert(t.exportFailed((err as Error).message));
     }
   };
 
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpen && (
         <div
           className="lg:hidden fixed inset-0 bg-black/60 z-30"
@@ -133,7 +137,7 @@ export default function Sidebar({
             }}
             className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm font-medium"
           >
-            + 新對話
+            {t.sidebarNew}
           </button>
           <button
             onClick={onClose}
@@ -145,11 +149,11 @@ export default function Sidebar({
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {sessions.length === 0 ? (
             <div className="text-xs text-gray-500 text-center py-4">
-              還沒有對話
+              {t.sidebarEmpty}
             </div>
           ) : (
             sessions.map((s) => {
-              const modeInfo = CHAT_MODES[s.mode];
+              const icon = MODE_ICONS[s.mode] ?? '💬';
               const active = s.id === activeId;
               const renaming = s.id === renamingId;
               return (
@@ -168,7 +172,7 @@ export default function Sidebar({
                   }`}
                 >
                   <div className="flex items-center gap-1.5 mb-0.5">
-                    <span className="text-xs flex-none">{modeInfo?.icon ?? '💬'}</span>
+                    <span className="text-xs flex-none">{icon}</span>
                     {renaming ? (
                       <input
                         autoFocus
@@ -190,27 +194,27 @@ export default function Sidebar({
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-gray-500">
-                      {relativeTime(s.updated_at)}
+                      {relativeTime(t, s.updated_at)}
                     </span>
                     <div className="flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={(e) => handleExport(s, e)}
                         className="text-[10px] text-gray-500 hover:text-white"
-                        title="匯出 Markdown"
+                        title={t.sidebarExport}
                       >
                         📥
                       </button>
                       <button
                         onClick={(e) => handleStartRename(s, e)}
                         className="text-[10px] text-gray-500 hover:text-white"
-                        title="改名"
+                        title={t.sidebarRename}
                       >
                         ✎
                       </button>
                       <button
                         onClick={(e) => handleDelete(s.id, e)}
                         className="text-[10px] text-gray-500 hover:text-red-400"
-                        title="刪除"
+                        title={t.sidebarDelete}
                       >
                         🗑
                       </button>

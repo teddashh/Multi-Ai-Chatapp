@@ -7,6 +7,7 @@ import {
   type AdminUser,
 } from '../api';
 import type { Tier } from '../shared/types';
+import { useT } from '../i18n';
 
 interface Props {
   isOpen: boolean;
@@ -24,6 +25,7 @@ interface RowEdit {
 }
 
 export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) {
+  const t = useT();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -87,7 +89,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
   };
 
   const handleDelete = async (username: string) => {
-    if (!confirm(`Delete user '${username}'?`)) return;
+    if (!confirm(t.adminConfirmDelete(username))) return;
     setError('');
     try {
       await deleteUser(username);
@@ -130,7 +132,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-white">使用者管理</h2>
+          <h2 className="text-base font-bold text-white">{t.adminTitle}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-white text-sm"
@@ -147,10 +149,10 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
 
         <div className="mb-4">
           <div className="text-xs text-gray-400 mb-2">
-            目前帳號 ({users.length})
+            {t.adminCurrentCount(users.length)}
           </div>
           {loading ? (
-            <div className="text-xs text-gray-500">載入中...</div>
+            <div className="text-xs text-gray-500">{t.loading}</div>
           ) : (
             <div className="space-y-2">
               {users.map((u) => {
@@ -172,7 +174,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                     <div className="flex items-center gap-2 mb-2">
                       <span className="font-semibold text-white flex-1">
                         {u.username}
-                        {isSelf && <span className="ml-1 text-gray-500">(you)</span>}
+                        {isSelf && <span className="ml-1 text-gray-500">{t.adminYou}</span>}
                       </span>
                       <select
                         value={tierVal}
@@ -195,7 +197,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                     <div className="grid grid-cols-2 gap-2 mb-2">
                       <input
                         type="text"
-                        placeholder="暱稱"
+                        placeholder={t.adminNickname}
                         value={nickVal}
                         onChange={(ev) =>
                           setEditing((prev) => ({
@@ -207,7 +209,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                       />
                       <input
                         type="email"
-                        placeholder="email"
+                        placeholder={t.adminEmail}
                         value={emailVal}
                         onChange={(ev) =>
                           setEditing((prev) => ({
@@ -221,7 +223,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                     <div className="flex items-center gap-2">
                       <input
                         type="password"
-                        placeholder="新密碼（留空不改）"
+                        placeholder={t.adminNewPasswordPlaceholder}
                         value={e.password ?? ''}
                         onChange={(ev) =>
                           setEditing((prev) => ({
@@ -236,14 +238,14 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
                         disabled={!dirty}
                         className="px-2 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs"
                       >
-                        儲存
+                        {t.save}
                       </button>
                       <button
                         onClick={() => handleDelete(u.username)}
                         disabled={isSelf}
                         className="px-2 py-1 text-red-400 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed rounded text-xs"
                       >
-                        刪除
+                        {t.delete}
                       </button>
                     </div>
                   </div>
@@ -254,11 +256,11 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
         </div>
 
         <form onSubmit={handleCreate} className="border-t border-gray-700 pt-3 space-y-2">
-          <div className="text-xs text-gray-400">新增帳號</div>
+          <div className="text-xs text-gray-400">{t.adminCreateHeading}</div>
           <div className="grid grid-cols-2 gap-2">
             <input
               type="text"
-              placeholder="username"
+              placeholder={t.adminUsername}
               value={newUsername}
               onChange={(e) => setNewUsername(e.target.value)}
               required
@@ -267,7 +269,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
             />
             <input
               type="password"
-              placeholder="password"
+              placeholder={t.adminPassword}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
@@ -276,14 +278,14 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
             />
             <input
               type="text"
-              placeholder="暱稱"
+              placeholder={t.adminNickname}
               value={newNickname}
               onChange={(e) => setNewNickname(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
             />
             <input
               type="email"
-              placeholder="email"
+              placeholder={t.adminEmail}
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-blue-500"
@@ -293,9 +295,9 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
               onChange={(e) => setNewTier(e.target.value as Tier)}
               className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
             >
-              {TIERS.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
                 </option>
               ))}
             </select>
@@ -304,7 +306,7 @@ export default function AdminPanel({ isOpen, onClose, currentUsername }: Props) 
               disabled={!newUsername.trim() || !newPassword}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs"
             >
-              新增
+              {t.adminCreate}
             </button>
           </div>
         </form>

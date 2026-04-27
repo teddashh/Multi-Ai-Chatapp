@@ -14,12 +14,14 @@ export const AI_PROVIDERS: Record<AIProvider, { name: string; color: string }> =
   grok: { name: 'Grok', color: '#e11d48' },
 };
 
-export const CHAT_MODES: Record<ChatMode, { name: string; description: string; icon: string }> = {
-  free: { name: '自由模式', description: '同時發給四家，各自獨立回答', icon: '⚡' },
-  debate: { name: '四方辯證', description: '正方 → 反方 → 判官 → 總結', icon: '⚔️' },
-  consult: { name: '多方諮詢', description: '雙源先答 → 審查 → 總結', icon: '🔍' },
-  coding: { name: 'Coding 模式', description: '規劃 → 審查 → 實作 → 測試（8 步）', icon: '💻' },
-  roundtable: { name: '道理辯證', description: '5 輪辯證螺旋 × 4 人', icon: '🔄' },
+// Mode names/descriptions live in the i18n dictionary now (web/src/i18n.ts).
+// Only the icon stays here since it's the same across languages.
+export const MODE_ICONS: Record<ChatMode, string> = {
+  free: '⚡',
+  debate: '⚔️',
+  consult: '🔍',
+  coding: '💻',
+  roundtable: '🔄',
 };
 
 export const DEFAULT_DEBATE_ROLES: DebateRoles = {

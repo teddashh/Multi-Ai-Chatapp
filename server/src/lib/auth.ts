@@ -22,6 +22,8 @@ export interface SessionUser {
   tier: Tier;
   nickname: string | null;
   email: string | null;
+  lang: 'zh-TW' | 'en';
+  avatarPath: string | null;
 }
 
 export async function hashPassword(plain: string): Promise<string> {
@@ -77,6 +79,8 @@ export async function requireAuth(c: AppContext, next: Next): Promise<Response |
       tier: user.tier,
       nickname: user.nickname,
       email: user.email,
+      lang: user.lang,
+      avatarPath: user.avatar_path,
     });
     await next();
   } catch {

@@ -12,6 +12,12 @@ import {
 import { resetStmts, userStmts, type UserRow } from '../lib/db.js';
 import { TIER_MODELS } from '../shared/models.js';
 import { sendResetEmail } from '../lib/mail.js';
+import {
+  isSupportedAvatarMime,
+  MAX_AVATAR_BYTES,
+  readAvatar,
+  saveAvatar,
+} from '../lib/uploads.js';
 
 export const authRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -24,6 +30,8 @@ function buildUserDTO(user: UserRow) {
     nickname: user.nickname,
     email: user.email,
     tier: user.tier,
+    lang: user.lang,
+    hasAvatar: !!user.avatar_path,
     models: TIER_MODELS[user.tier],
   };
 }
@@ -119,6 +127,8 @@ authRoute.post('/login', async (c) => {
     tier: user.tier,
     nickname: user.nickname,
     email: user.email,
+    lang: user.lang,
+    avatarPath: user.avatar_path,
   });
   return c.json({ user: buildUserDTO(user) });
 });
@@ -154,6 +164,97 @@ authRoute.post('/forgot-password', async (c) => {
     }
   }
   return c.json({ ok: true });
+});
+
+// === Profile (self) ===
+// PATCH lang / nickname / email / password — any subset.
+authRoute.patch('/profile', requireAuth, async (c) => {
+  const session = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        lang?: 'zh-TW' | 'en';
+        nickname?: string | null;
+        email?: string | null;
+        password?: string | null;
+      }
+    | null;
+  if (!body) return c.json({ error: 'invalid body' }, 400);
+  const user = userStmts.findById.get(session.id) as UserRow | undefined;
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+
+  if (body.lang === 'zh-TW' || body.lang === 'en') {
+    userStmts.updateLang.run(body.lang, user.id);
+  }
+  if (body.nickname !== undefined || body.email !== undefined) {
+    const nick =
+      body.nickname === undefined ? user.nickname : (body.nickname || null);
+    const email =
+      body.email === undefined ? user.email : (body.email || null);
+    userStmts.updateNicknameEmail.run(nick, email, user.id);
+  }
+  if (body.password) {
+    if (body.password.length < 6) {
+      return c.json({ error: 'password too short (min 6 chars)' }, 400);
+    }
+    const hash = await hashPassword(body.password);
+    userStmts.setOwnPassword.run(hash, user.id);
+  }
+
+  const fresh = userStmts.findById.get(user.id) as UserRow;
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+authRoute.post('/avatar', requireAuth, async (c) => {
+  const session = c.get('user');
+  const body = await c.req.parseBody().catch(() => null);
+  if (!body) return c.json({ error: 'multipart body required' }, 400);
+  const file = body['file'];
+  if (!(file instanceof File)) {
+    return c.json({ error: 'file required' }, 400);
+  }
+  if (file.size > MAX_AVATAR_BYTES) {
+    return c.json(
+      { error: `檔案過大（最大 ${Math.round(MAX_AVATAR_BYTES / 1024 / 1024)}MB）` },
+      413,
+    );
+  }
+  if (!isSupportedAvatarMime(file.type)) {
+    return c.json({ error: 'unsupported image type' }, 400);
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const path = saveAvatar(session.id, file.type, buffer);
+  userStmts.updateAvatar.run(path, session.id);
+  const fresh = userStmts.findById.get(session.id) as UserRow;
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+authRoute.delete('/avatar', requireAuth, (c) => {
+  const session = c.get('user');
+  userStmts.updateAvatar.run(null, session.id);
+  const fresh = userStmts.findById.get(session.id) as UserRow;
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+// Anyone logged in can fetch any user's avatar (used to show family avatars
+// in the UI eventually). Avatars are not secret.
+authRoute.get('/avatar/:username', requireAuth, (c) => {
+  const username = c.req.param('username') ?? '';
+  if (!username) return c.json({ error: 'username required' }, 400);
+  const target = userStmts.findByUsername.get(username) as UserRow | undefined;
+  if (!target || !target.avatar_path) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  const buf = readAvatar(target.avatar_path);
+  if (!buf) return c.json({ error: 'not found' }, 404);
+  // Sniff the extension to set Content-Type.
+  const ext = target.avatar_path.split('.').pop() || 'png';
+  const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
+  return new Response(buf, {
+    headers: {
+      'Content-Type': mime,
+      'Cache-Control': 'private, max-age=60',
+    },
+  });
 });
 
 authRoute.post('/reset-password', async (c) => {
