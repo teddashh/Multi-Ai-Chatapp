@@ -167,6 +167,15 @@ export interface Dict {
   themeGemini: string;
   themeGrok: string;
   themeChatGPT: string;
+  profileTier: string;
+  profileUsage: string;
+  profileUsageShow: string;
+  profileUsageHide: string;
+  profileUsageEmpty: string;
+  profileUsageCalls: string;
+  profileUsageTokens: string;
+  profileUsageCost: string;
+  profileUsageNote: string;
 }
 
 const ZH: Dict = {
@@ -324,6 +333,16 @@ const ZH: Dict = {
   themeGemini: 'Gemini 小隊',
   themeGrok: 'Grok 小隊',
   themeChatGPT: 'ChatGPT 小隊',
+  profileTier: '會員等級',
+  profileUsage: '我的用量',
+  profileUsageShow: '▼ 顯示用量',
+  profileUsageHide: '▲ 收起用量',
+  profileUsageEmpty: '還沒有使用記錄',
+  profileUsageCalls: '呼叫次數',
+  profileUsageTokens: 'Tokens（輸入 / 輸出）',
+  profileUsageCost: '估算費用',
+  profileUsageNote:
+    'Grok 為實際 token 數；Claude / ChatGPT / Gemini 走 CLI 訂閱方案，token 為估算（標 ⚠），費用為等價 API 牌價推算。',
 };
 
 const EN: Dict = {
@@ -485,6 +504,16 @@ const EN: Dict = {
   themeGemini: 'Team Gemini',
   themeGrok: 'Team Grok',
   themeChatGPT: 'Team ChatGPT',
+  profileTier: 'Account tier',
+  profileUsage: 'My usage',
+  profileUsageShow: '▼ Show usage',
+  profileUsageHide: '▲ Hide usage',
+  profileUsageEmpty: 'No usage recorded yet',
+  profileUsageCalls: 'Calls',
+  profileUsageTokens: 'Tokens (in / out)',
+  profileUsageCost: 'Est. cost',
+  profileUsageNote:
+    'Grok counts come from the actual API. Claude / ChatGPT / Gemini are billed via subscription — tokens are estimated (⚠), and cost shown is what the equivalent metered API would charge.',
 };
 
 export const DICTS: Record<Lang, Dict> = { 'zh-TW': ZH, en: EN };

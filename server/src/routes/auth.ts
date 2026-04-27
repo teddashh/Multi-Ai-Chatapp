@@ -9,8 +9,9 @@ import {
   verifyPassword,
   type AppVariables,
 } from '../lib/auth.js';
-import { resetStmts, userStmts, type UserRow } from '../lib/db.js';
+import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
 import { TIER_MODELS } from '../shared/models.js';
+import { estimateCost } from '../shared/prices.js';
 import { sendResetEmail } from '../lib/mail.js';
 import {
   isSupportedAvatarMime,
@@ -240,6 +241,45 @@ authRoute.post('/avatar', requireAuth, async (c) => {
   userStmts.updateAvatar.run(path, session.id);
   const fresh = userStmts.findById.get(session.id) as UserRow;
   return c.json({ user: buildUserDTO(fresh) });
+});
+
+// Self-view of usage stats. Mirrors the admin /usage shape but scoped
+// to the caller's own data so users can see what they've consumed.
+authRoute.get('/usage', requireAuth, (c) => {
+  const session = c.get('user');
+  const totals = usageStmts.totalsForUser.get(session.id) as {
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    prompt_chars: number;
+    completion_chars: number;
+  };
+  const breakdown = usageStmts.byModelForUser.all(session.id) as Array<{
+    provider: string;
+    model: string;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    prompt_chars: number;
+    completion_chars: number;
+    any_estimated: number;
+  }>;
+  const rows = breakdown.map((b) => ({
+    provider: b.provider,
+    model: b.model,
+    calls: b.calls,
+    tokens_in: b.tokens_in,
+    tokens_out: b.tokens_out,
+    prompt_chars: b.prompt_chars,
+    completion_chars: b.completion_chars,
+    is_estimated: !!b.any_estimated,
+    cost_usd: estimateCost(b.provider, b.model, b.tokens_in, b.tokens_out),
+  }));
+  const totalCost = rows.reduce((sum, r) => sum + r.cost_usd, 0);
+  return c.json({
+    totals: { ...totals, cost_usd: totalCost },
+    by_model: rows,
+  });
 });
 
 authRoute.delete('/avatar', requireAuth, (c) => {

@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   avatarUrl,
   deleteAvatar,
+  getMyUsage,
   updateProfile,
   uploadAvatar,
+  type MyUsage,
   type ThemeId,
   type User,
 } from '../api';
@@ -39,6 +41,8 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [avatarBust, setAvatarBust] = useState(Date.now());
+  const [usageOpen, setUsageOpen] = useState(false);
+  const [usage, setUsage] = useState<MyUsage | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -50,8 +54,20 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setError('');
       setSuccess('');
       setAvatarBust(Date.now());
+      setUsageOpen(false);
+      setUsage(null);
     }
   }, [isOpen, user]);
+
+  // Lazy-load usage on first expand — most opens of the modal are for
+  // editing settings, no point hitting the endpoint preemptively.
+  useEffect(() => {
+    if (usageOpen && !usage) {
+      getMyUsage()
+        .then(setUsage)
+        .catch(() => setUsage({ totals: { calls: 0, tokens_in: 0, tokens_out: 0, prompt_chars: 0, completion_chars: 0, cost_usd: 0 }, by_model: [] }));
+    }
+  }, [usageOpen, usage]);
 
   if (!isOpen) return null;
 
@@ -194,6 +210,14 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           </div>
         </div>
 
+        {/* Tier (read-only) */}
+        <div className="mb-3 flex items-center gap-2 text-xs">
+          <span className="text-gray-400">{t.profileTier}:</span>
+          <span className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 uppercase tracking-wider text-gray-200">
+            {user.tier}
+          </span>
+        </div>
+
         {/* Nickname */}
         <label className="block text-xs text-gray-300 mb-1">
           {t.profileNickname}
@@ -273,6 +297,76 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
               </button>
             );
           })}
+        </div>
+
+        {/* Usage (collapsible) */}
+        <div className="mb-4 border-t border-gray-800 pt-3">
+          <button
+            type="button"
+            onClick={() => setUsageOpen((s) => !s)}
+            className="text-xs text-gray-300 hover:text-white"
+          >
+            {usageOpen ? t.profileUsageHide : t.profileUsageShow} · {t.profileUsage}
+          </button>
+          {usageOpen && (
+            <div className="mt-2 space-y-2">
+              {!usage ? (
+                <p className="text-xs text-gray-500">{t.loading}</p>
+              ) : usage.totals.calls === 0 ? (
+                <p className="text-xs text-gray-500">{t.profileUsageEmpty}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="bg-gray-800 border border-gray-700 rounded p-2">
+                      <div className="text-gray-500 text-[10px]">{t.profileUsageCalls}</div>
+                      <div className="font-mono">{usage.totals.calls.toLocaleString()}</div>
+                    </div>
+                    <div className="bg-gray-800 border border-gray-700 rounded p-2">
+                      <div className="text-gray-500 text-[10px]">{t.profileUsageTokens}</div>
+                      <div className="font-mono text-[11px]">
+                        {usage.totals.tokens_in.toLocaleString()} /{' '}
+                        {usage.totals.tokens_out.toLocaleString()}
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 border border-gray-700 rounded p-2">
+                      <div className="text-gray-500 text-[10px]">{t.profileUsageCost}</div>
+                      <div className="font-mono">
+                        ${usage.totals.cost_usd.toFixed(usage.totals.cost_usd < 1 ? 4 : 2)}
+                      </div>
+                    </div>
+                  </div>
+                  <table className="w-full text-[11px] mt-2">
+                    <thead className="text-gray-500">
+                      <tr className="border-b border-gray-800">
+                        <th className="text-left py-1">Model</th>
+                        <th className="text-right py-1">Calls</th>
+                        <th className="text-right py-1">Tokens</th>
+                        <th className="text-right py-1">$</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usage.by_model.map((m) => (
+                        <tr key={`${m.provider}-${m.model}`} className="border-b border-gray-800/50">
+                          <td className="py-1 font-mono text-gray-300">{m.model}</td>
+                          <td className="py-1 text-right font-mono">{m.calls}</td>
+                          <td className="py-1 text-right font-mono">
+                            {(m.tokens_in + m.tokens_out).toLocaleString()}
+                            {m.is_estimated && <span className="text-yellow-500 ml-0.5">⚠</span>}
+                          </td>
+                          <td className="py-1 text-right font-mono">
+                            ${m.cost_usd.toFixed(m.cost_usd < 1 ? 4 : 2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="text-[10px] text-gray-500 leading-relaxed">
+                    {t.profileUsageNote}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {error && <p className="text-xs text-red-400 mb-3">{error}</p>}

@@ -778,18 +778,22 @@ function StatsView({ onError }: { onError: (msg: string) => void }) {
 
   if (!rows) return <div className="text-xs text-gray-500">載入中...</div>;
 
-  // Sort by total tokens desc
-  const sorted = [...rows].sort(
-    (a, b) =>
-      (b.totals.tokens_in + b.totals.tokens_out) -
-      (a.totals.tokens_in + a.totals.tokens_out),
-  );
+  // Sort by estimated cost desc — that's the most actionable signal.
+  const sorted = [...rows].sort((a, b) => b.totals.cost_usd - a.totals.cost_usd);
+  const grandTotal = sorted.reduce((sum, u) => sum + u.totals.cost_usd, 0);
+
+  const fmtCost = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
 
   return (
     <div className="space-y-4">
-      <p className="text-[11px] text-gray-500">
-        Tokens 顯示為「輸入 / 輸出」。Grok（xAI API）為實際數值；其餘 CLI 模型（Claude / ChatGPT / Gemini）
-        無法取得官方 token 計數，以字元數 ÷ 3 估算（標 ⚠ 提醒）。
+      <div className="bg-gray-900 border border-gray-700 rounded p-3 flex items-center justify-between">
+        <span className="text-xs text-gray-400">總估算費用（所有使用者）</span>
+        <span className="text-lg font-bold font-mono">{fmtCost(grandTotal)}</span>
+      </div>
+      <p className="text-[11px] text-gray-500 leading-relaxed">
+        Grok 的 token 數與費用是 xAI API 實際扣的。Claude / ChatGPT / Gemini 走訂閱方案，不直接照
+        token 收錢；這裡的費用是用「等價 metered API 牌價」推算給你做參考（標 ⚠ 表示 token 為估算值）。
+        牌價在 server <code>shared/prices.ts</code> 改。
       </p>
 
       {sorted.map((u) => (
@@ -804,16 +808,15 @@ function StatsView({ onError }: { onError: (msg: string) => void }) {
             </div>
             <div className="text-right text-xs">
               <div>
-                <span className="text-gray-400">總呼叫: </span>
+                <span className="text-gray-400">呼叫: </span>
                 <span className="font-mono">{u.totals.calls}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">總 tokens: </span>
+                <span className="text-gray-400 ml-2">tokens: </span>
                 <span className="font-mono">
                   {u.totals.tokens_in.toLocaleString()} /{' '}
                   {u.totals.tokens_out.toLocaleString()}
                 </span>
               </div>
+              <div className="text-sm font-bold mt-0.5">{fmtCost(u.totals.cost_usd)}</div>
             </div>
           </div>
 
@@ -826,6 +829,7 @@ function StatsView({ onError }: { onError: (msg: string) => void }) {
                   <th className="text-right py-1">Calls</th>
                   <th className="text-right py-1">Tokens In</th>
                   <th className="text-right py-1">Tokens Out</th>
+                  <th className="text-right py-1">Cost</th>
                 </tr>
               </thead>
               <tbody>
@@ -842,6 +846,7 @@ function StatsView({ onError }: { onError: (msg: string) => void }) {
                       {m.tokens_out.toLocaleString()}
                       {m.is_estimated && <span className="text-yellow-500 ml-1" title="估算值">⚠</span>}
                     </td>
+                    <td className="py-1 text-right font-mono">{fmtCost(m.cost_usd)}</td>
                   </tr>
                 ))}
               </tbody>

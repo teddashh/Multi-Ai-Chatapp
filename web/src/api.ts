@@ -129,29 +129,46 @@ export interface AuditEntry {
   timestamp: number;
 }
 
+export interface UsageByModel {
+  provider: AIProvider;
+  model: string;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  prompt_chars: number;
+  completion_chars: number;
+  is_estimated: boolean;
+  cost_usd: number;
+}
+
+export interface UsageTotals {
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+  prompt_chars: number;
+  completion_chars: number;
+  cost_usd: number;
+}
+
 export interface UsageRow {
   id: number;
   username: string;
   real_name: string | null;
   nickname: string | null;
   tier: Tier;
-  totals: {
-    calls: number;
-    tokens_in: number;
-    tokens_out: number;
-    prompt_chars: number;
-    completion_chars: number;
-  };
-  by_model: Array<{
-    provider: AIProvider;
-    model: string;
-    calls: number;
-    tokens_in: number;
-    tokens_out: number;
-    prompt_chars: number;
-    completion_chars: number;
-    is_estimated: boolean;
-  }>;
+  totals: UsageTotals;
+  by_model: UsageByModel[];
+}
+
+export interface MyUsage {
+  totals: UsageTotals;
+  by_model: UsageByModel[];
+}
+
+export async function getMyUsage(): Promise<MyUsage> {
+  const res = await fetch('/api/auth/usage', { credentials: 'include' });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<MyUsage>;
 }
 
 export async function me(): Promise<User | null> {

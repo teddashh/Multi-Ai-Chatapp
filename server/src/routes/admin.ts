@@ -20,6 +20,7 @@ import {
   type UserRow,
 } from '../lib/db.js';
 import { sendResetEmail } from '../lib/mail.js';
+import { estimateCost } from '../shared/prices.js';
 import type { Tier } from '../shared/types.js';
 
 export const adminRoute = new Hono<{ Variables: AppVariables }>();
@@ -426,29 +427,38 @@ adminRoute.get('/usage', (c) => {
   }
 
   return c.json({
-    users: totals.map((u) => ({
-      id: u.id,
-      username: u.username,
-      real_name: u.real_name,
-      nickname: u.nickname,
-      tier: u.tier,
-      totals: {
-        calls: u.calls,
-        tokens_in: u.tokens_in,
-        tokens_out: u.tokens_out,
-        prompt_chars: u.prompt_chars,
-        completion_chars: u.completion_chars,
-      },
-      by_model: (breakdownByUser.get(u.id) ?? []).map((b) => ({
-        provider: b.provider,
-        model: b.model,
-        calls: b.calls,
-        tokens_in: b.tokens_in,
-        tokens_out: b.tokens_out,
-        prompt_chars: b.prompt_chars,
-        completion_chars: b.completion_chars,
-        is_estimated: !!b.any_estimated,
-      })),
-    })),
+    users: totals.map((u) => {
+      const rows = (breakdownByUser.get(u.id) ?? []).map((b) => {
+        const cost = estimateCost(b.provider, b.model, b.tokens_in, b.tokens_out);
+        return {
+          provider: b.provider,
+          model: b.model,
+          calls: b.calls,
+          tokens_in: b.tokens_in,
+          tokens_out: b.tokens_out,
+          prompt_chars: b.prompt_chars,
+          completion_chars: b.completion_chars,
+          is_estimated: !!b.any_estimated,
+          cost_usd: cost,
+        };
+      });
+      const totalCost = rows.reduce((sum, r) => sum + r.cost_usd, 0);
+      return {
+        id: u.id,
+        username: u.username,
+        real_name: u.real_name,
+        nickname: u.nickname,
+        tier: u.tier,
+        totals: {
+          calls: u.calls,
+          tokens_in: u.tokens_in,
+          tokens_out: u.tokens_out,
+          prompt_chars: u.prompt_chars,
+          completion_chars: u.completion_chars,
+          cost_usd: totalCost,
+        },
+        by_model: rows,
+      };
+    }),
   });
 });

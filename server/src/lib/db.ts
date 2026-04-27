@@ -466,6 +466,28 @@ export const usageStmts = {
      GROUP BY user_id, provider, model
      ORDER BY user_id, provider, model`,
   ),
+  // Self-view variant of byUserAndModel — bound to a single user.
+  byModelForUser: db.prepare<[number]>(
+    `SELECT provider, model,
+            COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out,
+            COALESCE(SUM(prompt_chars), 0) AS prompt_chars,
+            COALESCE(SUM(completion_chars), 0) AS completion_chars,
+            MAX(is_estimated) AS any_estimated
+     FROM usage_log
+     WHERE user_id = ?
+     GROUP BY provider, model
+     ORDER BY provider, model`,
+  ),
+  totalsForUser: db.prepare<[number]>(
+    `SELECT COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out,
+            COALESCE(SUM(prompt_chars), 0) AS prompt_chars,
+            COALESCE(SUM(completion_chars), 0) AS completion_chars
+     FROM usage_log WHERE user_id = ?`,
+  ),
 };
 
 export const messageStmts = {
