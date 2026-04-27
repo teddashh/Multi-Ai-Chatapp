@@ -59,7 +59,7 @@ const DDL: string[] = [
      SESSION_ID     VARCHAR2(64) NOT NULL,
      USER_ID        NUMBER NOT NULL,
      TITLE          VARCHAR2(500) NOT NULL,
-     MODE           VARCHAR2(32) NOT NULL,
+     CHAT_MODE      VARCHAR2(32) NOT NULL,
      SRC_CREATED_AT NUMBER NOT NULL,
      SRC_UPDATED_AT NUMBER NOT NULL,
      SYNCED_AT      TIMESTAMP DEFAULT SYSTIMESTAMP,
@@ -70,7 +70,7 @@ const DDL: string[] = [
   `CREATE TABLE MAC_MESSAGES (
      MSG_ID       NUMBER PRIMARY KEY,
      SESSION_ID   VARCHAR2(64) NOT NULL,
-     ROLE         VARCHAR2(8) NOT NULL,
+     MSG_ROLE     VARCHAR2(8) NOT NULL,
      PROVIDER     VARCHAR2(32),
      MODE_ROLE    VARCHAR2(64),
      CONTENT      CLOB NOT NULL,
@@ -251,12 +251,12 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
   for (const s of rows) {
     const latest = await conn.execute<{
       TITLE: string;
-      MODE: string;
+      CHAT_MODE: string;
       USER_ID: number;
       IS_DELETED: number;
     }>(
       `SELECT * FROM (
-         SELECT TITLE, MODE, USER_ID, IS_DELETED
+         SELECT TITLE, CHAT_MODE, USER_ID, IS_DELETED
            FROM MAC_SESSIONS
           WHERE SESSION_ID = :id
           ORDER BY SYNCED_AT DESC
@@ -269,13 +269,13 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       last &&
       last.IS_DELETED === 0 &&
       last.TITLE === s.title &&
-      last.MODE === s.mode &&
+      last.CHAT_MODE === s.mode &&
       last.USER_ID === s.user_id;
     if (same) continue;
 
     await conn.execute(
       `INSERT INTO MAC_SESSIONS
-         (SESSION_ID, USER_ID, TITLE, MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
+         (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
        VALUES (:sid, :uid, :title, :mode, :created, :updated, 0)`,
       {
         sid: s.id,
@@ -305,12 +305,12 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       const last = await conn.execute<{
         USER_ID: number;
         TITLE: string;
-        MODE: string;
+        CHAT_MODE: string;
         SRC_CREATED_AT: number;
         SRC_UPDATED_AT: number;
       }>(
         `SELECT * FROM (
-           SELECT USER_ID, TITLE, MODE, SRC_CREATED_AT, SRC_UPDATED_AT
+           SELECT USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT
              FROM MAC_SESSIONS WHERE SESSION_ID = :sid
              ORDER BY SYNCED_AT DESC
          ) WHERE ROWNUM = 1`,
@@ -321,13 +321,13 @@ async function syncSessions(conn: oracledb.Connection): Promise<number> {
       if (!x) continue;
       await conn.execute(
         `INSERT INTO MAC_SESSIONS
-           (SESSION_ID, USER_ID, TITLE, MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
+           (SESSION_ID, USER_ID, TITLE, CHAT_MODE, SRC_CREATED_AT, SRC_UPDATED_AT, IS_DELETED)
          VALUES (:sid, :uid, :title, :mode, :created, :updated, 1)`,
         {
           sid: r.SESSION_ID,
           uid: x.USER_ID,
           title: x.TITLE,
-          mode: x.MODE,
+          mode: x.CHAT_MODE,
           created: x.SRC_CREATED_AT,
           updated: x.SRC_UPDATED_AT,
         },
@@ -359,7 +359,7 @@ async function syncMessages(conn: oracledb.Connection): Promise<number> {
   for (const m of rows) {
     await conn.execute(
       `INSERT INTO MAC_MESSAGES
-         (MSG_ID, SESSION_ID, ROLE, PROVIDER, MODE_ROLE, CONTENT, TS)
+         (MSG_ID, SESSION_ID, MSG_ROLE, PROVIDER, MODE_ROLE, CONTENT, TS)
        VALUES (:id, :sid, :role, :provider, :modeRole, :content, :ts)`,
       {
         id: m.id,
