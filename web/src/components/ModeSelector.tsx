@@ -11,7 +11,7 @@ const MODES: ChatMode[] = ['free', 'debate', 'consult', 'coding', 'roundtable'];
 
 export default function ModeSelector({ mode, onModeChange }: Props) {
   return (
-    <div className="flex gap-1 flex-wrap">
+    <div className="flex gap-1">
       {MODES.map((m) => {
         const info = CHAT_MODES[m];
         const active = m === mode;
@@ -19,15 +19,15 @@ export default function ModeSelector({ mode, onModeChange }: Props) {
           <button
             key={m}
             onClick={() => onModeChange(m)}
-            title={info.description}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            title={`${info.name} — ${info.description}`}
+            className={`flex-1 sm:flex-none px-2 sm:px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
               active
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
             }`}
           >
-            <span className="mr-1">{info.icon}</span>
-            {info.name}
+            <span className="sm:mr-1">{info.icon}</span>
+            <span className="hidden sm:inline">{info.name}</span>
           </button>
         );
       })}
