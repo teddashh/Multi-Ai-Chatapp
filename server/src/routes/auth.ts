@@ -203,6 +203,7 @@ authRoute.post('/signup', async (c) => {
         email?: string;
         password?: string;
         nickname?: string;
+        username?: string;
       }
     | null;
   if (!body?.email || !body?.password) {
@@ -215,25 +216,43 @@ authRoute.post('/signup', async (c) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return c.json({ error: 'invalid email' }, 400);
   }
+  // Optional explicit username; falls back to the email if blank. Length
+  // / charset bounded so URLs stay sane and SQL stays predictable.
+  const requestedUsername = (body.username ?? '').trim().toLowerCase();
+  let username = requestedUsername || email;
+  if (requestedUsername) {
+    if (!/^[a-z0-9_.-]{3,40}$/.test(requestedUsername)) {
+      return c.json(
+        { error: '帳號名只能用英數字加 . _ -，長度 3–40' },
+        400,
+      );
+    }
+  }
 
-  const existing = userStmts.findByEmailOrUsername.get(email, email) as
+  const existingByEmail = userStmts.findByEmailOrUsername.get(email, email) as
     | UserRow
     | undefined;
-  if (existing) {
+  if (existingByEmail) {
     return c.json({ error: 'account already exists for this email' }, 409);
   }
+  if (
+    requestedUsername &&
+    userStmts.findByEmailOrUsername.get(username, username)
+  ) {
+    return c.json({ error: '這個帳號名已被使用' }, 409);
+  }
   const hash = await hashPassword(body.password);
-  userStmts.insert.run(email, hash, 'free');
-  userStmts.updateProfile.run(body.nickname?.trim() || null, email, email);
+  userStmts.insert.run(username, hash, 'free');
+  userStmts.updateProfile.run(body.nickname?.trim() || null, email, username);
   // Free signups must verify before chat will run for them. setVerifyToken
   // also flips email_verified to 0 atomically (see db.ts).
-  const fresh0 = userStmts.findByUsername.get(email) as UserRow;
+  const fresh0 = userStmts.findByUsername.get(username) as UserRow;
   try {
     await issueVerifyTokenAndEmail(fresh0);
   } catch (err) {
     console.error('verify email send failed', (err as Error).message);
   }
-  const fresh = userStmts.findByUsername.get(email) as UserRow;
+  const fresh = userStmts.findByUsername.get(username) as UserRow;
 
   // Auto-login: drop a session cookie so the client lands signed in (but
   // the chat surface will show a "verify email" banner).
@@ -468,9 +487,33 @@ authRoute.get('/avatar/:username', requireAuth, (c) => {
   });
 });
 
+// Lightweight introspection so the reset/invite landing page can decide
+// what UI to show. Tells the client whether this is a fresh invite
+// (where letting the user pick a username makes sense) or just a
+// password reset for an existing account.
+authRoute.get('/reset-info', (c) => {
+  const token = c.req.query('token') ?? '';
+  if (!token) return c.json({ error: 'token required' }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  const row = resetStmts.findValid.get(token, now) as
+    | { user_id: number }
+    | undefined;
+  if (!row) return c.json({ error: 'invalid or expired token' }, 400);
+  const user = userStmts.findById.get(row.user_id) as UserRow | undefined;
+  if (!user) return c.json({ error: 'user not found' }, 404);
+  // "Invite" = unverified row (admin-created or self-signed-up but
+  // not yet email-verified). Reset = verified existing user.
+  return c.json({
+    username: user.username,
+    email: user.email,
+    nickname: user.nickname,
+    isInvite: !user.email_verified,
+  });
+});
+
 authRoute.post('/reset-password', async (c) => {
   const body = (await c.req.json().catch(() => null)) as
-    | { token?: string; password?: string }
+    | { token?: string; password?: string; username?: string }
     | null;
   if (!body?.token || !body?.password) {
     return c.json({ error: 'token and password required' }, 400);
@@ -486,6 +529,29 @@ authRoute.post('/reset-password', async (c) => {
   if (!row) {
     return c.json({ error: 'invalid or expired token' }, 400);
   }
+  const user = userStmts.findById.get(row.user_id) as UserRow | undefined;
+  if (!user) return c.json({ error: 'user not found' }, 404);
+
+  // Optional username pick — only honored for invite flow (unverified
+  // users). Existing users with verified emails can't change their
+  // username via the reset flow; they'd be a real account hijack risk.
+  const requestedUsername = (body.username ?? '').trim().toLowerCase();
+  if (requestedUsername && requestedUsername !== user.username) {
+    if (user.email_verified) {
+      return c.json({ error: '已驗證帳號無法在此修改使用者名稱' }, 400);
+    }
+    if (!/^[a-z0-9_.-]{3,40}$/.test(requestedUsername)) {
+      return c.json(
+        { error: '帳號名只能用英數字加 . _ -，長度 3–40' },
+        400,
+      );
+    }
+    if (userStmts.findByEmailOrUsername.get(requestedUsername, requestedUsername)) {
+      return c.json({ error: '這個帳號名已被使用' }, 409);
+    }
+    userStmts.updateUsername.run(requestedUsername, user.id);
+  }
+
   const hash = await hashPassword(body.password);
   userStmts.setPasswordHash.run(hash, row.user_id);
   resetStmts.markUsed.run(body.token);

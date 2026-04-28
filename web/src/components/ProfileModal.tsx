@@ -210,12 +210,20 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           </div>
         </div>
 
-        {/* Tier (read-only) */}
-        <div className="mb-3 flex items-center gap-2 text-xs">
-          <span className="text-gray-400">{t.profileTier}:</span>
-          <span className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 uppercase tracking-wider text-gray-200">
-            {user.tier}
-          </span>
+        {/* Username + Tier (both read-only) */}
+        <div className="mb-3 space-y-1.5 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">{t.profileUsername}:</span>
+            <code className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 text-gray-200 font-mono">
+              {user.username}
+            </code>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">{t.profileTier}:</span>
+            <span className="px-2 py-0.5 rounded bg-gray-800 border border-gray-700 uppercase tracking-wider text-gray-200">
+              {user.tier}
+            </span>
+          </div>
         </div>
 
         {/* Nickname */}

@@ -22,6 +22,7 @@ export default function Login({ onLogin }: Props) {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPwd, setSignupPwd] = useState('');
   const [signupNick, setSignupNick] = useState('');
+  const [signupUsername, setSignupUsername] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +47,7 @@ export default function Login({ onLogin }: Props) {
         email: signupEmail.trim(),
         password: signupPwd,
         nickname: signupNick.trim() || undefined,
+        username: signupUsername.trim() || undefined,
       });
       onLogin(user);
     } catch (err) {
@@ -166,6 +168,17 @@ export default function Login({ onLogin }: Props) {
             onChange={(e) => setSignupNick(e.target.value)}
             className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
           />
+
+          <label className="block text-xs text-gray-300 mb-1">{t.signupUsername}</label>
+          <input
+            type="text"
+            value={signupUsername}
+            onChange={(e) => setSignupUsername(e.target.value)}
+            placeholder={t.signupUsernamePlaceholder}
+            autoComplete="username"
+            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-1 focus:outline-none focus:border-blue-500"
+          />
+          <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">{t.signupUsernameHint}</p>
 
           <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">{t.signupTierNote}</p>
 

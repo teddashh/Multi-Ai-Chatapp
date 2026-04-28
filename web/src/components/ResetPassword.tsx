@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { resetPassword } from '../api';
+import React, { useEffect, useState } from 'react';
+import { getResetInfo, resetPassword, type ResetInfo } from '../api';
 import { useT } from '../i18n';
 
 interface Props {
@@ -11,9 +11,25 @@ export default function ResetPassword({ token, onDone }: Props) {
   const t = useT();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [username, setUsername] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  // Reset-info tells us whether this is a fresh invite (let the user
+  // pick a username) or just a regular password reset for an existing
+  // account (don't bother them with a username field).
+  const [info, setInfo] = useState<ResetInfo | null>(null);
+
+  useEffect(() => {
+    getResetInfo(token)
+      .then((i) => {
+        setInfo(i);
+        setUsername(i.username);
+      })
+      .catch((err) => {
+        setError((err as Error).message);
+      });
+  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +44,10 @@ export default function ResetPassword({ token, onDone }: Props) {
     }
     setLoading(true);
     try {
-      await resetPassword(token, password);
+      // Only send username for invite flow; for regular resets the
+      // server would reject changes anyway, but be explicit.
+      const newUsername = info?.isInvite && username.trim() ? username.trim() : undefined;
+      await resetPassword(token, password, newUsername);
       setSuccess(true);
     } catch (err) {
       setError((err as Error).message);
@@ -53,6 +72,28 @@ export default function ResetPassword({ token, onDone }: Props) {
           </>
         ) : (
           <form onSubmit={handleSubmit}>
+            {info?.isInvite && (
+              <p className="text-xs text-blue-200 bg-blue-900/30 border border-blue-800/40 rounded p-2 mb-3 leading-relaxed">
+                {t.resetWelcomeInvite}
+              </p>
+            )}
+            {info?.isInvite && (
+              <>
+                <label className="block text-xs text-gray-300 mb-1">
+                  {t.resetUsernameLabel}
+                </label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  autoComplete="username"
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-1 focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-[11px] text-gray-500 mb-3 leading-relaxed">
+                  {t.resetUsernameHint}
+                </p>
+              </>
+            )}
             <label className="block text-xs text-gray-300 mb-1">
               {t.resetNewLabel}
             </label>

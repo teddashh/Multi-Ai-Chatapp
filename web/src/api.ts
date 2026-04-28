@@ -228,6 +228,7 @@ export async function signup(fields: {
   email: string;
   password: string;
   nickname?: string;
+  username?: string;
 }): Promise<User> {
   const res = await fetch('/api/auth/signup', {
     method: 'POST',
@@ -243,6 +244,24 @@ export async function signup(fields: {
   return data.user as User;
 }
 
+export interface ResetInfo {
+  username: string;
+  email: string | null;
+  nickname: string | null;
+  isInvite: boolean;
+}
+
+export async function getResetInfo(token: string): Promise<ResetInfo> {
+  const res = await fetch(
+    `/api/auth/reset-info?token=${encodeURIComponent(token)}`,
+  );
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<ResetInfo>;
+}
+
 export async function forgotPassword(identifier: string): Promise<void> {
   const res = await fetch('/api/auth/forgot-password', {
     method: 'POST',
@@ -252,11 +271,15 @@ export async function forgotPassword(identifier: string): Promise<void> {
   if (!res.ok) throw new Error(`${res.status}`);
 }
 
-export async function resetPassword(token: string, password: string): Promise<void> {
+export async function resetPassword(
+  token: string,
+  password: string,
+  username?: string,
+): Promise<void> {
   const res = await fetch('/api/auth/reset-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token, password }),
+    body: JSON.stringify({ token, password, username }),
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };

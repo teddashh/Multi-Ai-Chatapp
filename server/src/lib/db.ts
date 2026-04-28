@@ -276,6 +276,11 @@ export const userStmts = {
   updateRealName: db.prepare<[string | null, string]>(
     'UPDATE users SET real_name = ? WHERE username = ?',
   ),
+  // First-login username pick (gated to unverified rows by the auth
+  // route — the schema-level UNIQUE on username still protects us).
+  updateUsername: db.prepare<[string, number]>(
+    'UPDATE users SET username = ? WHERE id = ?',
+  ),
   // Email verification — set token + expiry on signup / resend, and flip
   // email_verified to 0 in the same write so the gate catches them.
   setVerifyToken: db.prepare<[string, number, number]>(

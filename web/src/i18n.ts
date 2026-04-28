@@ -44,6 +44,13 @@ export interface Dict {
   signupSubmit: string;
   signupSubmitting: string;
   signupTierNote: string;
+  signupUsername: string;
+  signupUsernamePlaceholder: string;
+  signupUsernameHint: string;
+  resetUsernameLabel: string;
+  resetUsernameHint: string;
+  resetWelcomeInvite: string;
+  profileUsername: string;
   verifyBannerText: string;
   verifyBannerResend: string;
   verifyBannerSent: string;
@@ -233,6 +240,14 @@ const ZH: Dict = {
   signupSubmitting: '註冊中...',
   signupTierNote:
     '免費帳號每個模式每天限用 1 次，僅可使用最便宜的模型；如需升級請聯絡管理員。',
+  signupUsername: '使用者名稱',
+  signupUsernamePlaceholder: '英數字／. _ -，3–40 字',
+  signupUsernameHint: '留空就直接用 email 當帳號名。日後不能改，請挑一個喜歡的。',
+  resetUsernameLabel: '使用者名稱',
+  resetUsernameHint:
+    '這是你登入時用的帳號名（也可以用 email 登入）。第一次設定可以改，之後就無法修改。',
+  resetWelcomeInvite: '歡迎加入！這是你第一次登入，請確認帳號名並設定密碼。',
+  profileUsername: '使用者名稱（不可修改）',
   verifyBannerText: 'Email 尚未驗證，請到信箱點驗證連結後才能開始對話。',
   verifyBannerResend: '重新寄送',
   verifyBannerSent: '已重新寄出',
@@ -419,6 +434,16 @@ const EN: Dict = {
   signupSubmitting: 'Creating...',
   signupTierNote:
     'Free accounts get 1 use per mode per day on the cheapest models. Contact the admin to upgrade.',
+  signupUsername: 'Username',
+  signupUsernamePlaceholder: 'a-z 0-9 . _ -, 3–40 chars',
+  signupUsernameHint:
+    "Leave blank to use your email as the username. You can't change this later, so pick one you like.",
+  resetUsernameLabel: 'Username',
+  resetUsernameHint:
+    'This is what you sign in with (you can also sign in with your email). You can change it on this first setup, but not afterwards.',
+  resetWelcomeInvite:
+    'Welcome! This is your first login — confirm your username and set your password.',
+  profileUsername: 'Username (read-only)',
   verifyBannerText:
     'Email not verified yet — check your inbox and click the link before you can chat.',
   verifyBannerResend: 'Resend',
