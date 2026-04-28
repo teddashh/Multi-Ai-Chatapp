@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 2x2 grid of brand colors: Claude / ChatGPT / Gemini / Grok -->
+  <circle cx="10" cy="10" r="6.5" fill="#d97706" />
+  <circle cx="22" cy="10" r="6.5" fill="#10a37f" />
+  <circle cx="10" cy="22" r="6.5" fill="#4285f4" />
+  <circle cx="22" cy="22" r="6.5" fill="#e11d48" />
+</svg>
