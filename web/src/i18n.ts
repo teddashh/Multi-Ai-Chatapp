@@ -125,6 +125,8 @@ export interface Dict {
   msgCopy: string;
   msgCopied: string;
   msgExportTablesCsv: (n: number) => string;
+  msgExportTablesXlsx: (n: number) => string;
+  msgExportPdf: string;
   msgNoTables: string;
   loadFailed: (msg: string) => string;
   exportFailed: (msg: string) => string;
@@ -327,6 +329,8 @@ const ZH: Dict = {
   msgCopy: '複製',
   msgCopied: '已複製',
   msgExportTablesCsv: (n) => (n > 1 ? `表格 → CSV (${n} 張)` : '表格 → CSV'),
+  msgExportTablesXlsx: (n) => (n > 1 ? `表格 → Excel (${n} 張)` : '表格 → Excel'),
+  msgExportPdf: '輸出 PDF',
   msgNoTables: '此訊息沒有表格',
   loadFailed: (msg) => `載入失敗：${msg}`,
   exportFailed: (msg) => `匯出失敗：${msg}`,
@@ -532,6 +536,8 @@ const EN: Dict = {
   msgCopy: 'Copy',
   msgCopied: 'Copied',
   msgExportTablesCsv: (n) => (n > 1 ? `Tables → CSV (${n})` : 'Table → CSV'),
+  msgExportTablesXlsx: (n) => (n > 1 ? `Tables → Excel (${n})` : 'Table → Excel'),
+  msgExportPdf: 'Export PDF',
   msgNoTables: 'No tables in this message',
   loadFailed: (msg) => `Load failed: ${msg}`,
   exportFailed: (msg) => `Export failed: ${msg}`,

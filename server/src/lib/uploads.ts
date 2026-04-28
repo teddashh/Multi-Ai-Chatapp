@@ -72,6 +72,20 @@ const IMAGE_MIME = new Set([
   'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif',
 ]);
 const PDF_MIME = new Set(['application/pdf']);
+// Office formats — extracted to text via officeparser at upload time.
+const OFFICE_EXTS = new Set([
+  '.docx', '.xlsx', '.xls', '.pptx', '.odt', '.ods', '.odp',
+]);
+const OFFICE_MIMES = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // docx
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // xlsx
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation', // pptx
+  'application/vnd.ms-excel', // xls
+  'application/vnd.oasis.opendocument.text', // odt
+  'application/vnd.oasis.opendocument.spreadsheet', // ods
+  'application/vnd.oasis.opendocument.presentation', // odp
+]);
+
 // Anything that looks like plain text is treated as text.
 function isTextMime(mime: string): boolean {
   return (
@@ -84,10 +98,19 @@ function isTextMime(mime: string): boolean {
   );
 }
 
+function isOfficeFile(filename: string, mime: string): boolean {
+  if (OFFICE_MIMES.has(mime)) return true;
+  return OFFICE_EXTS.has(extname(filename).toLowerCase());
+}
+
 function classify(filename: string, mime: string): AttachmentKind {
   if (IMAGE_MIME.has(mime)) return 'image';
   if (PDF_MIME.has(mime)) return 'pdf';
   if (isTextMime(mime)) return 'text';
+  // Office files — DB schema uses 'text' (their content is text-extracted
+  // at upload time), display side keys off the filename extension to
+  // pick a sensible icon.
+  if (isOfficeFile(filename, mime)) return 'text';
   // Some text files arrive with octet-stream — fall back to extension.
   const ext = extname(filename).toLowerCase();
   if (['.txt', '.md', '.csv', '.json', '.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.java', '.cs', '.rs', '.cpp', '.c', '.h', '.html', '.css', '.yaml', '.yml', '.toml', '.ini', '.sh', '.sql'].includes(ext)) {
@@ -123,11 +146,25 @@ export async function saveUpload(
   writeFileSync(path, bytes);
 
   const kind = classify(safeName, mimeType);
+  const officeFile = isOfficeFile(safeName, mimeType);
   let textContent: string | null = null;
-  if (kind === 'text') {
+  if (officeFile) {
+    // docx / xlsx / pptx / odt / ods / odp — extract text via officeparser.
+    // The library returns a structured AST; .toText() flattens it.
+    try {
+      const { OfficeParser } = (await import('officeparser')) as typeof import('officeparser');
+      const ast = await OfficeParser.parseOffice(bytes);
+      textContent = ast.toText();
+      if (textContent.length > 200_000) {
+        textContent = textContent.slice(0, 200_000) + '\n\n... [truncated]';
+      }
+    } catch (err) {
+      console.error('officeparser failed', (err as Error).message);
+      textContent = `[Office file text extraction failed: ${(err as Error).message}]`;
+    }
+  } else if (kind === 'text') {
     try {
       textContent = bytes.toString('utf8');
-      // Truncate very long text to avoid blowing up prompts.
       if (textContent.length > 200_000) {
         textContent = textContent.slice(0, 200_000) + '\n\n... [truncated]';
       }
@@ -136,8 +173,10 @@ export async function saveUpload(
     }
   } else if (kind === 'pdf') {
     try {
-      // Use dynamic import so missing pdf-parse doesn't crash startup.
-      const mod = (await import('pdf-parse')) as { default: (b: Buffer) => Promise<{ text: string }> };
+      // Dynamic import so missing pdf-parse doesn't crash startup.
+      const mod = (await import('pdf-parse')) as {
+        default: (b: Buffer) => Promise<{ text: string }>;
+      };
       const result = await mod.default(bytes);
       textContent = result.text || '';
       if (textContent.length > 200_000) {
@@ -195,13 +234,41 @@ export function loadAttachments(
   return out;
 }
 
-// Build a markdown prefix that inlines text/PDF content. Image attachments are
-// referenced (and should be passed via per-provider mechanisms separately).
+// Tag an attachment by its filename extension for prompt + UI hints.
+// Returns a short suffix the prompt header can use ("Excel 試算表",
+// "Word 文件", etc) so the model knows what kind of document it's
+// reading (helpful for table-heavy xlsx vs prose-heavy docx).
+function officeKind(filename: string): string | null {
+  const ext = extname(filename).toLowerCase();
+  switch (ext) {
+    case '.xlsx':
+    case '.xls':
+    case '.ods':
+      return 'Excel 試算表';
+    case '.docx':
+    case '.odt':
+      return 'Word 文件';
+    case '.pptx':
+    case '.odp':
+      return 'PowerPoint 簡報';
+    default:
+      return null;
+  }
+}
+
+// Build a markdown prefix that inlines text/PDF/Office content. Image
+// attachments are referenced (and should be passed via per-provider
+// mechanisms separately).
 export function buildAttachmentPrefix(attachments: PreparedAttachment[]): string {
   if (attachments.length === 0) return '';
   const parts: string[] = ['── 附件 ──', ''];
   for (const a of attachments) {
-    if (a.kind === 'text' && a.textContent !== null) {
+    const officeLabel = officeKind(a.filename);
+    if (officeLabel && a.textContent !== null) {
+      parts.push(`### ${a.filename}（${officeLabel}文字內容）`);
+      parts.push(a.textContent);
+      parts.push('');
+    } else if (a.kind === 'text' && a.textContent !== null) {
       parts.push(`### ${a.filename}`);
       parts.push('```');
       parts.push(a.textContent);

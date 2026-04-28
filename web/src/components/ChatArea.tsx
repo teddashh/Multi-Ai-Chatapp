@@ -207,6 +207,52 @@ export default function ChatArea({
     downloadBlob(csv, `${id}-${ts}.csv`, 'text/csv;charset=utf-8');
   };
 
+  // True .xlsx — preserves table-per-sheet structure so multi-table
+  // exports land cleanly in Excel without manual splitting. The xlsx
+  // library is ~300KB gzipped, so lazy-load it on first click instead
+  // of bloating the initial chat bundle.
+  const downloadTablesAsXlsx = async (id: string, tables: string[][][]) => {
+    if (tables.length === 0) return;
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
+    tables.forEach((rows, i) => {
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, `Table ${i + 1}`);
+    });
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    XLSX.writeFile(wb, `${id}-${ts}.xlsx`);
+  };
+
+  // PDF: open a fresh window with the rendered markdown styled for
+  // print, then call window.print() so the user can save as PDF via
+  // their browser's native dialog. No PDF library needed and the
+  // result is text-searchable.
+  const exportMessageAsPdf = (msg: ChatMessage) => {
+    const w = window.open('', '_blank', 'width=820,height=1000');
+    if (!w) return;
+    const provider = msg.provider ? AI_PROVIDERS[msg.provider]?.name : '';
+    // Naive but safe: rely on the browser's own markdown-aware preview
+    // by writing the message as preformatted markdown inside a <pre>.
+    // Anything fancier (tables / code) would need a markdown -> HTML
+    // pass; not worth the complexity for a v1.
+    const escape = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const title = `${provider ?? 'AI'}${msg.modeRole ? ' (' + msg.modeRole + ')' : ''}`;
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escape(title)}</title>
+<style>
+  body { font-family: -apple-system, system-ui, "Helvetica Neue", "PingFang TC", sans-serif; max-width: 720px; margin: 24px auto; padding: 0 24px; color: #111; line-height: 1.55; }
+  h1.title { font-size: 14px; color: #555; margin-bottom: 8px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }
+  pre { white-space: pre-wrap; word-break: break-word; font: inherit; }
+  @media print { body { max-width: none; margin: 0; padding: 0 16px; } }
+</style>
+</head><body>
+<h1 class="title">${escape(title)}</h1>
+<pre>${escape(msg.content)}</pre>
+<script>setTimeout(function(){window.print();},150);<\/script>
+</body></html>`);
+    w.document.close();
+  };
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages]);
@@ -283,7 +329,15 @@ export default function ChatArea({
                               title={a.filename}
                             >
                               <span>
-                                {a.kind === 'pdf' ? '📕' : a.kind === 'text' ? '📝' : '📎'}
+                                {(() => {
+                                  const ext = a.filename.toLowerCase().split('.').pop() ?? '';
+                                  if (['xlsx', 'xls', 'ods'].includes(ext)) return '📊';
+                                  if (['docx', 'odt'].includes(ext)) return '📄';
+                                  if (['pptx', 'odp'].includes(ext)) return '📑';
+                                  if (a.kind === 'pdf') return '📕';
+                                  if (a.kind === 'text') return '📝';
+                                  return '📎';
+                                })()}
                               </span>
                               <span className="max-w-[140px] truncate">{a.filename}</span>
                             </a>
@@ -359,11 +413,27 @@ export default function ChatArea({
                     </button>
                   )}
                   {!msg.id.endsWith('-streaming') && tables.length > 0 && (
+                    <>
+                      <button
+                        onClick={() => downloadTablesAsXlsx(msg.id, tables)}
+                        className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
+                      >
+                        {t.msgExportTablesXlsx(tables.length)}
+                      </button>
+                      <button
+                        onClick={() => downloadTablesAsCsv(msg.id, tables)}
+                        className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
+                      >
+                        {t.msgExportTablesCsv(tables.length)}
+                      </button>
+                    </>
+                  )}
+                  {!msg.id.endsWith('-streaming') && msg.content && (
                     <button
-                      onClick={() => downloadTablesAsCsv(msg.id, tables)}
+                      onClick={() => exportMessageAsPdf(msg)}
                       className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
                     >
-                      {t.msgExportTablesCsv(tables.length)}
+                      {t.msgExportPdf}
                     </button>
                   )}
                   {onRegenerate &&

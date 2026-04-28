@@ -13,7 +13,14 @@ interface Props {
 const MAX_FILES = 5;
 const MAX_BYTES = 20 * 1024 * 1024;
 
-function kindIcon(kind: MessageAttachment['kind']): string {
+function kindIcon(kind: MessageAttachment['kind'], filename: string): string {
+  // Office files arrive with kind='text' (server extracts their content
+  // before storing) — sniff the extension so the chip still shows the
+  // right doc icon instead of a generic 📝.
+  const ext = filename.toLowerCase().split('.').pop() ?? '';
+  if (['xlsx', 'xls', 'ods'].includes(ext)) return '📊';
+  if (['docx', 'odt'].includes(ext)) return '📄';
+  if (['pptx', 'odp'].includes(ext)) return '📑';
   switch (kind) {
     case 'image': return '🖼';
     case 'pdf': return '📕';
@@ -87,7 +94,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
               key={a.id}
               className="flex items-center gap-1.5 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs"
             >
-              <span>{kindIcon(a.kind)}</span>
+              <span>{kindIcon(a.kind, a.filename)}</span>
               <span className="max-w-[140px] truncate" title={a.filename}>{a.filename}</span>
               <button
                 onClick={() => removeAttachment(a.id)}
@@ -117,7 +124,7 @@ export default function InputBar({ onSend, onCancel, disabled, isProcessing }: P
           ref={fileRef}
           type="file"
           multiple
-          accept="image/*,application/pdf,text/*,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.go,.java,.cs,.rs,.cpp,.c,.h,.html,.css,.yaml,.yml,.toml,.ini,.sh,.sql"
+          accept="image/*,application/pdf,text/*,.md,.csv,.json,.ts,.tsx,.js,.jsx,.py,.go,.java,.cs,.rs,.cpp,.c,.h,.html,.css,.yaml,.yml,.toml,.ini,.sh,.sql,.docx,.xlsx,.xls,.pptx,.odt,.ods,.odp"
           onChange={(e) => handleFiles(e.target.files)}
           className="hidden"
         />
