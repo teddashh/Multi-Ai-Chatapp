@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ChatMessage, ChatMode } from '../shared/types';
 import { AI_PROVIDERS } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
@@ -18,6 +20,93 @@ interface Props {
 function isLong(text: string): boolean {
   if (text.split('\n').length > 3) return true;
   return text.length > 220;
+}
+
+// AI replies are markdown — headings, bold, lists, code blocks. Without
+// this they read as raw `**text**` / `## title` / `- item` on screen,
+// which is especially bad on mobile where horizontal space is scarce.
+// Tailwind `prose` would do the heavy lifting if we had the typography
+// plugin; absent that, we hand-tune component styles.
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="markdown-body text-sm leading-relaxed break-words">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>,
+          h1: ({ children }) => (
+            <h1 className="text-base font-bold mt-3 mb-1.5">{children}</h1>
+          ),
+          h2: ({ children }) => (
+            <h2 className="text-sm font-bold mt-3 mb-1.5">{children}</h2>
+          ),
+          h3: ({ children }) => (
+            <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>
+          ),
+          ul: ({ children }) => (
+            <ul className="my-1.5 ml-5 list-disc space-y-0.5">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="my-1.5 ml-5 list-decimal space-y-0.5">{children}</ol>
+          ),
+          li: ({ children }) => <li className="leading-snug">{children}</li>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-dotted underline-offset-2 hover:opacity-80"
+            >
+              {children}
+            </a>
+          ),
+          code: ({ className, children, ...rest }) => {
+            const isInline = !className;
+            if (isInline) {
+              return (
+                <code className="px-1 py-0.5 rounded bg-black/30 font-mono text-[0.85em]" {...rest}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className={className} {...rest}>
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => (
+            <pre className="my-2 p-2 rounded bg-black/40 overflow-x-auto text-xs font-mono">
+              {children}
+            </pre>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="my-2 pl-3 border-l-2 border-gray-500/60 opacity-80">
+              {children}
+            </blockquote>
+          ),
+          hr: () => <hr className="my-3 border-gray-600/40" />,
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-2">
+              <table className="text-xs border-collapse">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-gray-600/40 px-2 py-1 font-semibold text-left">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-gray-600/40 px-2 py-1">{children}</td>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function ChatArea({
@@ -167,11 +256,9 @@ export default function ChatArea({
                   ) : null}
                 </div>
                 <div
-                  className={`whitespace-pre-wrap ${
-                    showCollapse ? 'line-clamp-3' : ''
-                  }`}
+                  className={showCollapse ? 'line-clamp-3 overflow-hidden' : ''}
                 >
-                  {msg.content}
+                  <MarkdownText text={msg.content} />
                 </div>
                 <div className="flex items-center gap-3 mt-1.5">
                   {long && (
