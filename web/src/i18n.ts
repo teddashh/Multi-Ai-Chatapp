@@ -122,6 +122,10 @@ export interface Dict {
   retryFreeTitle: string;
   retrySeqTitle: string;
   retryFailed: (msg: string) => string;
+  msgCopy: string;
+  msgCopied: string;
+  msgExportTablesCsv: (n: number) => string;
+  msgNoTables: string;
   loadFailed: (msg: string) => string;
   exportFailed: (msg: string) => string;
   deleteFailed: (msg: string) => string;
@@ -320,6 +324,10 @@ const ZH: Dict = {
   retryFreeTitle: '重新讓這個 AI 回答',
   retrySeqTitle: '從這一步重跑，後面的步驟會用新結果接著跑',
   retryFailed: (msg) => `重新作答失敗：${msg}`,
+  msgCopy: '複製',
+  msgCopied: '已複製',
+  msgExportTablesCsv: (n) => (n > 1 ? `表格 → CSV (${n} 張)` : '表格 → CSV'),
+  msgNoTables: '此訊息沒有表格',
   loadFailed: (msg) => `載入失敗：${msg}`,
   exportFailed: (msg) => `匯出失敗：${msg}`,
   deleteFailed: (msg) => `刪除失敗：${msg}`,
@@ -521,6 +529,10 @@ const EN: Dict = {
   retryFreeTitle: 'Re-run this AI',
   retrySeqTitle: 'Replay from this step — the rest of the chain will follow',
   retryFailed: (msg) => `Retry failed: ${msg}`,
+  msgCopy: 'Copy',
+  msgCopied: 'Copied',
+  msgExportTablesCsv: (n) => (n > 1 ? `Tables → CSV (${n})` : 'Table → CSV'),
+  msgNoTables: 'No tables in this message',
   loadFailed: (msg) => `Load failed: ${msg}`,
   exportFailed: (msg) => `Export failed: ${msg}`,
   deleteFailed: (msg) => `Delete failed: ${msg}`,

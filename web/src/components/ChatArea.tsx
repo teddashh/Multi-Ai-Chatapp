@@ -22,6 +22,67 @@ function isLong(text: string): boolean {
   return text.length > 220;
 }
 
+// Strip a leading/trailing pipe and split a markdown table row into cells.
+function parseRow(line: string): string[] {
+  return line
+    .replace(/^\s*\|/, '')
+    .replace(/\|\s*$/, '')
+    .split('|')
+    .map((s) => s.trim());
+}
+
+// Pull all GFM-style markdown tables out of the message. Each entry is a
+// 2D array of strings — first row is the header, rest are data rows.
+function extractTables(md: string): string[][][] {
+  const lines = md.split('\n');
+  const tables: string[][][] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const isPipe = /^\s*\|.+\|\s*$/.test(lines[i]);
+    const next = lines[i + 1] ?? '';
+    const isSep = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(next);
+    if (isPipe && isSep) {
+      const rows: string[][] = [parseRow(lines[i])];
+      i += 2;
+      while (i < lines.length && /^\s*\|.+\|\s*$/.test(lines[i])) {
+        rows.push(parseRow(lines[i]));
+        i++;
+      }
+      i--;
+      if (rows.length > 1) tables.push(rows);
+    }
+  }
+  return tables;
+}
+
+// CSV-quote a single cell. Wraps in double-quotes when the cell contains
+// a comma, quote, or newline; doubles any embedded quotes.
+function csvCell(v: string): string {
+  if (/["\n,]/.test(v)) return `"${v.replace(/"/g, '""')}"`;
+  return v;
+}
+
+function tablesToCsv(tables: string[][][]): string {
+  return tables
+    .map((rows) =>
+      rows.map((row) => row.map(csvCell).join(',')).join('\n'),
+    )
+    .join('\n\n');
+}
+
+function downloadBlob(content: string, filename: string, mime: string): void {
+  // Prepend a UTF-8 BOM so Excel opens Chinese / non-ASCII content
+  // without garbling.
+  const blob = new Blob(['\uFEFF' + content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // AI replies are markdown — headings, bold, lists, code blocks. Without
 // this they read as raw `**text**` / `## title` / `- item` on screen,
 // which is especially bad on mobile where horizontal space is scarce.
@@ -126,6 +187,25 @@ export default function ChatArea({
   const retryTitle = isSequential ? t.retrySeqTitle : t.retryFreeTitle;
   const endRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Tracks the most recently "copied" message id for the inline
+  // "Copy / Copied" toggle. Cleared after a couple of seconds.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyMessage = (id: string, text: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => {
+        setCopiedId((prev) => (prev === id ? null : prev));
+      }, 1800);
+    });
+  };
+
+  const downloadTablesAsCsv = (id: string, tables: string[][][]) => {
+    if (tables.length === 0) return;
+    const csv = tablesToCsv(tables);
+    const ts = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    downloadBlob(csv, `${id}-${ts}.csv`, 'text/csv;charset=utf-8');
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -233,6 +313,7 @@ export default function ChatArea({
           const open = expanded.has(msg.id);
           const long = isLong(msg.content);
           const showCollapse = long && !open;
+          const tables = extractTables(msg.content);
 
           return (
             <div key={msg.id} className="flex gap-2 items-start">
@@ -260,13 +341,29 @@ export default function ChatArea({
                 >
                   <MarkdownText text={msg.content} />
                 </div>
-                <div className="flex items-center gap-3 mt-1.5">
+                <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5">
                   {long && (
                     <button
                       onClick={() => toggle(msg.id)}
                       className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
                     >
                       {open ? t.chatCollapse : t.chatExpand}
+                    </button>
+                  )}
+                  {!msg.id.endsWith('-streaming') && msg.content && (
+                    <button
+                      onClick={() => copyMessage(msg.id, msg.content)}
+                      className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
+                    >
+                      {copiedId === msg.id ? t.msgCopied : t.msgCopy}
+                    </button>
+                  )}
+                  {!msg.id.endsWith('-streaming') && tables.length > 0 && (
+                    <button
+                      onClick={() => downloadTablesAsCsv(msg.id, tables)}
+                      className="text-xs text-gray-500 hover:text-white inline-flex items-center gap-1"
+                    >
+                      {t.msgExportTablesCsv(tables.length)}
                     </button>
                   )}
                   {onRegenerate &&
