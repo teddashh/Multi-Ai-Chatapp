@@ -316,20 +316,174 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
   });
 }
 
-// xAI's Chat Completions API is OpenAI-compatible. We hit it directly because
-// xAI hasn't shipped an official Grok CLI yet.
+// xAI Chat Completions API — OpenAI-compatible. We use it directly because
+// xAI hasn't shipped an official Grok CLI yet. Includes a tool-calling
+// loop wired to our self-hosted SearXNG so Grok can search the web,
+// replacing the deprecated Live Search feature.
+
+import { formatSearchResults, webSearch } from './webSearch.js';
+
+interface XAIToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+interface XAIRoundResult {
+  text: string;
+  toolCalls: XAIToolCall[];
+  promptTokens: number | null;
+  completionTokens: number | null;
+}
+
+const WEB_SEARCH_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'web_search',
+    description:
+      'Search the web for current information when the answer requires up-to-date facts (news, prices, schedules, recent events, anything past the model training cutoff). Returns a numbered list of pages with title, URL, and snippet.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Search query, in the language most likely to find good results.',
+        },
+      },
+      required: ['query'],
+    },
+  },
+};
+
+const MAX_TOOL_ITERATIONS = 4;
+
+// One streaming round-trip to xAI. Accumulates content deltas (which we
+// forward to onChunk) and tool_call deltas (assembled across the stream
+// because xAI sends function.arguments piecewise). Returns whichever the
+// model produced — content for a final answer, tool_calls when it wants
+// us to run a tool.
+async function streamXAIRound(
+  apiKey: string,
+  messages: unknown[],
+  tools: unknown[],
+  opts: CLIRunOptions,
+): Promise<XAIRoundResult> {
+  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      messages,
+      tools,
+      stream: true,
+      stream_options: { include_usage: true },
+    }),
+    signal: opts.signal,
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`xAI API ${response.status}: ${text || response.statusText}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let roundText = '';
+  let promptTokens: number | null = null;
+  let completionTokens: number | null = null;
+
+  // Tool-call deltas come keyed by an `index` and arrive piecewise:
+  // first an entry with id + function.name, then function.arguments
+  // streamed in chunks. Stitch them back together by index.
+  const toolBuilder: Record<
+    number,
+    { id: string; name: string; arguments: string }
+  > = {};
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let lineEnd: number;
+    while ((lineEnd = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, lineEnd).trim();
+      buffer = buffer.slice(lineEnd + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data) as {
+          choices?: Array<{
+            delta?: {
+              content?: string;
+              tool_calls?: Array<{
+                index?: number;
+                id?: string;
+                function?: { name?: string; arguments?: string };
+              }>;
+            };
+          }>;
+          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        };
+        const delta = json.choices?.[0]?.delta;
+        if (delta?.content) {
+          roundText += delta.content;
+          // Forward the running round text so the streaming UI updates
+          // live. Tool-call-only iterations produce no content so this
+          // is silent until the model writes an actual answer.
+          opts.onChunk?.(roundText);
+        }
+        if (delta?.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            const slot = toolBuilder[idx] ?? { id: '', name: '', arguments: '' };
+            if (tc.id) slot.id = tc.id;
+            if (tc.function?.name) slot.name = tc.function.name;
+            if (tc.function?.arguments) slot.arguments += tc.function.arguments;
+            toolBuilder[idx] = slot;
+          }
+        }
+        if (json.usage) {
+          if (typeof json.usage.prompt_tokens === 'number') {
+            promptTokens = json.usage.prompt_tokens;
+          }
+          if (typeof json.usage.completion_tokens === 'number') {
+            completionTokens = json.usage.completion_tokens;
+          }
+        }
+      } catch {
+        // ignore malformed SSE chunks
+      }
+    }
+  }
+
+  const toolCalls: XAIToolCall[] = Object.entries(toolBuilder)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([, slot]) => ({
+      id: slot.id || `call-${Math.random().toString(36).slice(2, 10)}`,
+      type: 'function',
+      function: { name: slot.name, arguments: slot.arguments },
+    }));
+
+  return { text: roundText, toolCalls, promptTokens, completionTokens };
+}
+
 async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) {
     throw new Error('XAI_API_KEY is not set in server/.env');
   }
 
-  // Build OpenAI-compatible messages. xAI accepts a proper multi-turn
-  // messages array, so we feed the conversation history as real
-  // user/assistant turns rather than baking it into a prompt prefix.
+  // Build the initial message list: history + current user msg (with
+  // any image attachments inlined as base64).
   const images = imageAttachments(opts.attachments ?? []);
   const history = opts.history ?? [];
-  const messages: Array<unknown> = history.map((t) => ({
+  const messages: unknown[] = history.map((t) => ({
     role: t.role,
     content: t.content,
   }));
@@ -350,82 +504,70 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
     messages.push({ role: 'user', content });
   }
 
-  const response = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: opts.model,
-      messages,
-      stream: true,
-      // Ask xAI to include real token counts in the final SSE chunk so
-      // we can record exact usage instead of estimating.
-      stream_options: { include_usage: true },
-      // (Web search disabled — xAI deprecated Live Search and now
-      // requires the new Agent Tools API. Adding `search_parameters`
-      // here returns 410 Gone. Skipping for now; we can wire the new
-      // tools API later if web search becomes important for Grok.)
-    }),
-    signal: opts.signal,
-  });
+  const tools = [WEB_SEARCH_TOOL];
+  let totalPromptTokens = 0;
+  let totalCompletionTokens = 0;
+  let sawRealTokens = false;
+  let finalText = '';
 
-  if (!response.ok || !response.body) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`xAI API ${response.status}: ${text || response.statusText}`);
-  }
+  for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+    const round = await streamXAIRound(apiKey, messages, tools, opts);
+    if (round.promptTokens !== null) {
+      totalPromptTokens += round.promptTokens;
+      sawRealTokens = true;
+    }
+    if (round.completionTokens !== null) {
+      totalCompletionTokens += round.completionTokens;
+      sawRealTokens = true;
+    }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let fullText = '';
-  let promptTokens: number | null = null;
-  let completionTokens: number | null = null;
+    if (round.toolCalls.length === 0) {
+      // Final answer reached; round.text was already streamed via onChunk.
+      finalText = round.text.trim();
+      break;
+    }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+    // Push the assistant's tool-call request, then resolve each call by
+    // running our SearXNG-backed search and feeding the formatted
+    // results back as a `tool` message.
+    messages.push({
+      role: 'assistant',
+      content: round.text || null,
+      tool_calls: round.toolCalls,
+    });
 
-    let lineEnd: number;
-    while ((lineEnd = buffer.indexOf('\n')) >= 0) {
-      const line = buffer.slice(0, lineEnd).trim();
-      buffer = buffer.slice(lineEnd + 1);
-      if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (!data || data === '[DONE]') continue;
+    for (const tc of round.toolCalls) {
+      let result: string;
       try {
-        const json = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string } }>;
-          usage?: { prompt_tokens?: number; completion_tokens?: number };
+        const args = JSON.parse(tc.function.arguments || '{}') as {
+          query?: string;
         };
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullText += delta;
-          opts.onChunk?.(fullText);
+        const query = (args.query ?? '').trim();
+        if (!query) {
+          result = '(empty query)';
+        } else if (tc.function.name === 'web_search') {
+          const hits = await webSearch(query, 5, opts.signal);
+          result = formatSearchResults(query, hits);
+        } else {
+          result = `(unknown tool: ${tc.function.name})`;
         }
-        if (json.usage) {
-          if (typeof json.usage.prompt_tokens === 'number') {
-            promptTokens = json.usage.prompt_tokens;
-          }
-          if (typeof json.usage.completion_tokens === 'number') {
-            completionTokens = json.usage.completion_tokens;
-          }
-        }
-      } catch {
-        // ignore malformed SSE chunks
+      } catch (err) {
+        result = `Search failed: ${(err as Error).message}`;
       }
+      messages.push({
+        role: 'tool',
+        tool_call_id: tc.id,
+        content: result,
+      });
     }
   }
 
-  const finalText = fullText.trim();
   recordUsage(
     opts,
     opts.prompt.length,
     finalText.length,
-    promptTokens,
-    completionTokens,
+    sawRealTokens ? totalPromptTokens : null,
+    sawRealTokens ? totalCompletionTokens : null,
   );
   return { text: finalText, exitCode: 0 };
 }
