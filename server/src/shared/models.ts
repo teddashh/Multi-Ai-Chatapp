@@ -8,6 +8,11 @@ export interface ModelChoices {
   options: string[];
 }
 
+// ChatGPT-account Codex only allows three models — gpt-5.4, gpt-5.4-mini,
+// and gpt-5.5. The "-pro" / "-nano" / "gpt-5-mini" SKUs need a
+// separate API account and respond with "model is not supported when
+// using Codex with a ChatGPT account". Verified via scripts/test-models.
+
 // Free tier — single cheapest pick per provider, locked. Free accounts also
 // have a per-mode daily quota enforced separately.
 const FREE: Record<AIProvider, ModelChoices> = {
@@ -16,8 +21,8 @@ const FREE: Record<AIProvider, ModelChoices> = {
     options: ['claude-haiku-4-5'],
   },
   chatgpt: {
-    default: 'gpt-5.4-nano',
-    options: ['gpt-5.4-nano'],
+    default: 'gpt-5.4-mini',
+    options: ['gpt-5.4-mini'],
   },
   gemini: {
     default: 'gemini-3.1-flash-lite-preview',
@@ -36,7 +41,7 @@ const STANDARD: Record<AIProvider, ModelChoices> = {
   },
   chatgpt: {
     default: 'gpt-5.4-mini',
-    options: ['gpt-5.4-mini', 'gpt-5.4-nano'],
+    options: ['gpt-5.4-mini'],
   },
   gemini: {
     default: 'gemini-3-flash-preview',
@@ -55,7 +60,7 @@ const PRO: Record<AIProvider, ModelChoices> = {
   },
   chatgpt: {
     default: 'gpt-5.4',
-    options: ['gpt-5.4', 'gpt-5.4-mini', 'gpt-5-mini'],
+    options: ['gpt-5.4', 'gpt-5.4-mini'],
   },
   gemini: {
     default: 'gemini-3.1-pro-preview',
@@ -75,11 +80,9 @@ const SUPER: Record<AIProvider, ModelChoices> = {
     default: 'claude-opus-4-7',
     options: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
-  // gpt-5.5-pro requires API access; ChatGPT-account Codex tops out lower.
-  // Default to 5.4 (proven), let user try 5.5 / 5.4-pro via dropdown.
   chatgpt: {
-    default: 'gpt-5.4',
-    options: ['gpt-5.4', 'gpt-5.5', 'gpt-5.4-pro', 'gpt-5.5-pro', 'gpt-5.4-mini'],
+    default: 'gpt-5.5',
+    options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
   },
   gemini: {
     default: 'gemini-3.1-pro-preview',

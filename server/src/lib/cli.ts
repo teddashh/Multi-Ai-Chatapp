@@ -73,9 +73,19 @@ function buildConfig(
     case 'claude': {
       // Claude Code: -p reads prompt from stdin, --add-dir gives the CLI
       // permission to read each upload directory so file paths embedded in
-      // the prompt resolve. We prepend a header listing image paths so the
-      // model knows where to look.
-      const argv: string[] = ['-p', '--model', model, '--output-format', 'text'];
+      // the prompt resolve. --allowedTools turns on the web tools so
+      // Claude can actually search / fetch URLs (without this it would
+      // tell the user it doesn't have permission). We prepend a header
+      // listing image paths so the model knows where to look.
+      const argv: string[] = [
+        '-p',
+        '--model',
+        model,
+        '--output-format',
+        'text',
+        '--allowedTools',
+        'WebSearch WebFetch',
+      ];
       const dirs = new Set<string>();
       for (const img of images) dirs.add(dirname(img.path));
       for (const d of dirs) argv.push('--add-dir', d);
@@ -119,8 +129,10 @@ function buildConfig(
     case 'gemini': {
       // Gemini CLI: --include-directories grants the workspace access to each
       // upload directory; we mention paths in the prompt so the model picks
-      // them up.
-      const argv: string[] = ['-m', model, '--skip-trust'];
+      // them up. --approval-mode yolo auto-approves all tools, including
+      // GoogleSearch / WebFetch, so the model can browse without an
+      // interactive prompt blocking the headless run.
+      const argv: string[] = ['-m', model, '--skip-trust', '--approval-mode', 'yolo'];
       const dirs = new Set<string>();
       for (const img of images) dirs.add(dirname(img.path));
       if (dirs.size > 0) {
@@ -351,6 +363,11 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
       // Ask xAI to include real token counts in the final SSE chunk so
       // we can record exact usage instead of estimating.
       stream_options: { include_usage: true },
+      // xAI Live Search — the model decides whether to query the web
+      // for the current question. "auto" keeps it cheap (no search
+      // when the model already knows the answer) while still giving
+      // it the option to fetch fresh info.
+      search_parameters: { mode: 'auto' },
     }),
     signal: opts.signal,
   });

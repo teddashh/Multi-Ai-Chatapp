@@ -22,18 +22,12 @@ const PRICES: Record<string, ModelPrice> = {
   'claude-sonnet-4-6': { inputPer1M: 3.0, outputPer1M: 15.0 },
   'claude-opus-4-7': { inputPer1M: 5.0, outputPer1M: 25.0 },
 
-  // OpenAI / Codex — refreshed against the official OpenAI pricing
-  // page. The "*-pro" / "-nano" / "gpt-5-mini" SKUs aren't on the
-  // table the user shared so they keep best-guess placeholders for
-  // now (gpt-5.4-pro extrapolated as ~4x of 5.4; gpt-5.4-nano set to
-  // half of 5.4-mini; gpt-5-mini reused gpt-5.4-mini's pricing).
+  // OpenAI / Codex (ChatGPT account) — only these three are available
+  // through the Codex CLI with a ChatGPT account. *-pro / *-nano /
+  // gpt-5-mini SKUs need a separate OpenAI API account.
   'gpt-5.5': { inputPer1M: 5.0, outputPer1M: 30.0 },
-  'gpt-5.5-pro': { inputPer1M: 20.0, outputPer1M: 120.0 },
   'gpt-5.4': { inputPer1M: 2.5, outputPer1M: 15.0 },
-  'gpt-5.4-pro': { inputPer1M: 10.0, outputPer1M: 60.0 },
   'gpt-5.4-mini': { inputPer1M: 0.75, outputPer1M: 4.5 },
-  'gpt-5.4-nano': { inputPer1M: 0.4, outputPer1M: 2.25 },
-  'gpt-5-mini': { inputPer1M: 0.75, outputPer1M: 4.5 },
 
   // Google Gemini — refreshed against the official Gemini API table.
   // Prompts in this app stay well under the 200K input boundary so we
