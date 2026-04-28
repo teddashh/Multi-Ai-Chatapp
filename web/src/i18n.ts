@@ -196,7 +196,7 @@ export interface Dict {
 }
 
 const ZH: Dict = {
-  appName: 'AI 茶話團',
+  appName: 'AI 姐妹會',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -217,7 +217,7 @@ const ZH: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI 茶話團',
+  loginTitle: 'AI 姐妹會',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',

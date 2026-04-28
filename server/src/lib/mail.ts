@@ -26,7 +26,7 @@ function getTransport(): Transporter | null {
 // form handles the RFC2047 encoding for non-ASCII display names.
 function fromAddress() {
   return {
-    name: process.env.SMTP_FROM_NAME || 'Ted Huang (AI Sisters / AI 茶話團)',
+    name: process.env.SMTP_FROM_NAME || 'Ted Huang (AI Sisters / AI 姐妹會)',
     address:
       process.env.SMTP_FROM ||
       process.env.SMTP_USER ||
@@ -34,7 +34,7 @@ function fromAddress() {
   };
 }
 
-const BRAND = 'AI Sisters / AI 茶話團';
+const BRAND = 'AI Sisters / AI 姐妹會';
 const APP_URL = (process.env.PUBLIC_URL || 'https://chat.ted-h.com').replace(/\/$/, '');
 
 export interface ResetEmailParams {
