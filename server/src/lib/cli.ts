@@ -73,16 +73,24 @@ function buildConfig(
     case 'claude': {
       // Claude Code: -p reads prompt from stdin, --add-dir gives the CLI
       // permission to read each upload directory so file paths embedded in
-      // the prompt resolve. --allowedTools turns on the web tools so
-      // Claude can actually search / fetch URLs (without this it would
-      // tell the user it doesn't have permission). We prepend a header
-      // listing image paths so the model knows where to look.
+      // the prompt resolve.
+      //
+      // --tools needs to ENABLE WebSearch / WebFetch — they are NOT in the
+      // default tool set, even though `--allowedTools` would auto-approve
+      // them once enabled. Verified against `claude -p` 2.1.x: without
+      // listing them in --tools the model literally doesn't see web
+      // tools in its catalog and refuses to search. Read/Glob/Grep stay
+      // in the list so attachment handling still works.
+      // --allowedTools then pre-approves the web tools so headless mode
+      // doesn't pause for permission.
       const argv: string[] = [
         '-p',
         '--model',
         model,
         '--output-format',
         'text',
+        '--tools',
+        'WebSearch WebFetch Read Glob Grep',
         '--allowedTools',
         'WebSearch WebFetch',
       ];
