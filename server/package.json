@@ -11,7 +11,8 @@
     "user:list": "tsx src/scripts/list-users.ts",
     "user:delete": "tsx src/scripts/delete-user.ts",
     "backup:oracle": "tsx src/scripts/oracle-backup.ts",
-    "models:test": "tsx src/scripts/test-models.ts"
+    "models:test": "tsx src/scripts/test-models.ts",
+    "grok:search-test": "tsx src/scripts/test-grok-search.ts"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
