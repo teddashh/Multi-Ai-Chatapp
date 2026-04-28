@@ -363,11 +363,10 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
       // Ask xAI to include real token counts in the final SSE chunk so
       // we can record exact usage instead of estimating.
       stream_options: { include_usage: true },
-      // xAI Live Search — the model decides whether to query the web
-      // for the current question. "auto" keeps it cheap (no search
-      // when the model already knows the answer) while still giving
-      // it the option to fetch fresh info.
-      search_parameters: { mode: 'auto' },
+      // (Web search disabled — xAI deprecated Live Search and now
+      // requires the new Agent Tools API. Adding `search_parameters`
+      // here returns 410 Gone. Skipping for now; we can wire the new
+      // tools API later if web search becomes important for Grok.)
     }),
     signal: opts.signal,
   });
