@@ -551,7 +551,7 @@ export async function runOne(
         p.emit({
           type: 'done',
           provider,
-          text: isPrimary ? failureText(p.lang) : exhaustedFallbackText(p.lang),
+          text: isPrimary ? failureText(p.lang) : exhaustedFallbackText(p.lang, p.tier),
         });
         throw lastErr;
       }
@@ -570,7 +570,7 @@ export async function runOne(
   p.emit({
     type: 'done',
     provider,
-    text: stages.length > 1 ? exhaustedFallbackText(p.lang) : failureText(p.lang),
+    text: stages.length > 1 ? exhaustedFallbackText(p.lang, p.tier) : failureText(p.lang),
   });
   throw lastErr ?? new Error('chain exhausted');
 }
@@ -837,13 +837,22 @@ export function bridgeText(lang: Lang): string {
     : '我換個方式思考一下，請等等...';
 }
 
-// Shown when even the OpenRouter fallback fails (we're out of free credits
-// or OR also returned 429). Treats it as a quota exhaustion rather than a
-// system error so the upgrade CTA reads naturally.
-export function exhaustedFallbackText(lang: Lang): string {
+// Shown when even the last fallback stage fails. For free-tier users we
+// frame it as quota exhaustion (their primary failure mode is hitting
+// the daily cap, and the upgrade CTA reads naturally). For paid tiers
+// it's the much rarer "every API + every fallback is down" case, so we
+// keep the in-character soft-failure tone matching failureText() rather
+// than insulting them with a "you're out of free quota" line they don't
+// have any free quota for.
+export function exhaustedFallbackText(lang: Lang, tier: Tier): string {
+  if (tier === 'free') {
+    return lang === 'en'
+      ? "Sorry, you've used up today's free quota. Consider upgrading your account for a higher daily limit."
+      : '抱歉，你已經用完今天的免費額度了，可以考慮升級你的帳號，獲得更多的每日額度。';
+  }
   return lang === 'en'
-    ? "Sorry, you've used up today's free quota. Consider upgrading your account for a higher daily limit."
-    : '抱歉，你已經用完今天的免費額度了，可以考慮升級你的帳號，獲得更多的每日額度。';
+    ? "I'm not feeling great right now and may need a moment to gather my thoughts. Please give me a sec and hit Retry. If this keeps happening, let your admin know."
+    : '我現在狀況不太好，可能要再想一下，你可以等等幫我按一下「重試」按鈕。如果持續發生請告訴管理員。';
 }
 
 async function runSequential(
