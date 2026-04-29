@@ -534,6 +534,59 @@ adminRoute.post('/digest/run', async (c) => {
 // even if they have zero attempts — that way admin can see "claude-opus has
 // never been called" rather than just an empty row. Recent failure codes (last
 // 7 days) are attached so admin can spot patterns like persistent 429s.
+// Decompose the (family, raw_model) tuple stored in usage_log into the
+// 4-column shape the dashboard wants:
+//   - provider: who got the bill (Anthropic / OpenAI / Google / xAI / OpenRouter)
+//   - family: which character the user picked (Claude / GPT / Gemini / Grok)
+//   - method: CLI subprocess vs direct API call
+//   - model: the actual SKU, no channel prefix
+const FAMILY_TO_VENDOR: Record<AIProvider, string> = {
+  claude: 'Anthropic',
+  chatgpt: 'OpenAI',
+  gemini: 'Google',
+  grok: 'xAI',
+};
+const FAMILY_LABEL: Record<AIProvider, string> = {
+  claude: 'Claude',
+  chatgpt: 'GPT',
+  gemini: 'Gemini',
+  grok: 'Grok',
+};
+function decomposeModel(family: AIProvider, rawModel: string): {
+  provider: string;
+  family: string;
+  method: 'CLI' | 'API';
+  model: string;
+} {
+  const familyLabel = FAMILY_LABEL[family];
+  if (rawModel.startsWith('openrouter:')) {
+    return {
+      provider: 'OpenRouter',
+      family: familyLabel,
+      method: 'API',
+      model: rawModel.slice('openrouter:'.length),
+    };
+  }
+  // claude_api: / chatgpt_api: / gemini_api: — direct vendor API call
+  const apiMatch = rawModel.match(/^(claude|chatgpt|gemini)_api:(.+)$/);
+  if (apiMatch) {
+    return {
+      provider: FAMILY_TO_VENDOR[family],
+      family: familyLabel,
+      method: 'API',
+      model: apiMatch[2],
+    };
+  }
+  // No prefix: grok always hits the xAI API direct (no CLI binary), other
+  // families ran through their official CLI. Vendor is the family vendor.
+  return {
+    provider: FAMILY_TO_VENDOR[family],
+    family: familyLabel,
+    method: family === 'grok' ? 'API' : 'CLI',
+    model: rawModel,
+  };
+}
+
 adminRoute.get('/model-stats', (c) => {
   const rollup = usageStmts.byModel.all() as Array<{
     provider: string;
@@ -584,16 +637,19 @@ adminRoute.get('/model-stats', (c) => {
     rollup.map((r) => [`${r.provider}:${r.model}`, r]),
   );
 
-  const stats = Array.from(modelsByKey.values()).map(({ provider, model }) => {
-    const key = `${provider}:${model}`;
+  const stats = Array.from(modelsByKey.values()).map(({ provider: family, model: rawModel }) => {
+    const key = `${family}:${rawModel}`;
     const r = rollupByKey.get(key);
     const attempts = r?.attempts ?? 0;
     const successes = r?.successes ?? 0;
     const failures = r?.failures ?? 0;
     const rate = attempts > 0 ? successes / attempts : null;
+    const decomposed = decomposeModel(family, rawModel);
     return {
-      provider,
-      model,
+      provider: decomposed.provider,
+      family: decomposed.family,
+      method: decomposed.method,
+      model: decomposed.model,
       attempts,
       successes,
       failures,
@@ -603,8 +659,18 @@ adminRoute.get('/model-stats', (c) => {
     };
   });
 
-  // Sort: providers grouped, within each provider failures first then by attempts desc
+  // Sort: family first (Claude → GPT → Gemini → Grok matches the UI order),
+  // then method (CLI before API), then provider, then failures desc, then
+  // attempts desc.
+  const FAMILY_ORDER: Record<string, number> = { Claude: 0, GPT: 1, Gemini: 2, Grok: 3 };
+  const METHOD_ORDER: Record<string, number> = { CLI: 0, API: 1 };
   stats.sort((a, b) => {
+    const fa = FAMILY_ORDER[a.family] ?? 99;
+    const fb = FAMILY_ORDER[b.family] ?? 99;
+    if (fa !== fb) return fa - fb;
+    const ma = METHOD_ORDER[a.method] ?? 99;
+    const mb = METHOD_ORDER[b.method] ?? 99;
+    if (ma !== mb) return ma - mb;
     if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
     if (a.failures !== b.failures) return b.failures - a.failures;
     return b.attempts - a.attempts;

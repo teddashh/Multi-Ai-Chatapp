@@ -530,7 +530,12 @@ export async function adminGetUsage(): Promise<UsageRow[]> {
 }
 
 export interface ModelStatRow {
-  provider: AIProvider;
+  // Vendor that gets billed: Anthropic / OpenAI / Google / xAI / OpenRouter
+  provider: string;
+  // Which AI character the user picked: Claude / GPT / Gemini / Grok
+  family: string;
+  // CLI subprocess vs direct API (OpenRouter is always API)
+  method: 'CLI' | 'API';
   model: string;
   attempts: number;
   successes: number;

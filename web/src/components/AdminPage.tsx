@@ -973,6 +973,8 @@ function ModelStatsView({ onError }: { onError: (msg: string) => void }) {
         <thead className="text-gray-500 sticky top-0 bg-gray-950">
           <tr className="border-b border-gray-800">
             <th className="text-left py-1.5 pr-2">Provider</th>
+            <th className="text-left py-1.5 pr-2">Family</th>
+            <th className="text-left py-1.5 pr-2">Method</th>
             <th className="text-left py-1.5 pr-2">Model</th>
             <th className="text-right py-1.5 pr-2">Attempts</th>
             <th className="text-right py-1.5 pr-2">Success</th>
@@ -983,9 +985,21 @@ function ModelStatsView({ onError }: { onError: (msg: string) => void }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.provider}-${r.model}`} className="border-b border-gray-800/50">
-              <td className="py-1 pr-2 text-gray-400">{r.provider}</td>
+          {rows.map((r, i) => (
+            <tr key={`${r.provider}-${r.family}-${r.method}-${r.model}-${i}`} className="border-b border-gray-800/50">
+              <td className="py-1 pr-2 text-gray-300">{r.provider}</td>
+              <td className="py-1 pr-2 text-gray-400">{r.family}</td>
+              <td className="py-1 pr-2">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                    r.method === 'CLI'
+                      ? 'bg-purple-900/50 text-purple-300'
+                      : 'bg-blue-900/50 text-blue-300'
+                  }`}
+                >
+                  {r.method}
+                </span>
+              </td>
               <td className="py-1 pr-2 font-mono">{r.model}</td>
               <td className="py-1 pr-2 text-right font-mono">{r.attempts}</td>
               <td className="py-1 pr-2 text-right font-mono text-green-400">
