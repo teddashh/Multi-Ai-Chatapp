@@ -181,3 +181,92 @@ ${APP_URL}`;
     html,
   });
 }
+
+export interface FallbackDigestRow {
+  timestamp: number;
+  user: string;
+  sessionId: string | null;
+  provider: string;
+  primaryModel: string | null;
+  journey: Array<{ stage: string; outcome: string; model?: string; error?: string }>;
+}
+
+export interface FallbackDigestParams {
+  to: string[];
+  instance: 'prod' | 'dev';
+  windowMinutes: number;
+  rows: FallbackDigestRow[];
+}
+
+// Hourly summary of model fallback events for admins. Subject line is
+// instance-tagged ([prod] / [dev]) so the two flows don't blend in the
+// inbox. Skipped silently when there are no events — the scheduler is the
+// gate, not this function. We mark text/html as best-effort: if SMTP isn't
+// configured we just log and move on (a fallback flood + broken SMTP
+// shouldn't tank the server boot).
+export async function sendFallbackDigest(p: FallbackDigestParams): Promise<void> {
+  const transport = getTransport();
+  if (!transport) {
+    console.warn('[digest] SMTP not configured; skipping send');
+    return;
+  }
+  if (p.rows.length === 0 || p.to.length === 0) return;
+
+  const tag = p.instance === 'prod' ? 'prod' : 'dev';
+  const subject = `[${tag}] AI Sister fallback digest — ${p.rows.length} event${p.rows.length === 1 ? '' : 's'} in last ${p.windowMinutes}m`;
+
+  const fmtTime = (ts: number) =>
+    new Date(ts * 1000).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' });
+
+  const journeyLine = (j: FallbackDigestRow['journey']) =>
+    j.map((s) => `${s.stage}=${s.outcome}${s.error ? `(${s.error})` : ''}`).join(' → ');
+
+  const textLines: string[] = [
+    `${p.rows.length} model_fallback event(s) in the last ${p.windowMinutes} minutes on ${tag}.`,
+    '',
+  ];
+  for (const r of p.rows) {
+    textLines.push(`[${fmtTime(r.timestamp)}] ${r.user} · ${r.provider}`);
+    textLines.push(`  primary: ${r.primaryModel ?? '-'}`);
+    textLines.push(`  journey: ${journeyLine(r.journey)}`);
+    if (r.sessionId) textLines.push(`  session: ${r.sessionId}`);
+    textLines.push('');
+  }
+
+  const rowsHtml = p.rows
+    .map(
+      (r) => `<tr>
+  <td style="padding:6px 10px; border-bottom:1px solid #eee; white-space:nowrap; font-family:ui-monospace,monospace; font-size:12px;">${fmtTime(r.timestamp)}</td>
+  <td style="padding:6px 10px; border-bottom:1px solid #eee; font-size:12px;">${r.user}</td>
+  <td style="padding:6px 10px; border-bottom:1px solid #eee; font-size:12px;">${r.provider}</td>
+  <td style="padding:6px 10px; border-bottom:1px solid #eee; font-family:ui-monospace,monospace; font-size:11px;">${r.primaryModel ?? '-'}</td>
+  <td style="padding:6px 10px; border-bottom:1px solid #eee; font-family:ui-monospace,monospace; font-size:11px;">${journeyLine(r.journey)}</td>
+</tr>`,
+    )
+    .join('\n');
+
+  const html = `<!doctype html>
+<html><body style="font-family:-apple-system,system-ui,sans-serif; max-width:780px; margin:0 auto; padding:20px; color:#1f2937;">
+  <h3 style="margin:0 0 8px 0;">[${tag}] Fallback digest — ${p.rows.length} event${p.rows.length === 1 ? '' : 's'} in last ${p.windowMinutes}m</h3>
+  <p style="font-size:12px; color:#6b7280; margin:0 0 16px 0;">${BRAND}</p>
+  <table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <thead><tr style="background:#f3f4f6;">
+      <th style="padding:8px 10px; text-align:left;">Time</th>
+      <th style="padding:8px 10px; text-align:left;">User</th>
+      <th style="padding:8px 10px; text-align:left;">Provider</th>
+      <th style="padding:8px 10px; text-align:left;">Primary</th>
+      <th style="padding:8px 10px; text-align:left;">Journey</th>
+    </tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+  <p style="font-size:11px; color:#9ca3af; margin-top:18px;">Sent from <code>${APP_URL}</code> — see /admin → 稽核紀錄 for the full audit trail.</p>
+</body></html>`;
+
+  await transport.sendMail({
+    from: fromAddress(),
+    to: p.to.join(', '),
+    subject,
+    text: textLines.join('\n'),
+    html,
+  });
+}

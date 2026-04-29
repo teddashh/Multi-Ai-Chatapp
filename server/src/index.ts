@@ -6,6 +6,7 @@ import { authRoute } from './routes/auth.js';
 import { chatRoute } from './routes/chat.js';
 import { adminRoute } from './routes/admin.js';
 import { sessionsRoute } from './routes/sessions.js';
+import { startFallbackDigest } from './lib/fallbackDigest.js';
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 
@@ -38,3 +39,8 @@ const host = process.env.HOST || '127.0.0.1';
 
 console.log(`Multi-AI Chatapp server listening on http://${host}:${port}`);
 serve({ fetch: app.fetch, port, hostname: host });
+
+// Hourly fallback digest scheduler — kicks in only when admin email rows
+// exist and there are events in the last hour. First tick is +1h so a
+// restart doesn't generate a duplicate digest.
+startFallbackDigest();

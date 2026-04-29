@@ -304,6 +304,12 @@ export const userStmts = {
   deleteExpiredUnverified: db.prepare<[number]>(
     `DELETE FROM users WHERE email_verified = 0 AND verify_expires_at IS NOT NULL AND verify_expires_at < ?`,
   ),
+  // Recipients for the hourly fallback digest. Free-tier admins still
+  // count; only the email_verified gate matters.
+  listAdminEmails: db.prepare(
+    `SELECT email, nickname, real_name, username FROM users
+     WHERE tier = 'admin' AND email IS NOT NULL AND email_verified = 1`,
+  ),
 };
 
 export type AttachmentKind = 'image' | 'pdf' | 'text' | 'other';
@@ -455,6 +461,18 @@ export const auditStmts = {
      LEFT JOIN users t ON t.id = a.target_user_id
      ORDER BY a.timestamp DESC
      LIMIT ?`,
+  ),
+  // Pull every model_fallback event since a given timestamp. Used by the
+  // hourly digest to summarize what fell back. We join users for context
+  // since the metadata JSON references admin_user_id (== the regular user
+  // who owned the session).
+  fallbacksSince: db.prepare<[number]>(
+    `SELECT a.id, a.target_session_id, a.metadata, a.timestamp,
+            u.username AS user_username, u.email AS user_email
+     FROM audit_log a
+     LEFT JOIN users u ON u.id = a.admin_user_id
+     WHERE a.action = 'model_fallback' AND a.timestamp >= ?
+     ORDER BY a.timestamp ASC`,
   ),
 };
 
