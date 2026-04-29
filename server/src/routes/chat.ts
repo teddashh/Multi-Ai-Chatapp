@@ -156,13 +156,18 @@ chatRoute.post('/send', requireAuth, async (c) => {
   if (!sessionId) {
     sessionId = randomUUID();
     const rolesJson = roles && mode !== 'free' ? JSON.stringify(roles) : null;
-    sessionStmts.insert.run(sessionId, user.id, deriveTitle(text), mode, rolesJson);
+    const initialTitle = deriveTitle(text);
+    sessionStmts.insert.run(sessionId, user.id, initialTitle, mode, rolesJson);
     isNew = true;
     logAudit({
       actorUserId: user.id,
       targetSessionId: sessionId,
       action: 'user_session_start',
-      metadata: { mode },
+      // Title here is the heuristic placeholder built from the first
+      // message (auto-title hasn't fired yet at this point). Including
+      // it lets admin scan the audit feed and see what the conversation
+      // was about without clicking through to the session.
+      metadata: { mode, title: initialTitle },
     });
   } else {
     sessionStmts.touch.run(sessionId);

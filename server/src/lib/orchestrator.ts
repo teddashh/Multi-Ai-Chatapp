@@ -413,6 +413,11 @@ interface JourneyEntry {
   outcome: 'success' | 'failed';
   model?: string;
   error?: string;
+  // Truncated raw error message — useful when admin wants to know
+  // *why* the stage failed beyond just the classified code (e.g.
+  // "This is not a chat model" vs "429"). Capped to keep audit_log
+  // metadata bounded.
+  errorMessage?: string;
 }
 
 function writeChainAudit(
@@ -531,6 +536,7 @@ export async function runOne(
         outcome: 'failed',
         model,
         error: code,
+        errorMessage: lastErr.message.slice(0, 240),
       });
 
       // Record the failure in usage_log. CLI's runCLI throws WITHOUT

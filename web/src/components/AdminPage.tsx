@@ -836,14 +836,44 @@ function AuditList({ onError }: { onError: (msg: string) => void }) {
 function AuditCard({ row }: { row: AuditEntry }) {
   const meta = row.metadata as Record<string, unknown> | null;
   const isFallback = row.action === 'model_fallback';
+  const isSessionStart = row.action === 'user_session_start';
 
-  // Compact summary for fallback events — show the journey as
-  // arrows so admin doesn't have to read JSON.
-  const fallbackSummary = isFallback && meta && Array.isArray(meta.journey)
-    ? (meta.journey as Array<{ stage: string; outcome: string; error?: string }>)
-        .map((s) => `${s.stage}=${s.outcome}${s.error ? `(${s.error})` : ''}`)
+  // Compact one-line journey summary for fallback events.
+  const fallbackJourney =
+    isFallback && meta && Array.isArray(meta.journey)
+      ? (meta.journey as Array<{
+          stage: string;
+          outcome: string;
+          error?: string;
+          errorMessage?: string;
+        }>)
+      : null;
+  const fallbackSummary = fallbackJourney
+    ? fallbackJourney
+        .map(
+          (s) => `${s.stage}=${s.outcome}${s.error ? `(${s.error})` : ''}`,
+        )
         .join(' → ')
     : null;
+  // Surface the actual error messages from each failed stage — much
+  // more useful for troubleshooting than the classified short code.
+  const fallbackErrorLines = fallbackJourney
+    ? fallbackJourney
+        .filter((s) => s.outcome === 'failed' && s.errorMessage)
+        .map((s) => `${s.stage}: ${s.errorMessage}`)
+    : [];
+
+  // For session_start rows, surface the conversation title (heuristic
+  // placeholder built from the first user message) so admin can scan
+  // the User feed without clicking through.
+  const sessionTitle =
+    isSessionStart && meta && typeof meta.title === 'string'
+      ? (meta.title as string)
+      : null;
+  const sessionMode =
+    isSessionStart && meta && typeof meta.mode === 'string'
+      ? (meta.mode as string)
+      : null;
 
   return (
     <div className="bg-gray-900 border border-gray-700 rounded p-3 text-xs">
@@ -862,9 +892,26 @@ function AuditCard({ row }: { row: AuditEntry }) {
           )}
         </span>
       </div>
+      {sessionTitle && (
+        <div className="text-[12px] text-gray-200 mb-1 break-words">
+          {sessionMode && (
+            <span className="text-gray-500 mr-1">[{sessionMode}]</span>
+          )}
+          {sessionTitle}
+        </div>
+      )}
       {fallbackSummary && (
         <div className="text-[11px] font-mono text-gray-300 mb-1 break-all">
           {(meta?.provider as string) ?? '?'}: {fallbackSummary}
+        </div>
+      )}
+      {fallbackErrorLines.length > 0 && (
+        <div className="text-[11px] text-gray-500 mb-1 space-y-0.5">
+          {fallbackErrorLines.map((line, i) => (
+            <div key={i} className="font-mono break-all bg-red-950/30 border border-red-900/40 rounded px-2 py-1">
+              {line}
+            </div>
+          ))}
         </div>
       )}
       {meta && (
