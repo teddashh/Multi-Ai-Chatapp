@@ -81,8 +81,33 @@ adminRoute.get('/users', (c) => {
     tier: Tier;
     created_at: number;
   }>;
+  // Pull usage totals + per-model breakdown once and index by user_id
+  // so the table can show calls / tokens / estimated cost inline
+  // without firing a second request from the client.
+  const totals = usageStmts.totalsByUser.all() as Array<{
+    id: number;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+  }>;
+  const totalsById = new Map<number, (typeof totals)[number]>(
+    totals.map((t) => [t.id, t]),
+  );
+  const breakdown = usageStmts.byUserAndModel.all() as Array<{
+    user_id: number;
+    provider: string;
+    model: string;
+    tokens_in: number;
+    tokens_out: number;
+  }>;
+  const costById = new Map<number, number>();
+  for (const b of breakdown) {
+    const c = estimateCost(b.provider, b.model, b.tokens_in, b.tokens_out);
+    costById.set(b.user_id, (costById.get(b.user_id) ?? 0) + c);
+  }
   const enriched = rows.map((r) => {
     const full = userStmts.findByUsername.get(r.username) as UserRow | undefined;
+    const t = totalsById.get(r.id);
     return {
       id: r.id,
       username: r.username,
@@ -92,6 +117,10 @@ adminRoute.get('/users', (c) => {
       email: full?.email ?? null,
       real_name: full?.real_name ?? null,
       has_avatar: !!full?.avatar_path,
+      total_calls: t?.calls ?? 0,
+      total_tokens_in: t?.tokens_in ?? 0,
+      total_tokens_out: t?.tokens_out ?? 0,
+      total_cost_usd: costById.get(r.id) ?? 0,
     };
   });
   return c.json({ users: enriched });

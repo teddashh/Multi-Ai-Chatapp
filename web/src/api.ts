@@ -117,6 +117,10 @@ export interface AdminUser {
   email: string | null;
   real_name: string | null;
   has_avatar: boolean;
+  total_calls: number;
+  total_tokens_in: number;
+  total_tokens_out: number;
+  total_cost_usd: number;
 }
 
 export interface AdminSessionSummary {

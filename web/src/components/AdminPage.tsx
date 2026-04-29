@@ -325,37 +325,57 @@ function UsersList({
                 <th className="px-3 py-2 text-left">暱稱</th>
                 <th className="px-3 py-2 text-left">Email</th>
                 <th className="px-3 py-2 text-left">Tier</th>
-                <th className="px-3 py-2 text-left">建立時間</th>
+                <th className="px-3 py-2 text-right">呼叫</th>
+                <th className="px-3 py-2 text-right">Tokens (in / out)</th>
+                <th className="px-3 py-2 text-right">$</th>
+                <th className="px-3 py-2 text-left">建立</th>
                 <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
-                <tr
-                  key={u.id}
-                  className="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer"
-                  onClick={() => onSelect(u.username)}
-                >
-                  <td className="px-3 py-2 font-medium">
-                    {u.username}
-                    {u.username === currentUsername && (
-                      <span className="ml-1 text-[10px] text-gray-500">(you)</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-gray-300">{u.real_name ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-300">{u.nickname ?? '—'}</td>
-                  <td className="px-3 py-2 text-gray-400">{u.email ?? '—'}</td>
-                  <td className="px-3 py-2">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase">
-                      {u.tier}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-500">{shortTime(u.created_at)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <span className="text-gray-500 text-[10px]">→</span>
-                  </td>
-                </tr>
-              ))}
+              {users.map((u) => {
+                const totalTokens = u.total_tokens_in + u.total_tokens_out;
+                const cost = u.total_cost_usd;
+                const fmtCost =
+                  cost === 0
+                    ? '—'
+                    : `$${cost.toFixed(cost < 1 ? 4 : 2)}`;
+                return (
+                  <tr
+                    key={u.id}
+                    className="border-t border-gray-800 hover:bg-gray-800/50 cursor-pointer"
+                    onClick={() => onSelect(u.username)}
+                  >
+                    <td className="px-3 py-2 font-medium">
+                      {u.username}
+                      {u.username === currentUsername && (
+                        <span className="ml-1 text-[10px] text-gray-500">(you)</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-300">{u.real_name ?? '—'}</td>
+                    <td className="px-3 py-2 text-gray-300">{u.nickname ?? '—'}</td>
+                    <td className="px-3 py-2 text-gray-400">{u.email ?? '—'}</td>
+                    <td className="px-3 py-2">
+                      <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase">
+                        {u.tier}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">
+                      {u.total_calls > 0 ? u.total_calls.toLocaleString() : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-[11px]">
+                      {totalTokens > 0
+                        ? `${u.total_tokens_in.toLocaleString()} / ${u.total_tokens_out.toLocaleString()}`
+                        : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{fmtCost}</td>
+                    <td className="px-3 py-2 text-gray-500">{shortTime(u.created_at)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <span className="text-gray-500 text-[10px]">→</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
