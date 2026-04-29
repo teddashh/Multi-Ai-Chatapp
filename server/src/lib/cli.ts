@@ -20,6 +20,11 @@ const CLI_BINARY: Record<AIProvider, string> = {
 };
 
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '600000', 10);
+// Kill the CLI if it produces no stdout for this many ms. Catches "silent
+// hang" cases like Gemini's infinite 429-retry loop, which never errors out
+// but also never streams a single byte. The error code is 'timeout' so the
+// orchestrator falls back to OpenRouter immediately.
+const CLI_STALL_MS = parseInt(process.env.CLI_STALL_MS || '30000', 10);
 const CLI_CWD = process.env.CLI_CWD || process.cwd();
 
 function tempFile(prefix: string): string {
@@ -314,6 +319,23 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
       reject(new Error(`${provider} CLI timed out after ${CLI_TIMEOUT_MS}ms`));
     }, CLI_TIMEOUT_MS);
 
+    // Stall watchdog — reset every time the CLI emits stdout. If a streaming
+    // provider sits silent for CLI_STALL_MS we kill it so the orchestrator
+    // can fall back. Skipped for finalize-style providers (codex) which
+    // legitimately produce no streaming stdout for the whole run.
+    const stallEnabled = !cfg.finalize;
+    let stallTimer: NodeJS.Timeout | null = null;
+    const bumpStall = () => {
+      if (!stallEnabled) return;
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        aborted = true;
+        child.kill('SIGTERM');
+        reject(new Error(`${provider} CLI timed out (no output for ${CLI_STALL_MS}ms)`));
+      }, CLI_STALL_MS);
+    };
+    bumpStall();
+
     if (signal) {
       const onAbort = () => {
         aborted = true;
@@ -329,6 +351,7 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
 
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
+      bumpStall();
       // Stream live chunks only when the provider streams clean text on stdout.
       // Providers with a finalize step (codex) emit noise on stdout — skip it.
       if (!cfg.finalize && onChunk && stdout.length > lastEmittedLen) {
@@ -339,15 +362,19 @@ export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
 
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
+      // stderr does NOT bump stall — providers like Gemini print 429 retry
+      // chatter to stderr forever, and bumping here would defeat the watchdog.
     });
 
     child.on('error', (err) => {
       clearTimeout(timer);
+      if (stallTimer) clearTimeout(stallTimer);
       if (!aborted) reject(new Error(`${provider} CLI spawn failed: ${err.message}`));
     });
 
     child.on('close', async (code) => {
       clearTimeout(timer);
+      if (stallTimer) clearTimeout(stallTimer);
       if (aborted) return;
       if (code !== 0) {
         const tail = stderr.trim().slice(-500) || stdout.slice(-500);
