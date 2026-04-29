@@ -2,29 +2,38 @@
 # ----------------------------------------------------------------------------
 # backup-to-gdrive.sh
 #
-# Mirrors the SQLite DB and the uploads directory to Google Drive via rclone.
+# Mirrors both prod and dev SQLite DBs and uploads dirs to Google Drive
+# via rclone. Each instance lives under its own subdir on the remote.
 #
 # Layout in Drive (under the configured remote):
-#   multi-ai-chatapp/
-#     db/app-YYYYMMDD-HHMMSS.db   ← timestamped snapshots (kept)
-#     db/latest.db                ← always overwritten with newest
-#     uploads/                    ← rsync-style mirror of UPLOAD_DIR
+#   ai-sister/
+#     prod/
+#       db/app-YYYYMMDD-HHMMSS.db   ← timestamped snapshots (kept)
+#       db/latest.db                ← always overwritten with newest
+#       uploads/                    ← rsync-style mirror of data-prod/uploads
+#     dev/
+#       db/...
+#       uploads/...
 #
 # Requires rclone with a configured remote named in $RCLONE_REMOTE
 # (default: "gdrive"). Run `rclone config` once to set it up.
 #
 # Cron usage (daily at 04:00):
 #   0 4 * * * /home/ubuntu/Multi-Ai-Chatapp/scripts/backup-to-gdrive.sh \
-#             >> /home/ubuntu/Multi-Ai-Chatapp/data/backup.log 2>&1
+#             >> /home/ubuntu/Multi-Ai-Chatapp/backup.log 2>&1
 # ----------------------------------------------------------------------------
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-$HOME/Multi-Ai-Chatapp}"
-DB_PATH="${DB_PATH:-$APP_DIR/server/data/app.db}"
-UPLOAD_DIR="${UPLOAD_DIR:-$APP_DIR/server/data/uploads}"
 RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive}"
-REMOTE_ROOT="${REMOTE_ROOT:-multi-ai-chatapp}"
+REMOTE_ROOT="${REMOTE_ROOT:-ai-sister}"
 TS="$(date +%Y%m%d-%H%M%S)"
+
+# instance-name : data-dir-name (relative to $APP_DIR/server)
+INSTANCES=(
+  "prod:data-prod"
+  "dev:data-dev"
+)
 
 log() { echo "[$(date -Iseconds)] $*"; }
 
@@ -33,45 +42,57 @@ if ! command -v rclone >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -f "$DB_PATH" ]]; then
-  log "ERROR: DB not found at $DB_PATH"
-  exit 1
-fi
-
 if ! rclone listremotes | grep -q "^${RCLONE_REMOTE}:$"; then
   log "ERROR: rclone remote '${RCLONE_REMOTE}' not configured. Run: rclone config"
   exit 1
 fi
 
-# ---- 1. SQLite snapshot ----
-# Use the .backup pragma via sqlite3 so we get a consistent copy even if the
-# server is mid-write. Falls back to plain copy if sqlite3 isn't available.
 SNAP_DIR="$(mktemp -d)"
 trap 'rm -rf "$SNAP_DIR"' EXIT
-SNAP_FILE="$SNAP_DIR/app.db"
-if command -v sqlite3 >/dev/null 2>&1; then
-  log "Snapshotting DB via sqlite3 .backup"
-  sqlite3 "$DB_PATH" ".backup '$SNAP_FILE'"
-else
-  log "sqlite3 missing, falling back to file copy (may catch a partial write)"
-  cp "$DB_PATH" "$SNAP_FILE"
-fi
 
-log "Uploading DB snapshot → ${RCLONE_REMOTE}:${REMOTE_ROOT}/db/app-${TS}.db"
-rclone copyto "$SNAP_FILE" "${RCLONE_REMOTE}:${REMOTE_ROOT}/db/app-${TS}.db" --quiet
+backup_instance() {
+  local name="$1"
+  local data_dir="$2"
+  local db_path="$APP_DIR/server/$data_dir/app.db"
+  local upload_dir="$APP_DIR/server/$data_dir/uploads"
+  local remote_base="${RCLONE_REMOTE}:${REMOTE_ROOT}/${name}"
 
-log "Refreshing latest pointer → ${RCLONE_REMOTE}:${REMOTE_ROOT}/db/latest.db"
-rclone copyto "$SNAP_FILE" "${RCLONE_REMOTE}:${REMOTE_ROOT}/db/latest.db" --quiet
+  log "=== Backing up instance: ${name} (${data_dir}) ==="
 
-# ---- 2. Uploads mirror ----
-if [[ -d "$UPLOAD_DIR" ]]; then
-  log "Syncing uploads → ${RCLONE_REMOTE}:${REMOTE_ROOT}/uploads/"
-  # `sync` makes the remote match the local; new files are uploaded, removed
-  # files are deleted. Use --copy-links so we follow symlinks if any.
-  rclone sync "$UPLOAD_DIR" "${RCLONE_REMOTE}:${REMOTE_ROOT}/uploads/" \
-    --transfers=4 --checkers=8 --quiet
-else
-  log "WARN: upload dir missing at $UPLOAD_DIR"
-fi
+  if [[ ! -f "$db_path" ]]; then
+    log "WARN: DB not found at $db_path, skipping ${name}"
+    return 0
+  fi
+
+  # ---- 1. SQLite snapshot ----
+  local snap_file="$SNAP_DIR/${name}-app.db"
+  if command -v sqlite3 >/dev/null 2>&1; then
+    log "[${name}] Snapshotting DB via sqlite3 .backup"
+    sqlite3 "$db_path" ".backup '$snap_file'"
+  else
+    log "[${name}] sqlite3 missing, falling back to file copy (may catch a partial write)"
+    cp "$db_path" "$snap_file"
+  fi
+
+  log "[${name}] Uploading DB snapshot → ${remote_base}/db/app-${TS}.db"
+  rclone copyto "$snap_file" "${remote_base}/db/app-${TS}.db" --quiet
+
+  log "[${name}] Refreshing latest pointer → ${remote_base}/db/latest.db"
+  rclone copyto "$snap_file" "${remote_base}/db/latest.db" --quiet
+
+  # ---- 2. Uploads mirror ----
+  if [[ -d "$upload_dir" ]]; then
+    log "[${name}] Syncing uploads → ${remote_base}/uploads/"
+    rclone sync "$upload_dir" "${remote_base}/uploads/" \
+      --transfers=4 --checkers=8 --quiet
+  else
+    log "[${name}] WARN: upload dir missing at $upload_dir"
+  fi
+}
+
+for entry in "${INSTANCES[@]}"; do
+  IFS=':' read -r name data_dir <<<"$entry"
+  backup_instance "$name" "$data_dir"
+done
 
 log "Backup complete."
