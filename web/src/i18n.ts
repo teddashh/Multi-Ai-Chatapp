@@ -614,6 +614,30 @@ const EN: Dict = {
     'Estimated from actual token counts at equivalent metered API pricing.',
 };
 
+// Dev instance detection: server returns the same SPA bundle on both
+// hostnames, so we differentiate at runtime from window.location.host.
+// Anything served on `sisters.ted-h.com` is the dev tier; everything
+// else is prod (ai-sister.com / www.ai-sister.com / chat.ted-h.com /
+// localhost during dev). Done once at module load — host doesn't change.
+const IS_DEV_INSTANCE =
+  typeof window !== 'undefined' && window.location.host === 'sisters.ted-h.com';
+
+if (IS_DEV_INSTANCE) {
+  ZH.appName = 'AI 姐妹群 - 測試站';
+  ZH.loginTitle = 'AI 姐妹群 - 測試站';
+  EN.appName = 'AI Sister - DEV';
+  EN.loginTitle = 'AI Sister - DEV';
+}
+
+// Set the browser tab title once at boot. React's per-component title
+// effects would clobber each other; doing it here (after the dict
+// override above) gives one clean title for the whole tab lifecycle.
+if (typeof document !== 'undefined') {
+  document.title = IS_DEV_INSTANCE
+    ? 'AI Sister - DEV / AI 姐妹群 - 測試站'
+    : 'AI Sister / AI 姐妹群';
+}
+
 export const DICTS: Record<Lang, Dict> = { 'zh-TW': ZH, en: EN };
 
 export const I18nContext = createContext<{
