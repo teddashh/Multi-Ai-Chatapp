@@ -1,0 +1,17 @@
+[Unit]
+Description=AI Sister — public production (api mode, ai-sister.com + chat.ted-h.com)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Multi-Ai-Chatapp/server
+EnvironmentFile=/home/ubuntu/Multi-Ai-Chatapp/server/.env.prod
+ExecStart=/usr/bin/node /home/ubuntu/Multi-Ai-Chatapp/server/dist/index.js
+Restart=on-failure
+RestartSec=5
+Environment=HOME=/home/ubuntu
+Environment=PATH=/home/ubuntu/.nvm/versions/node/current/bin:/usr/local/bin:/usr/bin:/bin
+
+[Install]
+WantedBy=multi-user.target
