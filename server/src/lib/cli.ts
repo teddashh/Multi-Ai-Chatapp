@@ -23,8 +23,10 @@ const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '600000', 10);
 // Kill the CLI if it produces no stdout for this many ms. Catches "silent
 // hang" cases like Gemini's infinite 429-retry loop, which never errors out
 // but also never streams a single byte. The error code is 'timeout' so the
-// orchestrator falls back to OpenRouter immediately.
-const CLI_STALL_MS = parseInt(process.env.CLI_STALL_MS || '30000', 10);
+// orchestrator falls back to OpenRouter immediately. 60s is the first-token
+// budget — once any chunk arrives, the timer resets, so long generations
+// (multi-minute reasoning, large code outputs) never hit it.
+const CLI_STALL_MS = parseInt(process.env.CLI_STALL_MS || '60000', 10);
 const CLI_CWD = process.env.CLI_CWD || process.cwd();
 
 function tempFile(prefix: string): string {

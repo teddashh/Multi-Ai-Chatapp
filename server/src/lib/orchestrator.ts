@@ -1,5 +1,8 @@
-import { classifyError, recordCallFailure, runCLI } from './cli.js';
-import { fallbackModelFor, runOpenRouter } from './providers/openrouter.js';
+import { classifyError, recordCallFailure, runCLI, type CLIRunOptions } from './cli.js';
+import { runOpenRouter } from './providers/openrouter.js';
+import { runAnthropic } from './providers/anthropic.js';
+import { runOpenAI } from './providers/openai.js';
+import { runGemini } from './providers/gemini.js';
 import { auditStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
@@ -310,6 +313,119 @@ function labelsFor(lang: Lang): ModeLabels {
 // (user cancelled).
 const FALLBACK_CODES = new Set(['429', '5xx', 'timeout', 'network', 'other']);
 
+// Single global flag controls whether the primary stage is the vendor's
+// CLI (PROVIDER_MODE=cli, dev) or its direct API (PROVIDER_MODE=api, prod).
+// In either mode the chain ends with OpenRouter as a last-resort fallback.
+const PROVIDER_MODE = (process.env.PROVIDER_MODE ?? 'cli') === 'api' ? 'api' : 'cli';
+
+interface StageResult {
+  text: string;
+  modelUsed: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+}
+
+interface ChainStage {
+  // Identifier for usage_log/audit_log: 'cli' | 'claude_api' | 'gemini_api' |
+  // 'chatgpt_api' | 'openrouter'. CLI's recordUsage handles its own
+  // usage_log row; every other stage logs through the chain runner.
+  name: string;
+  run: () => Promise<StageResult>;
+}
+
+// Direct vendor APIs — keys here have a fast path. Grok already runs
+// xAI directly inside runCLI, so it's deliberately absent.
+type ApiRunner = (opts: CLIRunOptions) => Promise<StageResult>;
+const NATIVE_API: Partial<Record<AIProvider, ApiRunner>> = {
+  claude: runAnthropic,
+  chatgpt: runOpenAI,
+  gemini: runGemini,
+};
+
+function nativeApiAvailable(provider: AIProvider): boolean {
+  if (!NATIVE_API[provider]) return false;
+  // Only enable the api stage when the vendor's key is actually set —
+  // otherwise we'd 401 and fall through pointlessly.
+  switch (provider) {
+    case 'claude':
+      return !!process.env.ANTHROPIC_API_KEY;
+    case 'chatgpt':
+      return !!process.env.OPENAI_API_KEY;
+    case 'gemini':
+      return !!process.env.GEMINI_API_KEY;
+    default:
+      return false;
+  }
+}
+
+function buildStages(
+  baseOpts: CLIRunOptions,
+  provider: AIProvider,
+  model: string,
+): ChainStage[] {
+  const cliStage: ChainStage = {
+    name: 'cli',
+    run: async () => {
+      const r = await runCLI(baseOpts);
+      // runCLI's success path already logs usage; we pass through with
+      // null token counts so the chain runner's bookkeeping doesn't
+      // double-insert.
+      return { text: r.text, modelUsed: model, promptTokens: null, completionTokens: null };
+    },
+  };
+  const apiStage: ChainStage | null =
+    NATIVE_API[provider] && nativeApiAvailable(provider)
+      ? { name: `${provider}_api`, run: () => NATIVE_API[provider]!(baseOpts) }
+      : null;
+  const orStage: ChainStage | null = process.env.OPENROUTER_API_KEY
+    ? { name: 'openrouter', run: () => runOpenRouter(baseOpts) }
+    : null;
+
+  const stages: ChainStage[] = [];
+  if (PROVIDER_MODE === 'api') {
+    // Skip the CLI entirely if a direct API is wired up; otherwise fall
+    // back to CLI as primary so the request still goes through.
+    if (apiStage) stages.push(apiStage);
+    else stages.push(cliStage);
+  } else {
+    stages.push(cliStage);
+    if (apiStage) stages.push(apiStage);
+  }
+  if (orStage) stages.push(orStage);
+  return stages;
+}
+
+interface JourneyEntry {
+  stage: string;
+  outcome: 'success' | 'failed';
+  model?: string;
+  error?: string;
+}
+
+function writeChainAudit(
+  p: OrchestratorParams,
+  provider: AIProvider,
+  primaryModel: string,
+  journey: JourneyEntry[],
+): void {
+  try {
+    auditStmts.insert.run(
+      p.userId,
+      p.userId,
+      p.sessionId ?? null,
+      'model_fallback',
+      JSON.stringify({
+        provider,
+        primary_model: primaryModel,
+        mode: p.mode ?? null,
+        journey,
+      }),
+    );
+  } catch (e) {
+    console.error('audit fallback insert failed', (e as Error).message);
+  }
+}
+
 export async function runOne(
   p: OrchestratorParams,
   provider: AIProvider,
@@ -320,128 +436,118 @@ export async function runOne(
   const finalPrompt = attachments.length > 0
     ? buildAttachmentPrefix(attachments) + prompt
     : prompt;
-  try {
-    const result = await runCLI({
-      provider,
-      model,
-      prompt: finalPrompt,
-      attachments,
-      signal: p.signal,
-      onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
-      userId: p.userId,
-      mode: p.mode,
-      history: p.history?.[provider],
-    });
-    p.emit({ type: 'done', provider, text: result.text });
-    return result.text;
-  } catch (err) {
-    const message = (err as Error).message;
-    const code = classifyError(err);
-    console.error(`[${provider}] primary failed (${code}):`, message);
-    recordCallFailure({
-      userId: p.userId,
-      provider,
-      model,
-      mode: p.mode,
-      promptChars: finalPrompt.length,
-      errorCode: code,
-    });
 
-    const orKeyPresent = !!process.env.OPENROUTER_API_KEY;
-    const shouldFallback = FALLBACK_CODES.has(code) && orKeyPresent;
-    if (shouldFallback) {
-      const orModel = fallbackModelFor(provider);
-      // Build the audit row up-front and persist it in both branches
-      // (success / failure) so admin can see every attempted fallback,
-      // not just the ones that landed.
-      const auditMeta: Record<string, unknown> = {
-        provider,
-        from_model: model,
-        to_model: orModel,
-        reason: code,
-        mode: p.mode ?? null,
-      };
-      const writeAudit = () => {
-        try {
-          auditStmts.insert.run(
-            p.userId,
-            p.userId,
-            p.sessionId ?? null,
-            'model_fallback',
-            JSON.stringify(auditMeta),
-          );
-        } catch (e) {
-          console.error('audit fallback insert failed', (e as Error).message);
-        }
-      };
+  const baseOpts: CLIRunOptions = {
+    provider,
+    model,
+    prompt: finalPrompt,
+    attachments,
+    signal: p.signal,
+    onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
+    userId: p.userId,
+    mode: p.mode,
+    history: p.history?.[provider],
+  };
 
-      // Tell the UI to wipe the partial stream and show the bridge line
-      // ("換個方式思考一下…"). Chunks from runOpenRouter will then overwrite
-      // the bridge text in the same bubble.
+  const stages = buildStages(baseOpts, provider, model);
+  const journey: JourneyEntry[] = [];
+  let lastErr: Error | null = null;
+
+  for (let i = 0; i < stages.length; i++) {
+    const stage = stages[i];
+    const isPrimary = i === 0;
+
+    // Wipe partial bubble + show bridge line for any non-primary stage.
+    if (!isPrimary) {
       p.emit({ type: 'fallback_notice', provider, message: bridgeText(p.lang) });
-      try {
-        const orResult = await runOpenRouter({
-          provider,
-          model: orModel,
-          prompt: finalPrompt,
-          attachments,
-          signal: p.signal,
-          onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
-          userId: p.userId,
-          mode: p.mode,
-          history: p.history?.[provider],
-        });
-        auditMeta.outcome = 'success';
-        auditMeta.to_model = orResult.modelUsed;
+    }
+
+    try {
+      const result = await stage.run();
+      journey.push({ stage: stage.name, outcome: 'success', model: result.modelUsed });
+
+      // Only log usage manually for non-cli stages — the CLI path already
+      // wrote its own usage_log row inside runCLI on success.
+      if (stage.name !== 'cli') {
         try {
+          const logModel =
+            stage.name === 'openrouter'
+              ? `openrouter:${result.modelUsed}`
+              : `${stage.name}:${result.modelUsed}`;
           usageStmts.insert.run(
             p.userId,
             provider,
-            `openrouter:${orResult.modelUsed}`,
+            logModel,
             p.mode ?? null,
             finalPrompt.length,
-            orResult.text.length,
-            orResult.promptTokens,
-            orResult.completionTokens,
-            orResult.promptTokens === null || orResult.completionTokens === null ? 1 : 0,
+            result.text.length,
+            result.promptTokens,
+            result.completionTokens,
+            result.promptTokens === null || result.completionTokens === null ? 1 : 0,
             1,
             null,
           );
         } catch (e) {
           console.error('usage_log fallback insert failed', (e as Error).message);
         }
-        writeAudit();
-        p.emit({ type: 'done', provider, text: orResult.text });
-        return orResult.text;
-      } catch (orErr) {
-        const orCode = classifyError(orErr);
-        console.error(
-          `[${provider}] OpenRouter fallback also failed (${orCode}):`,
-          (orErr as Error).message,
-        );
-        auditMeta.outcome = 'failed';
-        auditMeta.or_error = orCode;
-        recordCallFailure({
-          userId: p.userId,
-          provider,
-          model: `openrouter:${orModel}`,
-          mode: p.mode,
-          promptChars: finalPrompt.length,
-          errorCode: orCode,
-        });
-        writeAudit();
-        p.emit({ type: 'error', provider, message: (orErr as Error).message });
-        p.emit({ type: 'done', provider, text: exhaustedFallbackText(p.lang) });
-        throw orErr;
       }
-    }
 
-    // Non-retryable (401/aborted/spawn) or no OPENROUTER_API_KEY — original
-    // soft-failure path.
-    p.emit({ type: 'error', provider, message });
-    p.emit({ type: 'done', provider, text: failureText(p.lang) });
-    throw err;
+      if (!isPrimary) writeChainAudit(p, provider, model, journey);
+      p.emit({ type: 'done', provider, text: result.text });
+      return result.text;
+    } catch (err) {
+      lastErr = err as Error;
+      const code = classifyError(err);
+      console.error(`[${provider}] ${stage.name} failed (${code}):`, lastErr.message);
+      journey.push({
+        stage: stage.name,
+        outcome: 'failed',
+        model,
+        error: code,
+      });
+
+      // Record the failure in usage_log. CLI's runCLI throws WITHOUT
+      // writing usage_log on the failure path, so we own that here too.
+      const failModel =
+        stage.name === 'cli' ? model : `${stage.name}:${model}`;
+      recordCallFailure({
+        userId: p.userId,
+        provider,
+        model: failModel,
+        mode: p.mode,
+        promptChars: finalPrompt.length,
+        errorCode: code,
+      });
+
+      // Stop chain immediately on non-retryable errors (auth, abort, spawn).
+      if (!FALLBACK_CODES.has(code)) {
+        if (!isPrimary) writeChainAudit(p, provider, model, journey);
+        p.emit({ type: 'error', provider, message: lastErr.message });
+        p.emit({
+          type: 'done',
+          provider,
+          text: isPrimary ? failureText(p.lang) : exhaustedFallbackText(p.lang),
+        });
+        throw lastErr;
+      }
+      // Retryable — continue to next stage if any.
+    }
   }
+
+  // All stages exhausted on retryable errors. Audit the full journey
+  // and surface the quota-exhausted message.
+  writeChainAudit(p, provider, model, journey);
+  p.emit({
+    type: 'error',
+    provider,
+    message: lastErr?.message ?? 'all fallback stages failed',
+  });
+  p.emit({
+    type: 'done',
+    provider,
+    text: stages.length > 1 ? exhaustedFallbackText(p.lang) : failureText(p.lang),
+  });
+  throw lastErr ?? new Error('chain exhausted');
 }
 
 export function buildStepList(
