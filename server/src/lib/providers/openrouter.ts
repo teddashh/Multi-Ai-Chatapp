@@ -12,25 +12,17 @@ import type { CLIRunOptions, CLIRunResult } from '../cli.js';
 import type { AIProvider } from '../../shared/types.js';
 import { imageAttachments, readImageBase64 } from '../uploads.js';
 
-// Per-family fallback model. Picked for "cheap, reliable, same vendor".
-// The user never sees these names — they just see the original provider's
-// avatar and the streamed text. Edit this map to tune cost/quality.
+// Per-family fallback model. Picked for "cheap, reliable, same vendor"
+// from the live OpenRouter catalog. The user never sees these names —
+// they just see the original provider's avatar and the streamed text.
+// `:free` SKUs were dropped after testing showed OR's free-tier offerings
+// rotate / 404 frequently; cheap-paid is more reliable for a fallback path.
+// Verify with `curl https://openrouter.ai/api/v1/models` when updating.
 const OPENROUTER_FALLBACK_MODEL: Record<AIProvider, string> = {
-  // Anthropic has no free tier on OR; Haiku is the cheapest Claude.
-  claude: 'anthropic/claude-3-haiku',
-  // OpenAI cheapest GA model.
+  claude: 'anthropic/claude-haiku-4.5',
   chatgpt: 'openai/gpt-4o-mini',
-  // Gemini DOES have a free option on OR; spend nothing first, fall to
-  // paid if the free quota is exhausted (handled via OR's `models` array).
-  gemini: 'google/gemini-2.0-flash-exp:free',
-  // xAI on OR — no free, grok-2-1212 is the cheapest current Grok SKU.
-  grok: 'x-ai/grok-2-1212',
-};
-
-// OR `models` array is tried in order if the primary `model` 4xx/5xx's.
-// Only set for families where we have a "try free, then paid" plan.
-const OPENROUTER_MODEL_FALLBACKS: Partial<Record<AIProvider, string[]>> = {
-  gemini: ['google/gemini-2.0-flash-exp:free', 'google/gemini-flash-1.5-8b'],
+  gemini: 'google/gemini-3.1-flash-lite-preview',
+  grok: 'x-ai/grok-4.1-fast',
 };
 
 export function fallbackModelFor(provider: AIProvider): string {
@@ -52,7 +44,6 @@ export async function runOpenRouter(
 
   const provider = opts.provider;
   const model = fallbackModelFor(provider);
-  const fallbacks = OPENROUTER_MODEL_FALLBACKS[provider];
 
   // Convert per-provider history (turn array) into messages. CLI providers
   // were getting it as a prepended transcript inside the prompt, but for an
@@ -91,10 +82,6 @@ export async function runOpenRouter(
     stream: true,
     stream_options: { include_usage: true },
   };
-  if (fallbacks && fallbacks.length > 0) {
-    // OR will try each in order if the primary errors out.
-    body.models = fallbacks;
-  }
 
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',

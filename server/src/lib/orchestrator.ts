@@ -351,6 +351,30 @@ export async function runOne(
     const shouldFallback = FALLBACK_CODES.has(code) && orKeyPresent;
     if (shouldFallback) {
       const orModel = fallbackModelFor(provider);
+      // Build the audit row up-front and persist it in both branches
+      // (success / failure) so admin can see every attempted fallback,
+      // not just the ones that landed.
+      const auditMeta: Record<string, unknown> = {
+        provider,
+        from_model: model,
+        to_model: orModel,
+        reason: code,
+        mode: p.mode ?? null,
+      };
+      const writeAudit = () => {
+        try {
+          auditStmts.insert.run(
+            p.userId,
+            p.userId,
+            p.sessionId ?? null,
+            'model_fallback',
+            JSON.stringify(auditMeta),
+          );
+        } catch (e) {
+          console.error('audit fallback insert failed', (e as Error).message);
+        }
+      };
+
       // Tell the UI to wipe the partial stream and show the bridge line
       // ("換個方式思考一下…"). Chunks from runOpenRouter will then overwrite
       // the bridge text in the same bubble.
@@ -367,10 +391,8 @@ export async function runOne(
           mode: p.mode,
           history: p.history?.[provider],
         });
-        // Persist the successful fallback as a usage_log row prefixed with
-        // "openrouter:" so the model-stats dashboard separates it from real
-        // primary calls. We attribute provider to the original family so
-        // cost/quota accounting still rolls up under the right vendor.
+        auditMeta.outcome = 'success';
+        auditMeta.to_model = orResult.modelUsed;
         try {
           usageStmts.insert.run(
             p.userId,
@@ -388,25 +410,7 @@ export async function runOne(
         } catch (e) {
           console.error('usage_log fallback insert failed', (e as Error).message);
         }
-        // Audit trail — admin sees this; user does not. action=model_fallback
-        // distinguishes it from admin-driven actions in the same table.
-        try {
-          auditStmts.insert.run(
-            p.userId,
-            p.userId,
-            p.sessionId ?? null,
-            'model_fallback',
-            JSON.stringify({
-              provider,
-              from_model: model,
-              to_model: orResult.modelUsed,
-              reason: code,
-              mode: p.mode ?? null,
-            }),
-          );
-        } catch (e) {
-          console.error('audit fallback insert failed', (e as Error).message);
-        }
+        writeAudit();
         p.emit({ type: 'done', provider, text: orResult.text });
         return orResult.text;
       } catch (orErr) {
@@ -415,6 +419,8 @@ export async function runOne(
           `[${provider}] OpenRouter fallback also failed (${orCode}):`,
           (orErr as Error).message,
         );
+        auditMeta.outcome = 'failed';
+        auditMeta.or_error = orCode;
         recordCallFailure({
           userId: p.userId,
           provider,
@@ -423,6 +429,7 @@ export async function runOne(
           promptChars: finalPrompt.length,
           errorCode: orCode,
         });
+        writeAudit();
         p.emit({ type: 'error', provider, message: (orErr as Error).message });
         p.emit({ type: 'done', provider, text: exhaustedFallbackText(p.lang) });
         throw orErr;
