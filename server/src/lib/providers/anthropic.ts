@@ -10,6 +10,7 @@
 
 import type { CLIRunOptions, CLIRunResult } from '../cli.js';
 import { imageAttachments, readImageBase64 } from '../uploads.js';
+import { languageSystemPrompt } from './openrouter.js';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MAX_TOKENS = 4096;
@@ -64,6 +65,9 @@ export async function runAnthropic(opts: CLIRunOptions): Promise<AnthropicResult
       messages,
       max_tokens: DEFAULT_MAX_TOKENS,
       stream: true,
+      ...(languageSystemPrompt(opts.lang)
+        ? { system: languageSystemPrompt(opts.lang) }
+        : {}),
     }),
     signal: opts.signal,
   });

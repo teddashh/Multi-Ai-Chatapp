@@ -184,6 +184,12 @@ export interface CLIRunOptions {
   // Earlier turns of the same session for THIS provider. xAI gets these
   // as a real messages array; CLIs see a transcript prepended to the prompt.
   history?: ChatHistoryTurn[];
+  // User's UI language. Used by direct-API providers to inject a system
+  // prompt that locks reply language (gpt-4o-mini in particular tends to
+  // drift to Simplified Chinese without explicit instruction). The CLI
+  // path ignores this — Claude Code / Codex / Gemini CLIs already handle
+  // language detection on their own.
+  lang?: 'zh-TW' | 'en';
 }
 
 export interface CLIRunResult {

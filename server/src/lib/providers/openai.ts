@@ -9,6 +9,7 @@
 
 import type { CLIRunOptions, CLIRunResult } from '../cli.js';
 import { imageAttachments, readImageBase64 } from '../uploads.js';
+import { languageSystemPrompt } from './openrouter.js';
 
 interface OpenAIResult extends CLIRunResult {
   promptTokens: number | null;
@@ -37,7 +38,12 @@ export async function runOpenAI(opts: CLIRunOptions): Promise<OpenAIResult> {
   const apiModel = resolveOpenAIModel(opts.model);
 
   const history = opts.history ?? [];
-  const messages: unknown[] = history.map((t) => ({ role: t.role, content: t.content }));
+  const messages: unknown[] = [];
+  const sysPrompt = languageSystemPrompt(opts.lang);
+  if (sysPrompt) messages.push({ role: 'system', content: sysPrompt });
+  for (const t of history) {
+    messages.push({ role: t.role, content: t.content });
+  }
 
   const images = imageAttachments(opts.attachments ?? []);
   if (images.length === 0) {

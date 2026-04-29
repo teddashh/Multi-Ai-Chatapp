@@ -29,6 +29,17 @@ export function fallbackModelFor(provider: AIProvider): string {
   return OPENROUTER_FALLBACK_MODEL[provider];
 }
 
+// Direct-API providers (Anthropic, OpenAI, Gemini, OpenRouter) all get
+// this system prompt when the user is on zh-TW, because gpt-4o-mini and
+// some Gemini variants default to Simplified Chinese without it. Returns
+// null when no system prompt is needed (English).
+export function languageSystemPrompt(lang: 'zh-TW' | 'en' | undefined): string | null {
+  if (lang === 'zh-TW') {
+    return '請使用繁體中文（台灣用語）回應。不要使用簡體字。';
+  }
+  return null;
+}
+
 interface ORDelta {
   choices?: Array<{ delta?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -50,10 +61,12 @@ export async function runOpenRouter(
   // OpenAI-compatible API we can pass a real messages array instead — better
   // context handling for the fallback model.
   const history = opts.history ?? [];
-  const messages: unknown[] = history.map((t) => ({
-    role: t.role,
-    content: t.content,
-  }));
+  const messages: unknown[] = [];
+  const sysPrompt = languageSystemPrompt(opts.lang);
+  if (sysPrompt) messages.push({ role: 'system', content: sysPrompt });
+  for (const t of history) {
+    messages.push({ role: t.role, content: t.content });
+  }
 
   // Inline images (vision) — OR supports OpenAI-format multimodal content.
   // Office/PDF text was already extracted into opts.prompt by buildAttachmentPrefix

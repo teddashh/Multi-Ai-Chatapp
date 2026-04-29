@@ -447,6 +447,7 @@ export async function runOne(
     userId: p.userId,
     mode: p.mode,
     history: p.history?.[provider],
+    lang: p.lang,
   };
 
   const stages = buildStages(baseOpts, provider, model);

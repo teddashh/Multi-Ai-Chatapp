@@ -7,6 +7,7 @@
 
 import type { CLIRunOptions, CLIRunResult } from '../cli.js';
 import { imageAttachments, readImageBase64 } from '../uploads.js';
+import { languageSystemPrompt } from './openrouter.js';
 
 interface GeminiResult extends CLIRunResult {
   promptTokens: number | null;
@@ -44,10 +45,16 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(opts.model)}` +
     `:streamGenerateContent?alt=sse&key=${apiKey}`;
 
+  const sysPrompt = languageSystemPrompt(opts.lang);
+  const reqBody: Record<string, unknown> = { contents };
+  if (sysPrompt) {
+    reqBody.systemInstruction = { parts: [{ text: sysPrompt }] };
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents }),
+    body: JSON.stringify(reqBody),
     signal: opts.signal,
   });
 
