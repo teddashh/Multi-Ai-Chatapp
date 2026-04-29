@@ -59,8 +59,6 @@ const PRO: Record<AIProvider, ModelChoices> = {
     options: ['claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
   chatgpt: {
-    // Pro users keep gpt-5.4 as the default but can pick the top
-    // gpt-5.5 chat SKU if they want to splurge a turn.
     default: 'gpt-5.4',
     options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
   },
@@ -83,20 +81,13 @@ const SUPER: Record<AIProvider, ModelChoices> = {
     options: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
   chatgpt: {
-    // Default stays at gpt-5.5 (the chat flagship). The "-pro" SKUs
-    // are direct-API-only (Codex CLI rejects them) — fine for prod
-    // (api mode) but on dev (cli primary) they'll always fail the CLI
-    // stage and fall through to claude_api / openai_api. Acceptable
-    // since super-tier users picking "-pro" know they're paying for
-    // the upgrade.
+    // The "-pro" SKUs use OpenAI's /v1/responses endpoint, not the
+    // /v1/chat/completions one our openai.ts client targets. Trying
+    // them today gives "not a chat model" 404 + falls through the
+    // chain to OR. Hidden from the dropdown until we wire a Responses
+    // API client; same applies to o1/o3/o4-mini reasoning SKUs.
     default: 'gpt-5.5',
-    options: [
-      'gpt-5.5-pro',
-      'gpt-5.5',
-      'gpt-5.4-pro',
-      'gpt-5.4',
-      'gpt-5.4-mini',
-    ],
+    options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
   },
   gemini: {
     default: 'gemini-3.1-pro-preview',

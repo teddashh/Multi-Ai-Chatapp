@@ -365,7 +365,10 @@ function buildStages(
   model: string,
 ): ChainStage[] {
   const cliStage: ChainStage = {
-    name: 'cli',
+    // Grok has no actual CLI binary — runCLI dispatches to runXAIChat,
+    // a direct xAI API call. Label that as 'xai_api' so the admin badge
+    // doesn't lie about it being a CLI subprocess.
+    name: provider === 'grok' ? 'xai_api' : 'cli',
     run: async () => {
       const r = await runCLI(baseOpts);
       // runCLI's success path already logs usage; we pass through with

@@ -453,16 +453,18 @@ export default function App() {
         ]);
         break;
       case 'session_title':
-        // NVIDIA-generated title for a brand-new session. The sidebar
-        // entry was created with a heuristic placeholder; swap in the
-        // real summary directly so the sidebar updates instantly without
-        // waiting on a /api/sessions round-trip (refreshSessions() races
-        // with the just-finished DB write and sometimes loses).
+        // NVIDIA-generated title for a brand-new session. Swap in the
+        // real summary directly so the sidebar updates instantly. Also
+        // schedule a refreshSessions() so any other state on the row
+        // (timestamp etc) reconciles, and as belt-and-suspenders if the
+        // local prev didn't have the row yet (race on first message of
+        // a brand new session).
         setSessions((prev) =>
           prev.map((s) =>
             s.id === ev.sessionId ? { ...s, title: ev.title } : s,
           ),
         );
+        refreshSessions();
         break;
       case 'finish':
         setIsProcessing(false);
