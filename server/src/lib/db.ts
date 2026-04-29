@@ -223,6 +223,38 @@ if (ver2 < 2) {
   `);
 }
 
+// v3: tighten requested_model on backfilled rows. The Phase 5 first-pass
+// migration just stripped the "<channel>:" prefix, which leaves user-view
+// rows like 'gpt-4o' (the OpenAI direct-API SKU we map gpt-5.x onto) or
+// 'anthropic/claude-3-haiku' (an OpenRouter id). Neither is in TIER_MODELS,
+// so the user's profile usage panel shows them as separate "mystery"
+// rows instead of rolling under the model the user actually picked.
+// Best-effort remap to the closest tier-visible default per family.
+const ver3 = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver3 < 3) {
+  db.exec(`
+    BEGIN;
+    -- OpenAI API mappings (reverse of OPENAI_API_MODEL_MAP in providers/openai.ts)
+    UPDATE usage_log SET requested_model = 'gpt-5.5'
+      WHERE requested_model = 'gpt-4o';
+    UPDATE usage_log SET requested_model = 'gpt-5.4-mini'
+      WHERE requested_model = 'gpt-4o-mini';
+    -- OpenRouter rows: vendor prefix + arbitrary upstream id. Roll all
+    -- under the family's tier default — admin can still see what actually
+    -- billed via the 'model' column, this only affects user-facing view.
+    UPDATE usage_log SET requested_model = 'claude-haiku-4-5'
+      WHERE requested_model LIKE 'anthropic/%';
+    UPDATE usage_log SET requested_model = 'gemini-3.1-flash-lite-preview'
+      WHERE requested_model LIKE 'google/gemini%';
+    UPDATE usage_log SET requested_model = 'gpt-5.4-mini'
+      WHERE requested_model LIKE 'openai/%';
+    UPDATE usage_log SET requested_model = 'grok-4-1-fast-non-reasoning'
+      WHERE requested_model LIKE 'x-ai/%';
+    COMMIT;
+    PRAGMA user_version = 3;
+  `);
+}
+
 export interface UserRow {
   id: number;
   username: string;
