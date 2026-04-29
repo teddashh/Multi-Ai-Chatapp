@@ -20,6 +20,7 @@ import {
   type UserRow,
 } from '../lib/db.js';
 import { sendInviteEmail } from '../lib/mail.js';
+import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
 import type { AIProvider, Tier } from '../shared/types.js';
@@ -448,6 +449,86 @@ adminRoute.get('/audit', (c) => {
 });
 
 // === USAGE STATS ===
+
+// Per-billing-channel spending (Anthropic / OpenAI / Gemini / xAI / OpenRouter
+// / CLI subscription). Sums actual answered-by model so admin sees what each
+// API key got billed for. Cost estimate uses estimateCost on the billed model
+// — for OpenRouter rows the `billed_model` is OR's full id (e.g.
+// `anthropic/claude-3-haiku`) which prices.ts may or may not have a row for;
+// when it doesn't the column reads 0.
+adminRoute.get('/api-key-spending', (c) => {
+  const rows = usageStmts.byBillingChannel.all() as Array<{
+    channel: string;
+    provider: string;
+    billed_model: string;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+  }>;
+
+  // Group rows under each channel for the response.
+  const channels = new Map<
+    string,
+    {
+      channel: string;
+      total_calls: number;
+      total_cost_usd: number;
+      models: Array<{
+        provider: string;
+        model: string;
+        calls: number;
+        tokens_in: number;
+        tokens_out: number;
+        cost_usd: number;
+      }>;
+    }
+  >();
+  for (const r of rows) {
+    const cost = estimateCost(r.provider, r.billed_model, r.tokens_in, r.tokens_out);
+    const ch = channels.get(r.channel) ?? {
+      channel: r.channel,
+      total_calls: 0,
+      total_cost_usd: 0,
+      models: [],
+    };
+    ch.total_calls += r.calls;
+    ch.total_cost_usd += cost;
+    ch.models.push({
+      provider: r.provider,
+      model: r.billed_model,
+      calls: r.calls,
+      tokens_in: r.tokens_in,
+      tokens_out: r.tokens_out,
+      cost_usd: cost,
+    });
+    channels.set(r.channel, ch);
+  }
+
+  // Stable order: paid API keys first, OR last, CLI subscription last (no
+  // metered cost so it goes at the bottom).
+  const order = ['anthropic_api', 'openai_api', 'gemini_api', 'xai_api', 'openrouter', 'cli_subscription'];
+  const sorted = Array.from(channels.values()).sort((a, b) => {
+    const ai = order.indexOf(a.channel);
+    const bi = order.indexOf(b.channel);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+  return c.json({ channels: sorted });
+});
+
+// Manual trigger for the hourly fallback-event email digest. Useful when
+// admin wants to verify formatting / smoke-test SMTP without waiting for
+// the next tick. Returns ok regardless of whether anything was sent —
+// the function itself logs + skips silently when there's nothing to mail.
+adminRoute.post('/digest/run', async (c) => {
+  const me = c.get('user');
+  try {
+    await runFallbackDigestNow();
+    audit(me.id, 'manual_digest_run', { metadata: {} });
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ ok: false, error: (err as Error).message }, 500);
+  }
+});
 
 // Per-(provider, model) success rate. Includes all models known to TIER_MODELS
 // even if they have zero attempts — that way admin can see "claude-opus has

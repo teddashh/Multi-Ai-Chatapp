@@ -238,6 +238,7 @@ function recordUsage(
       isEstimated ? 1 : 0,
       1,
       null,
+      opts.model,
     );
   } catch (err) {
     // Don't let usage logging break a real request.
@@ -253,6 +254,10 @@ export function recordCallFailure(args: {
   userId?: number;
   provider: AIProvider;
   model: string;
+  // The originally-requested model (without any "claude_api:" / "openrouter:"
+  // prefix). Used by the user-facing /usage view to keep fallbacks invisible.
+  // Defaults to `model` for callers that don't separate the two yet.
+  requestedModel?: string;
   mode?: ChatMode;
   promptChars: number;
   errorCode: string;
@@ -271,6 +276,7 @@ export function recordCallFailure(args: {
       1,
       0,
       args.errorCode.slice(0, 60),
+      args.requestedModel ?? args.model,
     );
   } catch (err) {
     console.error('usage_log failure insert failed', (err as Error).message);

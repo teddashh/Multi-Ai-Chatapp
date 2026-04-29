@@ -545,6 +545,32 @@ export async function adminGetModelStats(): Promise<ModelStatRow[]> {
   return data.stats;
 }
 
+export interface ApiKeyChannel {
+  channel: string;
+  total_calls: number;
+  total_cost_usd: number;
+  models: Array<{
+    provider: string;
+    model: string;
+    calls: number;
+    tokens_in: number;
+    tokens_out: number;
+    cost_usd: number;
+  }>;
+}
+
+export async function adminGetApiKeySpending(): Promise<ApiKeyChannel[]> {
+  const data = (await adminFetch('/api-key-spending')) as { channels: ApiKeyChannel[] };
+  return data.channels;
+}
+
+export async function adminRunDigest(): Promise<{ ok: boolean; error?: string }> {
+  return (await adminFetch('/digest/run', { method: 'POST' })) as {
+    ok: boolean;
+    error?: string;
+  };
+}
+
 // Streams chat events via SSE. Calls onEvent for each SSEEvent until 'finish'
 // or an abort. Returns when the stream ends.
 export async function streamChat(

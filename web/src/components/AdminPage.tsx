@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  adminGetApiKeySpending,
   adminGetModelStats,
   adminGetSession,
   adminGetUsage,
   adminListAudit,
   adminListUserSessions,
+  adminRunDigest,
   createUser,
   deleteUser,
   inviteUser,
@@ -13,6 +15,7 @@ import {
   type AdminSessionDetail,
   type AdminSessionSummary,
   type AdminUser,
+  type ApiKeyChannel,
   type AuditEntry,
   type ModelStatRow,
   type UsageRow,
@@ -27,7 +30,7 @@ interface Props {
   onExit: () => void;
 }
 
-type View = 'users' | 'audit' | 'stats' | 'models' | 'user-detail' | 'session-viewer';
+type View = 'users' | 'audit' | 'stats' | 'models' | 'spending' | 'user-detail' | 'session-viewer';
 
 const TIERS: Tier[] = ['free', 'standard', 'pro', 'super', 'admin'];
 
@@ -106,6 +109,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
         {([
           ['users', '使用者 / Users'],
           ['stats', '用量 / Usage'],
+          ['spending', 'API Key 花費'],
           ['models', 'Model 健康度'],
           ['audit', '稽核紀錄 / Audit'],
         ] as Array<[View, string]>).map(([k, label]) => (
@@ -162,6 +166,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
         {view === 'audit' && <AuditList onError={setError} />}
         {view === 'stats' && <StatsView onError={setError} />}
         {view === 'models' && <ModelStatsView onError={setError} />}
+        {view === 'spending' && <SpendingView onError={setError} />}
       </div>
     </div>
   );
@@ -984,6 +989,118 @@ function ModelStatsView({ onError }: { onError: (msg: string) => void }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// =====================================================================
+// Per-API-key spending — what each billing relationship cost us
+// =====================================================================
+
+const CHANNEL_LABEL: Record<string, string> = {
+  anthropic_api: 'Anthropic API',
+  openai_api: 'OpenAI API',
+  gemini_api: 'Google Gemini API',
+  xai_api: 'xAI API',
+  openrouter: 'OpenRouter (混合)',
+  cli_subscription: 'CLI 訂閱方案 (無 metered 費用)',
+};
+
+function SpendingView({ onError }: { onError: (msg: string) => void }) {
+  const [channels, setChannels] = useState<ApiKeyChannel[] | null>(null);
+  const [digestStatus, setDigestStatus] = useState<string>('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    onError('');
+    adminGetApiKeySpending()
+      .then(setChannels)
+      .catch((err: Error) => onError(err.message));
+  }, [onError]);
+
+  const handleDigest = async () => {
+    setSending(true);
+    setDigestStatus('');
+    try {
+      const r = await adminRunDigest();
+      setDigestStatus(
+        r.ok
+          ? '✓ 已觸發 digest（過去 1 小時若有 fallback 事件就會寄到 admin email）'
+          : `失敗: ${r.error}`,
+      );
+    } catch (err) {
+      setDigestStatus(`失敗: ${(err as Error).message}`);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  if (!channels) return <div className="text-xs text-gray-500">載入中...</div>;
+
+  const fmtCost = (n: number) => `$${n.toFixed(n < 1 ? 4 : 2)}`;
+  const grandTotal = channels.reduce((s, c) => s + c.total_cost_usd, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between bg-gray-900 border border-gray-700 rounded p-3">
+        <div>
+          <div className="text-xs text-gray-400">所有 API Key 累計估算費用</div>
+          <div className="text-lg font-bold font-mono mt-1">{fmtCost(grandTotal)}</div>
+        </div>
+        <div className="text-right">
+          <button
+            onClick={handleDigest}
+            disabled={sending}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-30 rounded text-xs"
+          >
+            手動寄一次 fallback digest
+          </button>
+          {digestStatus && (
+            <div className="text-[11px] mt-1 text-gray-400 max-w-md">{digestStatus}</div>
+          )}
+        </div>
+      </div>
+
+      <p className="text-[11px] text-gray-500 leading-relaxed">
+        每筆「成功」的 usage_log 依實際被扣的 vendor 分類。OpenRouter 不分家族、走的是 OR 那家的 bill。
+        CLI 訂閱方案是定額（Claude Code / Codex / Gemini CLI 月費），這裡的 calls 是統計但 cost = $0。
+      </p>
+
+      {channels.map((ch) => (
+        <div key={ch.channel} className="bg-gray-900 border border-gray-700 rounded p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-sm font-bold">{CHANNEL_LABEL[ch.channel] ?? ch.channel}</div>
+            <div className="text-right">
+              <span className="text-gray-400 text-xs mr-2">{ch.total_calls} calls</span>
+              <span className="text-sm font-bold font-mono">{fmtCost(ch.total_cost_usd)}</span>
+            </div>
+          </div>
+          <table className="w-full text-xs">
+            <thead className="text-gray-500">
+              <tr className="border-b border-gray-800">
+                <th className="text-left py-1">Provider</th>
+                <th className="text-left py-1">Model (billed)</th>
+                <th className="text-right py-1">Calls</th>
+                <th className="text-right py-1">In</th>
+                <th className="text-right py-1">Out</th>
+                <th className="text-right py-1">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ch.models.map((m) => (
+                <tr key={`${m.provider}-${m.model}`} className="border-b border-gray-800/50">
+                  <td className="py-1 text-gray-400">{m.provider}</td>
+                  <td className="py-1 font-mono">{m.model}</td>
+                  <td className="py-1 text-right font-mono">{m.calls}</td>
+                  <td className="py-1 text-right font-mono">{m.tokens_in.toLocaleString()}</td>
+                  <td className="py-1 text-right font-mono">{m.tokens_out.toLocaleString()}</td>
+                  <td className="py-1 text-right font-mono">{fmtCost(m.cost_usd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
     </div>
   );
 }

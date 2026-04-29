@@ -430,7 +430,12 @@ authRoute.get('/usage', requireAuth, (c) => {
     prompt_chars: number;
     completion_chars: number;
   };
-  const breakdown = usageStmts.byModelForUser.all(session.id) as Array<{
+  // User view groups by requested_model — fallback rows roll up under the
+  // model the user actually asked for, so the per-model row never says
+  // "openrouter:..." or "claude_api:...". Cost stays based on the
+  // requested model (slightly over-reported when fallbacks fired, which
+  // the user has accepted as "fair given retry overhead").
+  const breakdown = usageStmts.byRequestedModelForUser.all(session.id) as Array<{
     provider: string;
     model: string;
     calls: number;

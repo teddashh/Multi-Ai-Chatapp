@@ -487,6 +487,9 @@ export async function runOne(
             result.promptTokens === null || result.completionTokens === null ? 1 : 0,
             1,
             null,
+            // requested_model = what the user asked for, not what answered.
+            // Keeps fallback identity hidden from user-facing /usage.
+            model,
           );
         } catch (e) {
           console.error('usage_log fallback insert failed', (e as Error).message);
@@ -515,6 +518,7 @@ export async function runOne(
         userId: p.userId,
         provider,
         model: failModel,
+        requestedModel: model,
         mode: p.mode,
         promptChars: finalPrompt.length,
         errorCode: code,

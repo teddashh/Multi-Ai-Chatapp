@@ -95,6 +95,27 @@ addColumnIfMissing('chat_sessions', 'deleted_at', 'INTEGER');
 // successes so default success=1.
 addColumnIfMissing('usage_log', 'success', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('usage_log', 'error_code', 'TEXT');
+// Phase 5: track the model the user actually *asked* for (their tier
+// default or override). Distinct from `model`, which records what
+// answered them — could be a CLI run, a direct-API run with the same
+// id, or a fallback-to-OpenRouter on a different SKU. The user-facing
+// usage view only ever shows `requested_model` so fallbacks are invisible.
+addColumnIfMissing('usage_log', 'requested_model', 'TEXT');
+
+// Backfill: for old rows without requested_model, strip the known
+// prefixes ("claude_api:", "chatgpt_api:", "gemini_api:", "openrouter:")
+// so the user view can use it for grouping/cost. OR rows lose vendor
+// detail (we never logged the originally-requested model for them) but
+// at least the user sees a coherent SKU instead of "openrouter:anthropic/...".
+db.exec(`
+  UPDATE usage_log SET requested_model = model
+    WHERE requested_model IS NULL
+      AND model NOT LIKE '%:%';
+  UPDATE usage_log SET requested_model =
+    SUBSTR(model, INSTR(model, ':') + 1)
+    WHERE requested_model IS NULL
+      AND model LIKE '%:%';
+`);
 
 // Audit trail — admin actions on users / sessions are recorded here. The
 // admin sees them; users do not. We never delete rows.
@@ -489,10 +510,11 @@ export const usageStmts = {
     number,
     number,
     string | null,
+    string | null,
   ]>(
     `INSERT INTO usage_log
-       (user_id, provider, model, mode, prompt_chars, completion_chars, tokens_in, tokens_out, is_estimated, success, error_code)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (user_id, provider, model, mode, prompt_chars, completion_chars, tokens_in, tokens_out, is_estimated, success, error_code, requested_model)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ),
   // Per-(provider, model) success/failure rollup for the admin dashboard.
   // Rows where success=0 carry the error_code that caused the failure.
@@ -558,13 +580,57 @@ export const usageStmts = {
      GROUP BY provider, model
      ORDER BY provider, model`,
   ),
+  // Same shape as byModelForUser but groups by the *requested* model so
+  // the user-facing /usage view never leaks fallback detail. Cost is
+  // recomputed in the route handler against requested_model.
+  byRequestedModelForUser: db.prepare<[number]>(
+    `SELECT provider,
+            COALESCE(requested_model, model) AS model,
+            COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out,
+            COALESCE(SUM(prompt_chars), 0) AS prompt_chars,
+            COALESCE(SUM(completion_chars), 0) AS completion_chars,
+            MAX(is_estimated) AS any_estimated
+     FROM usage_log
+     WHERE user_id = ? AND success = 1
+     GROUP BY provider, COALESCE(requested_model, model)
+     ORDER BY provider, model`,
+  ),
+  // Admin "API key spending" rollup — groups by which billing relationship
+  // the row hit: 'cli' (subscription, no metered cost), '<provider>_api'
+  // (Anthropic/OpenAI/Gemini direct), 'openrouter' (OR aggregator), or
+  // 'xai' (grok primary, also direct API). The route handler labels these.
+  byBillingChannel: db.prepare(
+    `SELECT
+       CASE
+         WHEN model LIKE 'openrouter:%' THEN 'openrouter'
+         WHEN model LIKE 'claude_api:%' THEN 'anthropic_api'
+         WHEN model LIKE 'chatgpt_api:%' THEN 'openai_api'
+         WHEN model LIKE 'gemini_api:%' THEN 'gemini_api'
+         WHEN provider = 'grok' THEN 'xai_api'
+         ELSE 'cli_subscription'
+       END AS channel,
+       provider,
+       CASE
+         WHEN INSTR(model, ':') > 0 THEN SUBSTR(model, INSTR(model, ':') + 1)
+         ELSE model
+       END AS billed_model,
+       COUNT(*) AS calls,
+       COALESCE(SUM(tokens_in), 0) AS tokens_in,
+       COALESCE(SUM(tokens_out), 0) AS tokens_out
+     FROM usage_log
+     WHERE success = 1
+     GROUP BY channel, provider, billed_model
+     ORDER BY channel, provider, billed_model`,
+  ),
   totalsForUser: db.prepare<[number]>(
     `SELECT COUNT(*) AS calls,
             COALESCE(SUM(tokens_in), 0) AS tokens_in,
             COALESCE(SUM(tokens_out), 0) AS tokens_out,
             COALESCE(SUM(prompt_chars), 0) AS prompt_chars,
             COALESCE(SUM(completion_chars), 0) AS completion_chars
-     FROM usage_log WHERE user_id = ?`,
+     FROM usage_log WHERE user_id = ? AND success = 1`,
   ),
 };
 
