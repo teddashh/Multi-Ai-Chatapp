@@ -33,10 +33,13 @@ function detectInstance(): 'prod' | 'dev' {
   return process.env.PROVIDER_MODE === 'api' ? 'prod' : 'dev';
 }
 
-async function sendDigestForLastHour(): Promise<void> {
-  const since = Math.floor((Date.now() - ONE_HOUR_MS) / 1000);
+async function sendDigestForWindow(windowMs: number, label: number): Promise<void> {
+  const since = Math.floor((Date.now() - windowMs) / 1000);
   const audits = auditStmts.fallbacksSince.all(since) as AuditRow[];
-  if (audits.length === 0) return;
+  if (audits.length === 0) {
+    console.log(`[digest] no fallback events in last ${label}m; skipping send`);
+    return;
+  }
 
   const admins = userStmts.listAdminEmails.all() as AdminRow[];
   const recipients = admins
@@ -74,7 +77,7 @@ async function sendDigestForLastHour(): Promise<void> {
     await sendFallbackDigest({
       to: recipients,
       instance: detectInstance(),
-      windowMinutes: 60,
+      windowMinutes: label,
       rows,
     });
     console.log(`[digest] sent ${rows.length} event(s) to ${recipients.length} admin(s)`);
@@ -95,13 +98,18 @@ export function startFallbackDigest(): void {
     return;
   }
   timer = setInterval(() => {
-    void sendDigestForLastHour();
+    // Hourly: only events from the past 60 minutes — that's the cadence
+    // we promised admins so we don't double-mail the same event.
+    void sendDigestForWindow(ONE_HOUR_MS, 60);
   }, ONE_HOUR_MS);
   console.log('[digest] hourly fallback digest scheduler started');
 }
 
-// Manual trigger for ad-hoc admin runs (also useful for the smoke test
-// — just call from a one-off script after setting up admin emails).
+// Manual trigger for ad-hoc admin runs. Uses a 24h window so clicking
+// "send digest" from /admin always finds something if there was any
+// fallback today, even if the hourly tick already covered it (the only
+// downside is a duplicate email — admin asked for it).
 export async function runFallbackDigestNow(): Promise<void> {
-  await sendDigestForLastHour();
+  const TWENTY_FOUR_HOURS = 24 * ONE_HOUR_MS;
+  await sendDigestForWindow(TWENTY_FOUR_HOURS, 24 * 60);
 }
