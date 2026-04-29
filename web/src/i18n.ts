@@ -209,7 +209,7 @@ export interface Dict {
 }
 
 const ZH: Dict = {
-  appName: 'AI 姐妹會',
+  appName: 'AI 姐妹群',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -230,7 +230,7 @@ const ZH: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI 姐妹會',
+  loginTitle: 'AI 姐妹群',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',
@@ -409,7 +409,7 @@ const ZH: Dict = {
 };
 
 const EN: Dict = {
-  appName: 'AI Sisters',
+  appName: 'AI Sister',
   loading: 'Loading...',
   cancel: 'Cancel',
   save: 'Save',
@@ -430,7 +430,7 @@ const EN: Dict = {
   langZh: '繁中',
   langEn: 'English',
 
-  loginTitle: 'AI Sisters',
+  loginTitle: 'AI Sister',
   loginUsernameLabel: 'Username or Email',
   loginPasswordLabel: 'Password',
   loginForgot: 'Forgot password?',

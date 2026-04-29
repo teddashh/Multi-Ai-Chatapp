@@ -76,7 +76,7 @@ export default function Sidebar({
       const detail = await getSession(s.id);
       const m = detail.session.mode as ChatMode;
       const lines: string[] = [
-        `# AI Sisters — ${detail.session.title}`,
+        `# AI Sister — ${detail.session.title}`,
         `> Mode: ${modeName(t, m)}`,
         `> Exported: ${new Date().toLocaleString()}`,
         '',
