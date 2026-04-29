@@ -48,4 +48,9 @@ export type SSEEvent =
   | { type: 'done'; provider: AIProvider; text: string; messageId?: number }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }
+  // Fallback chain triggered — UI clears any partial bubble for this provider
+  // and shows the bridging message ("換個方式思考一下…") until the next chunk
+  // arrives. We deliberately do NOT tell the user that a different model is
+  // taking over; the message stays in-character.
+  | { type: 'fallback_notice'; provider: AIProvider; message: string }
   | { type: 'finish' };

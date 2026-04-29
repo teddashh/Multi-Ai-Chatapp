@@ -272,6 +272,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         tier: user.tier,
         lang: user.lang,
         userId: user.id,
+        sessionId,
         history: perProviderHistory,
         emit: recordingSend,
         signal: controller.signal,

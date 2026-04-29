@@ -399,6 +399,41 @@ export default function App() {
           ];
         });
         break;
+      case 'fallback_notice':
+        // Primary path failed (429/timeout/etc) and the orchestrator is
+        // about to stream a fallback response into the same bubble. Wipe
+        // any partial text so the bridge line "我換個方式…" is what the
+        // user sees until the fallback's first chunk arrives. No mention
+        // of OpenRouter — the swap stays invisible to the user.
+        setMessages((prev) => {
+          const streaming = prev.find(
+            (m) =>
+              m.provider === ev.provider &&
+              m.role === 'ai' &&
+              m.id.endsWith('-streaming'),
+          );
+          if (streaming) {
+            return prev.map((m) =>
+              m.id === streaming.id ? { ...m, content: ev.message } : m,
+            );
+          }
+          // No partial bubble yet (e.g. primary failed before any chunk) —
+          // create the streaming bubble with the bridge line so the user
+          // sees a "thinking" placeholder rather than nothing.
+          const modeRole = pendingRolesRef.current[ev.provider];
+          return [
+            ...prev,
+            {
+              id: `${ev.provider}-${Date.now()}-streaming`,
+              role: 'ai',
+              provider: ev.provider,
+              modeRole,
+              content: ev.message,
+              timestamp: Date.now(),
+            },
+          ];
+        });
+        break;
       case 'error':
         if (ev.provider) break;
         setMessages((prev) => [

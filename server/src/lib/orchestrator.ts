@@ -1,4 +1,6 @@
 import { classifyError, recordCallFailure, runCLI } from './cli.js';
+import { fallbackModelFor, runOpenRouter } from './providers/openrouter.js';
+import { auditStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
 import type { MessageRow } from './db.js';
@@ -91,6 +93,9 @@ export interface OrchestratorParams {
   tier: Tier;
   lang: Lang;
   userId: number;
+  // Used in audit_log when an OpenRouter fallback fires, so admin can
+  // jump from a fallback event back to the originating session.
+  sessionId?: string;
   modelOverrides?: Partial<Record<AIProvider, string>>;
   attachments?: PreparedAttachment[];
   emit: (event: SSEEvent) => void;
@@ -299,6 +304,12 @@ function labelsFor(lang: Lang): ModeLabels {
   return lang === 'en' ? LABELS_EN : LABELS_ZH;
 }
 
+// Retryable error codes — the primary failure was likely transient (rate
+// limit, timeout, server error, network blip) and worth a fallback. We
+// skip 401/403 (config issue, won't help to retry on OR) and 'aborted'
+// (user cancelled).
+const FALLBACK_CODES = new Set(['429', '5xx', 'timeout', 'network', 'other']);
+
 export async function runOne(
   p: OrchestratorParams,
   provider: AIProvider,
@@ -325,19 +336,101 @@ export async function runOne(
     return result.text;
   } catch (err) {
     const message = (err as Error).message;
-    // Keep the raw error visible to admins via the SSE 'error' channel
-    // (logged server-side too) but show the user a soft, in-character
-    // fallback instead of "[Error: 429 ...]". The 'done' text is what
-    // gets persisted as the AI bubble's content.
-    console.error(`[${provider}] step failed:`, message);
+    const code = classifyError(err);
+    console.error(`[${provider}] primary failed (${code}):`, message);
     recordCallFailure({
       userId: p.userId,
       provider,
       model,
       mode: p.mode,
       promptChars: finalPrompt.length,
-      errorCode: classifyError(err),
+      errorCode: code,
     });
+
+    const orKeyPresent = !!process.env.OPENROUTER_API_KEY;
+    const shouldFallback = FALLBACK_CODES.has(code) && orKeyPresent;
+    if (shouldFallback) {
+      const orModel = fallbackModelFor(provider);
+      // Tell the UI to wipe the partial stream and show the bridge line
+      // ("換個方式思考一下…"). Chunks from runOpenRouter will then overwrite
+      // the bridge text in the same bubble.
+      p.emit({ type: 'fallback_notice', provider, message: bridgeText(p.lang) });
+      try {
+        const orResult = await runOpenRouter({
+          provider,
+          model: orModel,
+          prompt: finalPrompt,
+          attachments,
+          signal: p.signal,
+          onChunk: (text) => p.emit({ type: 'chunk', provider, text }),
+          userId: p.userId,
+          mode: p.mode,
+          history: p.history?.[provider],
+        });
+        // Persist the successful fallback as a usage_log row prefixed with
+        // "openrouter:" so the model-stats dashboard separates it from real
+        // primary calls. We attribute provider to the original family so
+        // cost/quota accounting still rolls up under the right vendor.
+        try {
+          usageStmts.insert.run(
+            p.userId,
+            provider,
+            `openrouter:${orResult.modelUsed}`,
+            p.mode ?? null,
+            finalPrompt.length,
+            orResult.text.length,
+            orResult.promptTokens,
+            orResult.completionTokens,
+            orResult.promptTokens === null || orResult.completionTokens === null ? 1 : 0,
+            1,
+            null,
+          );
+        } catch (e) {
+          console.error('usage_log fallback insert failed', (e as Error).message);
+        }
+        // Audit trail — admin sees this; user does not. action=model_fallback
+        // distinguishes it from admin-driven actions in the same table.
+        try {
+          auditStmts.insert.run(
+            p.userId,
+            p.userId,
+            p.sessionId ?? null,
+            'model_fallback',
+            JSON.stringify({
+              provider,
+              from_model: model,
+              to_model: orResult.modelUsed,
+              reason: code,
+              mode: p.mode ?? null,
+            }),
+          );
+        } catch (e) {
+          console.error('audit fallback insert failed', (e as Error).message);
+        }
+        p.emit({ type: 'done', provider, text: orResult.text });
+        return orResult.text;
+      } catch (orErr) {
+        const orCode = classifyError(orErr);
+        console.error(
+          `[${provider}] OpenRouter fallback also failed (${orCode}):`,
+          (orErr as Error).message,
+        );
+        recordCallFailure({
+          userId: p.userId,
+          provider,
+          model: `openrouter:${orModel}`,
+          mode: p.mode,
+          promptChars: finalPrompt.length,
+          errorCode: orCode,
+        });
+        p.emit({ type: 'error', provider, message: (orErr as Error).message });
+        p.emit({ type: 'done', provider, text: exhaustedFallbackText(p.lang) });
+        throw orErr;
+      }
+    }
+
+    // Non-retryable (401/aborted/spawn) or no OPENROUTER_API_KEY — original
+    // soft-failure path.
     p.emit({ type: 'error', provider, message });
     p.emit({ type: 'done', provider, text: failureText(p.lang) });
     throw err;
@@ -595,6 +688,24 @@ export function failureText(lang: Lang): string {
   return lang === 'en'
     ? "I'm not feeling great right now and don't know how to respond. Please give me a moment and hit Retry to try again."
     : '我現在狀況不太好，不知道該怎麼回，暫時沒有回應。請你等等幫我按一下「重試」。';
+}
+
+// Bridging line shown briefly before the OpenRouter fallback starts streaming.
+// The user must NOT learn that a different model is taking over — keep the
+// tone first-person / in-character.
+export function bridgeText(lang: Lang): string {
+  return lang === 'en'
+    ? 'Let me think about this differently — give me a sec...'
+    : '我換個方式思考一下，請等等...';
+}
+
+// Shown when even the OpenRouter fallback fails (we're out of free credits
+// or OR also returned 429). Treats it as a quota exhaustion rather than a
+// system error so the upgrade CTA reads naturally.
+export function exhaustedFallbackText(lang: Lang): string {
+  return lang === 'en'
+    ? "Sorry, you've used up today's free quota. Consider upgrading your account for a higher daily limit."
+    : '抱歉，你已經用完今天的免費額度了，可以考慮升級你的帳號，獲得更多的每日額度。';
 }
 
 async function runSequential(

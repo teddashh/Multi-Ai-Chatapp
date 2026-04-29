@@ -53,4 +53,5 @@ export type SSEEvent =
   | { type: 'done'; provider: AIProvider; text: string; messageId?: number }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }
+  | { type: 'fallback_notice'; provider: AIProvider; message: string }
   | { type: 'finish' };
