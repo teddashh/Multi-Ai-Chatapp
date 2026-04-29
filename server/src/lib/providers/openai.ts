@@ -67,21 +67,23 @@ async function streamOpenAIRound(
   apiKey: string,
   apiModel: string,
   messages: unknown[],
+  withTools: boolean,
   opts: CLIRunOptions,
 ): Promise<OpenAIRoundResult> {
+  const body: Record<string, unknown> = {
+    model: apiModel,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+  };
+  if (withTools) body.tools = [WEB_SEARCH_TOOL];
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: apiModel,
-      messages,
-      tools: [WEB_SEARCH_TOOL],
-      stream: true,
-      stream_options: { include_usage: true },
-    }),
+    body: JSON.stringify(body),
     signal: opts.signal,
   });
 
@@ -204,7 +206,8 @@ export async function runOpenAI(opts: CLIRunOptions): Promise<OpenAIResult> {
   let finalText = '';
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-    const round = await streamOpenAIRound(apiKey, apiModel, messages, opts);
+    const isLast = iter === MAX_TOOL_ITERATIONS - 1;
+    const round = await streamOpenAIRound(apiKey, apiModel, messages, !isLast, opts);
     if (round.promptTokens !== null) {
       totalPromptTokens += round.promptTokens;
       sawRealTokens = true;
@@ -214,7 +217,7 @@ export async function runOpenAI(opts: CLIRunOptions): Promise<OpenAIResult> {
       sawRealTokens = true;
     }
 
-    if (round.toolCalls.length === 0) {
+    if (round.toolCalls.length === 0 || isLast) {
       finalText = round.text.trim();
       break;
     }

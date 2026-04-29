@@ -611,7 +611,12 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
   let finalText = '';
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-    const round = await streamXAIRound(apiKey, messages, tools, opts);
+    // Last iteration runs WITHOUT tools so the model is forced to write
+    // a final text answer instead of asking for yet another search and
+    // returning empty when the budget runs out.
+    const isLast = iter === MAX_TOOL_ITERATIONS - 1;
+    const roundTools = isLast ? [] : tools;
+    const round = await streamXAIRound(apiKey, messages, roundTools, opts);
     if (round.promptTokens !== null) {
       totalPromptTokens += round.promptTokens;
       sawRealTokens = true;
@@ -621,8 +626,8 @@ async function runXAIChat(opts: CLIRunOptions): Promise<CLIRunResult> {
       sawRealTokens = true;
     }
 
-    if (round.toolCalls.length === 0) {
-      // Final answer reached; round.text was already streamed via onChunk.
+    if (round.toolCalls.length === 0 || isLast) {
+      // Final answer reached (or forced on the no-tools last round).
       finalText = round.text.trim();
       break;
     }

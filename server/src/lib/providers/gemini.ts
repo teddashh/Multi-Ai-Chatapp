@@ -187,10 +187,13 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
   let finalText = '';
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-    const body: Record<string, unknown> = {
-      contents,
-      tools: [{ functionDeclarations: [FUNCTION_DECLARATION] }],
-    };
+    const isLast = iter === MAX_TOOL_ITERATIONS - 1;
+    const body: Record<string, unknown> = { contents };
+    // Last iteration runs without tools so the model must commit to a
+    // text answer instead of asking for yet another search.
+    if (!isLast) {
+      body.tools = [{ functionDeclarations: [FUNCTION_DECLARATION] }];
+    }
     if (sysPrompt) {
       body.systemInstruction = { parts: [{ text: sysPrompt }] };
     }
@@ -205,7 +208,7 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
       sawRealTokens = true;
     }
 
-    if (round.functionCalls.length === 0) {
+    if (round.functionCalls.length === 0 || isLast) {
       finalText = round.text.trim();
       break;
     }

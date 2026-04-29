@@ -214,13 +214,16 @@ export async function runAnthropic(opts: CLIRunOptions): Promise<AnthropicResult
   let finalText = '';
 
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+    const isLast = iter === MAX_TOOL_ITERATIONS - 1;
     const body: Record<string, unknown> = {
       model: opts.model,
       messages,
       max_tokens: DEFAULT_MAX_TOKENS,
-      tools: [WEB_SEARCH_TOOL_ANTHROPIC],
       stream: true,
     };
+    // Last iteration drops the tool list so the model is forced to
+    // commit to a text answer instead of asking for yet another search.
+    if (!isLast) body.tools = [WEB_SEARCH_TOOL_ANTHROPIC];
     if (sysPrompt) body.system = sysPrompt;
 
     const round = await streamAnthropicRound(apiKey, body, opts);
@@ -233,8 +236,8 @@ export async function runAnthropic(opts: CLIRunOptions): Promise<AnthropicResult
       sawRealTokens = true;
     }
 
-    // No tool requested → final answer.
-    if (round.stopReason !== 'tool_use' || round.toolUses.length === 0) {
+    // No tool requested → final answer. Forced final on last iteration.
+    if (round.stopReason !== 'tool_use' || round.toolUses.length === 0 || isLast) {
       finalText = round.text.trim();
       break;
     }

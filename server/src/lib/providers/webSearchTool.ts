@@ -28,8 +28,11 @@ export const TOOL_PARAMETER_SCHEMA = {
   required: ['query'],
 } as const;
 
-// Cap how many tool-call rounds we'll allow per turn — guards against a
+// Cap how many tool-call rounds we'll allow per turn. Guards against a
 // pathological loop where the model keeps asking for more searches.
+// Each provider's loop runs (MAX_TOOL_ITERATIONS - 1) tool rounds at most,
+// then forces one final round WITHOUT tools so the model must commit
+// to a text answer instead of returning empty when the budget runs out.
 export const MAX_TOOL_ITERATIONS = 4;
 
 // Run a single web_search invocation. `args` is whatever the model emits
