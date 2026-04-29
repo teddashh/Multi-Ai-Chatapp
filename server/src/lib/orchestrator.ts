@@ -507,7 +507,13 @@ export async function runOne(
       }
 
       if (!isPrimary) writeChainAudit(p, provider, model, journey);
-      p.emit({ type: 'done', provider, text: result.text });
+      p.emit({
+        type: 'done',
+        provider,
+        text: result.text,
+        answeredStage: stage.name,
+        answeredModel: result.modelUsed,
+      });
       return result.text;
     } catch (err) {
       lastErr = err as Error;

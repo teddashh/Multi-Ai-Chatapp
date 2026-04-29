@@ -101,6 +101,14 @@ addColumnIfMissing('usage_log', 'error_code', 'TEXT');
 // id, or a fallback-to-OpenRouter on a different SKU. The user-facing
 // usage view only ever shows `requested_model` so fallbacks are invisible.
 addColumnIfMissing('usage_log', 'requested_model', 'TEXT');
+// Phase 8: per-AI-message provenance. answered_stage tells admin whether
+// this bubble came from CLI / vendor API / OpenRouter / NVIDIA, and
+// answered_model is the actual SKU (claude-opus-4-7 vs anthropic/claude-3-haiku
+// vs moonshotai/kimi-k2-instruct). Surfaced as a small subtext under the
+// provider name in admin view; hidden from regular users entirely so the
+// fallback story stays invisible.
+addColumnIfMissing('chat_messages', 'answered_stage', 'TEXT');
+addColumnIfMissing('chat_messages', 'answered_model', 'TEXT');
 
 // Backfill: for old rows without requested_model, strip the known
 // prefixes ("claude_api:", "chatgpt_api:", "gemini_api:", "openrouter:")
@@ -458,6 +466,8 @@ export interface MessageRow {
   mode_role: string | null;
   content: string;
   timestamp: number;
+  answered_stage: string | null;
+  answered_model: string | null;
 }
 
 export const sessionStmts = {
@@ -671,6 +681,12 @@ export const messageStmts = {
   insert: db.prepare<[string, 'user' | 'ai', string | null, string | null, string, number]>(
     `INSERT INTO chat_messages (session_id, role, provider, mode_role, content, timestamp)
      VALUES (?, ?, ?, ?, ?, ?)`,
+  ),
+  // Stamp the answered-stage / answered-model on an AI row after it's been
+  // inserted (orchestrator only knows these once runOne returns; we don't
+  // want to delay the message insert until then). Used by admin view only.
+  setAnswered: db.prepare<[string | null, string | null, number]>(
+    `UPDATE chat_messages SET answered_stage = ?, answered_model = ? WHERE id = ?`,
   ),
   listForSession: db.prepare<[string]>(
     `SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id`,

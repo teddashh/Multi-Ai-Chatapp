@@ -10,6 +10,7 @@ import {
   type AppVariables,
 } from '../lib/auth.js';
 import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
+import { logAudit } from '../lib/audit.js';
 import { TIER_MODELS } from '../shared/models.js';
 import { estimateCost } from '../shared/prices.js';
 import { sendResetEmail, sendVerifyEmail } from '../lib/mail.js';
@@ -134,6 +135,11 @@ authRoute.post('/login', async (c) => {
   const ok = await verifyPassword(body.password, user.password_hash);
   if (!ok) {
     userStmts.bumpFailedAttempts.run(user.id);
+    logAudit({
+      actorUserId: user.id,
+      action: 'user_login_fail',
+      metadata: { username: user.username },
+    });
     const fresh = userStmts.findById.get(user.id) as UserRow;
     if (fresh.failed_attempts >= FAILED_ATTEMPT_LIMIT) {
       // Lock until next century — only a successful reset clears it.
@@ -171,6 +177,11 @@ authRoute.post('/login', async (c) => {
     email: user.email,
     lang: user.lang,
     avatarPath: user.avatar_path,
+  });
+  logAudit({
+    actorUserId: user.id,
+    action: 'user_login_success',
+    metadata: { username: user.username },
   });
   return c.json({ user: buildUserDTO(user) });
 });
@@ -265,6 +276,11 @@ authRoute.post('/signup', async (c) => {
     lang: fresh.lang,
     avatarPath: fresh.avatar_path,
   });
+  logAudit({
+    actorUserId: fresh.id,
+    action: 'user_signup',
+    metadata: { username: fresh.username, email: fresh.email },
+  });
   return c.json({ user: buildUserDTO(fresh) });
 });
 
@@ -349,6 +365,11 @@ authRoute.post('/forgot-password', async (c) => {
     } catch (err) {
       console.error('forgot-password email failed', (err as Error).message);
     }
+    logAudit({
+      actorUserId: user.id,
+      action: 'user_password_reset_request',
+      metadata: { reason: 'self_request' },
+    });
   }
   return c.json({ ok: true });
 });
@@ -370,11 +391,14 @@ authRoute.patch('/profile', requireAuth, async (c) => {
   const user = userStmts.findById.get(session.id) as UserRow | undefined;
   if (!user) return c.json({ error: 'unauthorized' }, 401);
 
+  const changed: string[] = [];
   if (body.lang === 'zh-TW' || body.lang === 'en') {
     userStmts.updateLang.run(body.lang, user.id);
+    if (body.lang !== user.lang) changed.push('lang');
   }
   if (body.theme && VALID_THEMES.has(body.theme)) {
     userStmts.updateTheme.run(body.theme, user.id);
+    if (body.theme !== user.theme) changed.push('theme');
   }
   if (body.nickname !== undefined) {
     userStmts.updateNicknameEmail.run(
@@ -382,6 +406,7 @@ authRoute.patch('/profile', requireAuth, async (c) => {
       user.email,
       user.id,
     );
+    if ((body.nickname || null) !== user.nickname) changed.push('nickname');
   }
   if (body.password) {
     if (body.password.length < 6) {
@@ -389,6 +414,17 @@ authRoute.patch('/profile', requireAuth, async (c) => {
     }
     const hash = await hashPassword(body.password);
     userStmts.setOwnPassword.run(hash, user.id);
+    logAudit({
+      actorUserId: user.id,
+      action: 'user_password_change',
+    });
+  }
+  if (changed.length > 0) {
+    logAudit({
+      actorUserId: user.id,
+      action: 'user_profile_update',
+      metadata: { fields: changed },
+    });
   }
 
   const fresh = userStmts.findById.get(user.id) as UserRow;
@@ -560,5 +596,10 @@ authRoute.post('/reset-password', async (c) => {
   const hash = await hashPassword(body.password);
   userStmts.setPasswordHash.run(hash, row.user_id);
   resetStmts.markUsed.run(body.token);
+  logAudit({
+    actorUserId: row.user_id,
+    action: 'user_password_reset_complete',
+    metadata: { wasInvite: !user.email_verified },
+  });
   return c.json({ ok: true });
 });

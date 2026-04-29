@@ -45,7 +45,18 @@ export type SSEEvent =
   | { type: 'workflow'; status: string }
   | { type: 'role'; provider: AIProvider; role: string; label: string }
   | { type: 'chunk'; provider: AIProvider; text: string }
-  | { type: 'done'; provider: AIProvider; text: string; messageId?: number }
+  | {
+      type: 'done';
+      provider: AIProvider;
+      text: string;
+      messageId?: number;
+      // Phase 8: provenance — which stage answered, and the actual model
+      // SKU that answered. Carried through to the chat_messages row so
+      // admins can see "Claude · API · claude-opus-4-7" under each
+      // bubble. Regular users never see these values.
+      answeredStage?: string;
+      answeredModel?: string;
+    }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }
   // Fallback chain triggered — UI clears any partial bubble for this provider

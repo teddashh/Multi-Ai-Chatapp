@@ -16,6 +16,38 @@ interface Props {
   regeneratingId?: string | null;
 }
 
+// Pretty-print a raw model id like "claude-opus-4-7" → "Claude Opus 4.7"
+// or "anthropic/claude-3-haiku" → "Claude 3 Haiku". Drops vendor prefix
+// for readability — admin already sees the stage label separately so
+// the vendor is implied.
+function prettyModel(raw: string): string {
+  let m = raw;
+  if (m.includes('/')) m = m.split('/').pop() ?? m;
+  // Trailing -X-Y → -X.Y so "claude-opus-4-7" reads "4.7" not "4 7".
+  m = m.replace(/-(\d+)-(\d+)$/, '-$1.$2');
+  m = m
+    .replace(/^claude/, 'Claude')
+    .replace(/^gpt/, 'GPT')
+    .replace(/^gemini/, 'Gemini')
+    .replace(/^grok/, 'Grok')
+    .replace(/^kimi/, 'Kimi')
+    .replace(/^llama/, 'Llama')
+    .replace(/^gemma/, 'Gemma')
+    .replace(/^mistral/, 'Mistral')
+    .replace(/^qwen/, 'Qwen');
+  // dash-separated tokens become space-separated capitalized words.
+  m = m.replace(/-([a-z])/g, (_, c) => ' ' + c.toUpperCase());
+  return m;
+}
+
+function prettyStage(stage: string): string {
+  if (stage === 'cli') return 'CLI';
+  if (stage.endsWith('_api')) return 'API';
+  if (stage === 'openrouter') return 'OpenRouter';
+  if (stage === 'nvidia') return 'NVIDIA';
+  return stage;
+}
+
 // Roughly: collapse if message has > 3 newlines or > 220 chars (~3 lines wide).
 function isLong(text: string): boolean {
   if (text.split('\n').length > 3) return true;
@@ -387,6 +419,17 @@ export default function ChatArea({
                   {msg.modeRole ? (
                     <span className="ml-1 text-gray-500 font-normal">
                       ({msg.modeRole})
+                    </span>
+                  ) : null}
+                  {/* Admin-only provenance badge. Hidden in print (PDF
+                      export uses window.print) and never shipped to
+                      non-admin users by the server. */}
+                  {user.tier === 'admin' && msg.answeredModel ? (
+                    <span className="ml-2 text-[10px] text-gray-500 font-normal print:hidden">
+                      {prettyModel(msg.answeredModel)}
+                      {msg.answeredStage
+                        ? ` / ${prettyStage(msg.answeredStage)}`
+                        : ''}
                     </span>
                   ) : null}
                 </div>

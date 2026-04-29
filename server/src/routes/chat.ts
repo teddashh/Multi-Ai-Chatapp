@@ -12,6 +12,7 @@ import {
 } from '../lib/orchestrator.js';
 import { runCLI } from '../lib/cli.js';
 import { generateSessionTitle } from '../lib/autoTitle.js';
+import { logAudit } from '../lib/audit.js';
 import { FREE_DAILY_QUOTA_PER_MODE, resolveModel } from '../shared/models.js';
 import {
   attachmentStmts,
@@ -157,6 +158,12 @@ chatRoute.post('/send', requireAuth, async (c) => {
     const rolesJson = roles && mode !== 'free' ? JSON.stringify(roles) : null;
     sessionStmts.insert.run(sessionId, user.id, deriveTitle(text), mode, rolesJson);
     isNew = true;
+    logAudit({
+      actorUserId: user.id,
+      targetSessionId: sessionId,
+      action: 'user_session_start',
+      metadata: { mode },
+    });
   } else {
     sessionStmts.touch.run(sessionId);
   }
@@ -240,9 +247,22 @@ chatRoute.post('/send', requireAuth, async (c) => {
             event.text,
             ts,
           );
-          // Pass the persisted DB row id back to the client so it can use a
-          // stable id on retries without needing a session reload.
-          send({ ...event, messageId: Number(ins.lastInsertRowid) });
+          const msgId = Number(ins.lastInsertRowid);
+          // Stamp the answered-stage / answered-model so admins can see
+          // which model actually answered. Skipped silently when the
+          // orchestrator didn't supply them (older fallback paths).
+          if (event.answeredStage || event.answeredModel) {
+            try {
+              messageStmts.setAnswered.run(
+                event.answeredStage ?? null,
+                event.answeredModel ?? null,
+                msgId,
+              );
+            } catch (err) {
+              console.error('failed to stamp answered stage/model', err);
+            }
+          }
+          send({ ...event, messageId: msgId });
           return;
         } catch (err) {
           console.error('failed to persist ai message', err);

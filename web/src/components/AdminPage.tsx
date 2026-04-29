@@ -767,25 +767,64 @@ function SessionViewer({
 // Audit log
 // =====================================================================
 
+type AuditCategory = 'admin' | 'model' | 'user';
+function categoryOf(action: string): AuditCategory {
+  if (action === 'model_fallback') return 'model';
+  if (action.startsWith('user_')) return 'user';
+  return 'admin';
+}
+
 function AuditList({ onError }: { onError: (msg: string) => void }) {
   const [rows, setRows] = useState<AuditEntry[] | null>(null);
+  const [tab, setTab] = useState<AuditCategory>('admin');
   useEffect(() => {
     onError('');
-    adminListAudit(300)
+    adminListAudit(500)
       .then(setRows)
       .catch((err: Error) => onError(err.message));
   }, [onError]);
 
   if (!rows) return <div className="text-xs text-gray-500">載入中...</div>;
-  if (rows.length === 0) {
-    return <div className="text-xs text-gray-500">沒有 audit 紀錄</div>;
-  }
+
+  const buckets: Record<AuditCategory, AuditEntry[]> = {
+    admin: [],
+    model: [],
+    user: [],
+  };
+  for (const r of rows) buckets[categoryOf(r.action)].push(r);
+
+  const visible = buckets[tab];
 
   return (
-    <div className="space-y-2">
-      {rows.map((r) => (
-        <AuditCard key={r.id} row={r} />
-      ))}
+    <div className="space-y-3">
+      <div className="flex gap-2 flex-wrap">
+        {([
+          ['admin', `管理動作 / Admin (${buckets.admin.length})`],
+          ['model', `模型路徑 / Model Trail (${buckets.model.length})`],
+          ['user', `使用者活動 / User (${buckets.user.length})`],
+        ] as Array<[AuditCategory, string]>).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`px-2.5 py-1 rounded text-xs ${
+              tab === k
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {visible.length === 0 ? (
+        <div className="text-xs text-gray-500">沒有 audit 紀錄</div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map((r) => (
+            <AuditCard key={r.id} row={r} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

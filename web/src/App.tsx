@@ -380,6 +380,8 @@ export default function App() {
                     ...m,
                     id: stableId ?? m.id.replace('-streaming', ''),
                     content: ev.text,
+                    answeredStage: ev.answeredStage ?? m.answeredStage,
+                    answeredModel: ev.answeredModel ?? m.answeredModel,
                   }
                 : m,
             );
@@ -395,6 +397,8 @@ export default function App() {
               modeRole,
               content: ev.text,
               timestamp: Date.now(),
+              answeredStage: ev.answeredStage,
+              answeredModel: ev.answeredModel,
             },
           ];
         });
@@ -448,9 +452,15 @@ export default function App() {
         break;
       case 'session_title':
         // NVIDIA-generated title for a brand-new session. The sidebar
-        // entry was created with a heuristic placeholder; this swaps in
-        // the real summary. refreshSessions() picks it up from /api/sessions.
-        refreshSessions();
+        // entry was created with a heuristic placeholder; swap in the
+        // real summary directly so the sidebar updates instantly without
+        // waiting on a /api/sessions round-trip (refreshSessions() races
+        // with the just-finished DB write and sometimes loses).
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === ev.sessionId ? { ...s, title: ev.title } : s,
+          ),
+        );
         break;
       case 'finish':
         setIsProcessing(false);

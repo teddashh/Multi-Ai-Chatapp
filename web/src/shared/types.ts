@@ -44,13 +44,26 @@ export interface ChatMessage {
   content: string;
   timestamp: number;
   attachments?: MessageAttachment[];
+  // Admin-only provenance: which orchestrator stage answered ('cli' /
+  // 'claude_api' / 'openrouter' / 'nvidia' / etc) and the actual model
+  // SKU that ran. Server returns these only to admin users; regular
+  // users always see undefined.
+  answeredStage?: string;
+  answeredModel?: string;
 }
 
 export type SSEEvent =
   | { type: 'workflow'; status: string }
   | { type: 'role'; provider: AIProvider; role: string; label: string }
   | { type: 'chunk'; provider: AIProvider; text: string }
-  | { type: 'done'; provider: AIProvider; text: string; messageId?: number }
+  | {
+      type: 'done';
+      provider: AIProvider;
+      text: string;
+      messageId?: number;
+      answeredStage?: string;
+      answeredModel?: string;
+    }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }
   | { type: 'fallback_notice'; provider: AIProvider; message: string }

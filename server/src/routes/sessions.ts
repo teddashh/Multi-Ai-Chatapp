@@ -31,6 +31,7 @@ sessionsRoute.get('/:id', (c) => {
   const session = sessionStmts.findOwned.get(id, user.id) as SessionRow | undefined;
   if (!session) return c.json({ error: 'not found' }, 404);
   const messages = messageStmts.listForSession.all(id) as MessageRow[];
+  const isAdmin = user.tier === 'admin';
   return c.json({
     session,
     messages: messages.map((m) => {
@@ -48,6 +49,10 @@ sessionsRoute.get('/:id', (c) => {
         modeRole: m.mode_role ?? undefined,
         content: m.content,
         timestamp: m.timestamp * 1000,
+        // Provenance is admin-only — regular users never learn that
+        // their reply came from a fallback / cheaper SKU.
+        answeredStage: isAdmin ? m.answered_stage ?? undefined : undefined,
+        answeredModel: isAdmin ? m.answered_model ?? undefined : undefined,
         attachments: attachments.map((a) => ({
           id: a.id,
           filename: a.filename,
