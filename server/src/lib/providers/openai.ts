@@ -28,17 +28,14 @@ interface OpenAIResult extends CLIRunResult {
   modelUsed: string;
 }
 
-// gpt-5.x SKUs are ChatGPT-account / Codex-CLI-only and have no equivalent
-// on api.openai.com. We must substitute. Map UPWARD toward flagship rather
-// than downward toward mini — when a user picks gpt-5.5 (top tier) and we
-// can't deliver gpt-5.5, giving them gpt-4o (the flagship on direct API)
-// matches their intent better than silently dropping to gpt-4o-mini. Only
-// the explicit "-mini" tier maps to mini.
-const OPENAI_API_MODEL_MAP: Record<string, string> = {
-  'gpt-5.5': 'gpt-4o',
-  'gpt-5.4': 'gpt-4o',
-  'gpt-5.4-mini': 'gpt-4o-mini',
-};
+// Earlier we mapped gpt-5.5 / gpt-5.4 / gpt-5.4-mini → gpt-4o family
+// because the Codex CLI hits a "model not supported when using Codex
+// with a ChatGPT account" error on those SKUs. That restriction is
+// CLI-side only — the *direct* OpenAI API at api.openai.com serves
+// gpt-5.x just fine with a regular API key. So no mapping needed any
+// more; we pass the user's choice through verbatim and let the API
+// 4xx-on-unknown trigger normal fallback if a SKU truly doesn't exist.
+const OPENAI_API_MODEL_MAP: Record<string, string> = {};
 
 function resolveOpenAIModel(model: string): string {
   return OPENAI_API_MODEL_MAP[model] ?? model;
