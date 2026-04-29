@@ -50,6 +50,9 @@ export interface ChatMessage {
   // users always see undefined.
   answeredStage?: string;
   answeredModel?: string;
+  // What the user originally picked from the dropdown — admin badge
+  // shows an arrow ("X → Y") when it differs from answeredModel.
+  requestedModel?: string;
 }
 
 export type SSEEvent =
@@ -63,6 +66,7 @@ export type SSEEvent =
       messageId?: number;
       answeredStage?: string;
       answeredModel?: string;
+      requestedModel?: string;
     }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }

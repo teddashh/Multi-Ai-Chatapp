@@ -423,10 +423,22 @@ export default function ChatArea({
                   ) : null}
                   {/* Admin-only provenance badge. Hidden in print (PDF
                       export uses window.print) and never shipped to
-                      non-admin users by the server. */}
+                      non-admin users by the server. When the requested
+                      model differs from what answered (mapping or
+                      fallback), show "X → Y" so it's obvious that
+                      a substitution happened. */}
                   {user.tier === 'admin' && msg.answeredModel ? (
                     <span className="ml-2 text-[10px] text-gray-500 font-normal print:hidden">
-                      {prettyModel(msg.answeredModel)}
+                      {msg.requestedModel &&
+                      msg.requestedModel !== msg.answeredModel ? (
+                        <>
+                          {prettyModel(msg.requestedModel)}{' '}
+                          <span className="text-gray-600">→</span>{' '}
+                          {prettyModel(msg.answeredModel)}
+                        </>
+                      ) : (
+                        prettyModel(msg.answeredModel)
+                      )}
                       {msg.answeredStage
                         ? ` / ${prettyStage(msg.answeredStage)}`
                         : ''}

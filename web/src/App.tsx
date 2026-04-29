@@ -382,6 +382,7 @@ export default function App() {
                     content: ev.text,
                     answeredStage: ev.answeredStage ?? m.answeredStage,
                     answeredModel: ev.answeredModel ?? m.answeredModel,
+                    requestedModel: ev.requestedModel ?? m.requestedModel,
                   }
                 : m,
             );
@@ -399,6 +400,7 @@ export default function App() {
               timestamp: Date.now(),
               answeredStage: ev.answeredStage,
               answeredModel: ev.answeredModel,
+              requestedModel: ev.requestedModel,
             },
           ];
         });

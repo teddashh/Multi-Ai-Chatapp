@@ -109,6 +109,12 @@ addColumnIfMissing('usage_log', 'requested_model', 'TEXT');
 // fallback story stays invisible.
 addColumnIfMissing('chat_messages', 'answered_stage', 'TEXT');
 addColumnIfMissing('chat_messages', 'answered_model', 'TEXT');
+// What the user actually picked from the dropdown — may differ from
+// answered_model when we map (gpt-5.5 → gpt-4o on direct API) or fall
+// back (claude-opus-4-7 → anthropic/claude-3-haiku on OpenRouter). Admin
+// badge renders "requested → answered / stage" with an arrow when they
+// differ; identical values render as a single name.
+addColumnIfMissing('chat_messages', 'requested_model', 'TEXT');
 
 // Backfill: for old rows without requested_model, strip the known
 // prefixes ("claude_api:", "chatgpt_api:", "gemini_api:", "openrouter:")
@@ -468,6 +474,7 @@ export interface MessageRow {
   timestamp: number;
   answered_stage: string | null;
   answered_model: string | null;
+  requested_model: string | null;
 }
 
 export const sessionStmts = {
@@ -682,11 +689,11 @@ export const messageStmts = {
     `INSERT INTO chat_messages (session_id, role, provider, mode_role, content, timestamp)
      VALUES (?, ?, ?, ?, ?, ?)`,
   ),
-  // Stamp the answered-stage / answered-model on an AI row after it's been
-  // inserted (orchestrator only knows these once runOne returns; we don't
-  // want to delay the message insert until then). Used by admin view only.
-  setAnswered: db.prepare<[string | null, string | null, number]>(
-    `UPDATE chat_messages SET answered_stage = ?, answered_model = ? WHERE id = ?`,
+  // Stamp the answered-stage / answered-model / requested-model on an AI
+  // row after it's been inserted (orchestrator only knows these once
+  // runOne returns). Used by admin view only.
+  setAnswered: db.prepare<[string | null, string | null, string | null, number]>(
+    `UPDATE chat_messages SET answered_stage = ?, answered_model = ?, requested_model = ? WHERE id = ?`,
   ),
   listForSession: db.prepare<[string]>(
     `SELECT * FROM chat_messages WHERE session_id = ? ORDER BY id`,

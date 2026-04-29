@@ -38,11 +38,21 @@ const FUNCTION_DECLARATION = {
 interface GeminiFunctionCall {
   name: string;
   args: Record<string, unknown>;
+  // Gemini 3.x thinking models attach a `thoughtSignature` to each
+  // functionCall part. The next turn's `model` content MUST echo this
+  // signature back on the same part or the API rejects the request
+  // with "Function call is missing a thought_signature in functionCall
+  // parts" (HTTP 400). https://ai.google.dev/gemini-api/docs/thought-signatures
+  thoughtSignature?: string;
 }
 
 interface GeminiRoundResult {
   text: string;
   functionCalls: GeminiFunctionCall[];
+  // Last text-part's thought_signature, when present. Older models
+  // don't emit this; newer thinking models require it on the
+  // continuation turn even for text-only assistant turns.
+  textThoughtSignature?: string;
   promptTokens: number | null;
   completionTokens: number | null;
 }
@@ -76,6 +86,7 @@ async function streamGeminiRound(
   let promptTokens: number | null = null;
   let completionTokens: number | null = null;
   const functionCalls: GeminiFunctionCall[] = [];
+  let textThoughtSignature: string | undefined;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -95,6 +106,7 @@ async function streamGeminiRound(
             content?: {
               parts?: Array<{
                 text?: string;
+                thoughtSignature?: string;
                 functionCall?: { name?: string; args?: Record<string, unknown> };
               }>;
             };
@@ -111,11 +123,18 @@ async function streamGeminiRound(
           if (typeof part.text === 'string') {
             runningText += part.text;
             textArrived = true;
+            // Latest text part's signature wins — Gemini emits one per
+            // streaming chunk and we only need to echo back the most
+            // recent on the continuation turn.
+            if (typeof part.thoughtSignature === 'string') {
+              textThoughtSignature = part.thoughtSignature;
+            }
           }
           if (part.functionCall && part.functionCall.name) {
             functionCalls.push({
               name: part.functionCall.name,
               args: part.functionCall.args ?? {},
+              thoughtSignature: part.thoughtSignature,
             });
           }
         }
@@ -132,7 +151,7 @@ async function streamGeminiRound(
     }
   }
 
-  return { text: runningText, functionCalls, promptTokens, completionTokens };
+  return { text: runningText, functionCalls, textThoughtSignature, promptTokens, completionTokens };
 }
 
 export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
@@ -191,13 +210,23 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
       break;
     }
 
-    // Append the model's turn (text + functionCall parts in order). The
-    // text we already streamed is forwarded; here we just persist the
-    // turn in the rolling messages array.
+    // Append the model's turn (text + functionCall parts in order).
+    // Echo any thoughtSignature back on the original part — Gemini 3.x
+    // thinking models reject the next call with HTTP 400 if missing.
     const modelParts: unknown[] = [];
-    if (round.text) modelParts.push({ text: round.text });
+    if (round.text) {
+      const textPart: Record<string, unknown> = { text: round.text };
+      if (round.textThoughtSignature) {
+        textPart.thoughtSignature = round.textThoughtSignature;
+      }
+      modelParts.push(textPart);
+    }
     for (const fc of round.functionCalls) {
-      modelParts.push({ functionCall: { name: fc.name, args: fc.args } });
+      const fcPart: Record<string, unknown> = {
+        functionCall: { name: fc.name, args: fc.args },
+      };
+      if (fc.thoughtSignature) fcPart.thoughtSignature = fc.thoughtSignature;
+      modelParts.push(fcPart);
     }
     contents.push({ role: 'model', parts: modelParts });
 

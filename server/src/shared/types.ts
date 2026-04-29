@@ -56,6 +56,12 @@ export type SSEEvent =
       // bubble. Regular users never see these values.
       answeredStage?: string;
       answeredModel?: string;
+      // The model the user actually picked (resolved from their tier
+      // dropdown). When it differs from answeredModel — either because
+      // we mapped it (gpt-5.5 → gpt-4o on direct API) or because we
+      // fell back (claude-opus-4-7 → anthropic/claude-3-haiku on OR) —
+      // the admin badge renders an arrow so it's obvious.
+      requestedModel?: string;
     }
   | { type: 'error'; provider?: AIProvider; message: string }
   | { type: 'session'; sessionId: string; isNew: boolean }

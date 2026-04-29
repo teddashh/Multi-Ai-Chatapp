@@ -251,11 +251,12 @@ chatRoute.post('/send', requireAuth, async (c) => {
           // Stamp the answered-stage / answered-model so admins can see
           // which model actually answered. Skipped silently when the
           // orchestrator didn't supply them (older fallback paths).
-          if (event.answeredStage || event.answeredModel) {
+          if (event.answeredStage || event.answeredModel || event.requestedModel) {
             try {
               messageStmts.setAnswered.run(
                 event.answeredStage ?? null,
                 event.answeredModel ?? null,
+                event.requestedModel ?? null,
                 msgId,
               );
             } catch (err) {

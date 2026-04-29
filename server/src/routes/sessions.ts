@@ -53,6 +53,7 @@ sessionsRoute.get('/:id', (c) => {
         // their reply came from a fallback / cheaper SKU.
         answeredStage: isAdmin ? m.answered_stage ?? undefined : undefined,
         answeredModel: isAdmin ? m.answered_model ?? undefined : undefined,
+        requestedModel: isAdmin ? m.requested_model ?? undefined : undefined,
         attachments: attachments.map((a) => ({
           id: a.id,
           filename: a.filename,

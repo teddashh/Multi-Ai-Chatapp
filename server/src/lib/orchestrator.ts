@@ -513,6 +513,10 @@ export async function runOne(
         text: result.text,
         answeredStage: stage.name,
         answeredModel: result.modelUsed,
+        // What the user picked. Differs from answeredModel when we
+        // mapped (gpt-5.5 → gpt-4o on direct API) or fell back to a
+        // different SKU (OR / NVIDIA picks a same-family stand-in).
+        requestedModel: model,
       });
       return result.text;
     } catch (err) {

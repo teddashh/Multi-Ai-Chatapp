@@ -28,10 +28,16 @@ interface OpenAIResult extends CLIRunResult {
   modelUsed: string;
 }
 
+// gpt-5.x SKUs are ChatGPT-account / Codex-CLI-only and have no equivalent
+// on api.openai.com. We must substitute. Map UPWARD toward flagship rather
+// than downward toward mini — when a user picks gpt-5.5 (top tier) and we
+// can't deliver gpt-5.5, giving them gpt-4o (the flagship on direct API)
+// matches their intent better than silently dropping to gpt-4o-mini. Only
+// the explicit "-mini" tier maps to mini.
 const OPENAI_API_MODEL_MAP: Record<string, string> = {
-  'gpt-5.4-mini': 'gpt-4o-mini',
-  'gpt-5.4': 'gpt-4o-mini',
   'gpt-5.5': 'gpt-4o',
+  'gpt-5.4': 'gpt-4o',
+  'gpt-5.4-mini': 'gpt-4o-mini',
 };
 
 function resolveOpenAIModel(model: string): string {
