@@ -636,6 +636,7 @@ export const usageStmts = {
   byBillingChannel: db.prepare(
     `SELECT
        CASE
+         WHEN model LIKE 'nvidia:%' THEN 'nvidia'
          WHEN model LIKE 'openrouter:%' THEN 'openrouter'
          WHEN model LIKE 'claude_api:%' THEN 'anthropic_api'
          WHEN model LIKE 'chatgpt_api:%' THEN 'openai_api'

@@ -446,6 +446,12 @@ export default function App() {
           },
         ]);
         break;
+      case 'session_title':
+        // NVIDIA-generated title for a brand-new session. The sidebar
+        // entry was created with a heuristic placeholder; this swaps in
+        // the real summary. refreshSessions() picks it up from /api/sessions.
+        refreshSessions();
+        break;
       case 'finish':
         setIsProcessing(false);
         setWorkflowStatus('');

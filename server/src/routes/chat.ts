@@ -11,6 +11,7 @@ import {
   type StepResult,
 } from '../lib/orchestrator.js';
 import { runCLI } from '../lib/cli.js';
+import { generateSessionTitle } from '../lib/autoTitle.js';
 import { FREE_DAILY_QUOTA_PER_MODE, resolveModel } from '../shared/models.js';
 import {
   attachmentStmts,
@@ -278,6 +279,24 @@ chatRoute.post('/send', requireAuth, async (c) => {
         signal: controller.signal,
       });
       sessionStmts.touch.run(sessionId);
+
+      // First successful turn of a fresh session — generate a real title
+      // via NVIDIA so the sidebar entry stops reading like the user's raw
+      // first sentence. Awaited so the new title lands before 'finish'
+      // fires (~1-2s extra latency on the first turn only). Failures are
+      // swallowed — the heuristic placeholder from deriveTitle stays.
+      if (isNew) {
+        try {
+          const title = await generateSessionTitle(text, user.lang);
+          if (title) {
+            sessionStmts.rename.run(title, sessionId, user.id);
+            send({ type: 'session_title', sessionId, title });
+          }
+        } catch (err) {
+          console.error('[auto-title] failed for', sessionId, (err as Error).message);
+        }
+      }
+
       send({ type: 'finish' });
     } catch (err) {
       send({

@@ -506,7 +506,7 @@ adminRoute.get('/api-key-spending', (c) => {
 
   // Stable order: paid API keys first, OR last, CLI subscription last (no
   // metered cost so it goes at the bottom).
-  const order = ['anthropic_api', 'openai_api', 'gemini_api', 'xai_api', 'openrouter', 'cli_subscription'];
+  const order = ['anthropic_api', 'openai_api', 'gemini_api', 'xai_api', 'openrouter', 'nvidia', 'cli_subscription'];
   const sorted = Array.from(channels.values()).sort((a, b) => {
     const ai = order.indexOf(a.channel);
     const bi = order.indexOf(b.channel);
@@ -565,6 +565,14 @@ function decomposeModel(family: AIProvider, rawModel: string): {
       family: familyLabel,
       method: 'API',
       model: rawModel.slice('openrouter:'.length),
+    };
+  }
+  if (rawModel.startsWith('nvidia:')) {
+    return {
+      provider: 'NVIDIA',
+      family: familyLabel,
+      method: 'API',
+      model: rawModel.slice('nvidia:'.length),
     };
   }
   // claude_api: / chatgpt_api: / gemini_api: — direct vendor API call

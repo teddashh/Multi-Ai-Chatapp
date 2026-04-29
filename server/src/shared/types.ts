@@ -53,4 +53,8 @@ export type SSEEvent =
   // arrives. We deliberately do NOT tell the user that a different model is
   // taking over; the message stays in-character.
   | { type: 'fallback_notice'; provider: AIProvider; message: string }
+  // Auto-generated session title is ready (NVIDIA NIM, fired once on the
+  // first turn of a new session). Client should update the sidebar entry
+  // for `sessionId` to show `title` instead of the heuristic placeholder.
+  | { type: 'session_title'; sessionId: string; title: string }
   | { type: 'finish' };

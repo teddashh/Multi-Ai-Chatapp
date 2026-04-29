@@ -23,6 +23,7 @@
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.9.16",
     "officeparser": "^6.1.0",
+    "opencc-js": "^1.0.5",
     "oracledb": "^6.7.0",
     "pdf-parse": "^1.1.1",
     "xlsx": "^0.18.5"

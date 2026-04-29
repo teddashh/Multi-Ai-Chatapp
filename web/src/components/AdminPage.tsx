@@ -1048,6 +1048,7 @@ const CHANNEL_LABEL: Record<string, string> = {
   gemini_api: 'Google Gemini API',
   xai_api: 'xAI API',
   openrouter: 'OpenRouter (混合)',
+  nvidia: 'NVIDIA NIM (免費 credits)',
   cli_subscription: 'CLI 訂閱方案 (無 metered 費用)',
 };
 

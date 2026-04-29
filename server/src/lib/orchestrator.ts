@@ -3,6 +3,7 @@ import { runOpenRouter } from './providers/openrouter.js';
 import { runAnthropic } from './providers/anthropic.js';
 import { runOpenAI } from './providers/openai.js';
 import { runGemini } from './providers/gemini.js';
+import { runNvidia } from './providers/nvidia.js';
 import { auditStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
@@ -380,6 +381,14 @@ function buildStages(
   const orStage: ChainStage | null = process.env.OPENROUTER_API_KEY
     ? { name: 'openrouter', run: () => runOpenRouter(baseOpts) }
     : null;
+  // NVIDIA NIM hosted catalogue — last-resort safety net after OR. We
+  // squeeze value out of the free credits without ever using it for
+  // happy-path traffic; the same-family stand-ins are intentionally
+  // approximate (no Anthropic / xAI on NVIDIA), but better than the
+  // "免費額度用完" exhaustion message.
+  const nvidiaStage: ChainStage | null = process.env.NVIDIA_API_KEY
+    ? { name: 'nvidia', run: () => runNvidia(baseOpts) }
+    : null;
 
   const stages: ChainStage[] = [];
   if (PROVIDER_MODE === 'api') {
@@ -392,6 +401,7 @@ function buildStages(
     if (apiStage) stages.push(apiStage);
   }
   if (orStage) stages.push(orStage);
+  if (nvidiaStage) stages.push(nvidiaStage);
   return stages;
 }
 
