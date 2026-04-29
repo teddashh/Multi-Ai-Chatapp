@@ -221,6 +221,8 @@ export async function sendFallbackDigest(p: FallbackDigestParams): Promise<void>
   const journeyLine = (j: FallbackDigestRow['journey']) =>
     j.map((s) => `${s.stage}=${s.outcome}${s.error ? `(${s.error})` : ''}`).join(' → ');
 
+  const auditUrl = `${APP_URL}/admin`;
+
   const textLines: string[] = [
     `${p.rows.length} model_fallback event(s) in the last ${p.windowMinutes} minutes on ${tag}.`,
     '',
@@ -232,6 +234,7 @@ export async function sendFallbackDigest(p: FallbackDigestParams): Promise<void>
     if (r.sessionId) textLines.push(`  session: ${r.sessionId}`);
     textLines.push('');
   }
+  textLines.push(`Full audit log: ${auditUrl}`);
 
   const rowsHtml = p.rows
     .map(
@@ -249,6 +252,9 @@ export async function sendFallbackDigest(p: FallbackDigestParams): Promise<void>
 <html><body style="font-family:-apple-system,system-ui,sans-serif; max-width:780px; margin:0 auto; padding:20px; color:#1f2937;">
   <h3 style="margin:0 0 8px 0;">[${tag}] Fallback digest — ${p.rows.length} event${p.rows.length === 1 ? '' : 's'} in last ${p.windowMinutes}m</h3>
   <p style="font-size:12px; color:#6b7280; margin:0 0 16px 0;">${BRAND}</p>
+  <p style="margin:0 0 16px 0;">
+    <a href="${auditUrl}" style="display:inline-block; padding:8px 14px; background:#2563eb; color:#fff; text-decoration:none; border-radius:6px; font-size:13px; font-weight:500;">開啟稽核紀錄</a>
+  </p>
   <table style="width:100%; border-collapse:collapse; font-size:12px;">
     <thead><tr style="background:#f3f4f6;">
       <th style="padding:8px 10px; text-align:left;">Time</th>
@@ -259,7 +265,9 @@ export async function sendFallbackDigest(p: FallbackDigestParams): Promise<void>
     </tr></thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <p style="font-size:11px; color:#9ca3af; margin-top:18px;">Sent from <code>${APP_URL}</code> — see /admin → 稽核紀錄 for the full audit trail.</p>
+  <p style="font-size:11px; color:#9ca3af; margin-top:18px;">
+    Sent from <a href="${APP_URL}" style="color:#9ca3af;">${APP_URL}</a> · <a href="${auditUrl}" style="color:#2563eb;">/admin → 稽核紀錄</a>
+  </p>
 </body></html>`;
 
   await transport.sendMail({

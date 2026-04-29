@@ -782,31 +782,62 @@ function AuditList({ onError }: { onError: (msg: string) => void }) {
   }
 
   return (
-    <div className="bg-gray-900 border border-gray-700 rounded">
-      <table className="w-full text-xs">
-        <thead className="bg-gray-800 text-gray-400">
-          <tr>
-            <th className="px-3 py-2 text-left">時間</th>
-            <th className="px-3 py-2 text-left">Admin</th>
-            <th className="px-3 py-2 text-left">動作</th>
-            <th className="px-3 py-2 text-left">Target</th>
-            <th className="px-3 py-2 text-left">細節</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} className="border-t border-gray-800">
-              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{shortTime(r.timestamp)}</td>
-              <td className="px-3 py-2">{r.admin ?? '—'}</td>
-              <td className="px-3 py-2 font-mono text-[11px]">{r.action}</td>
-              <td className="px-3 py-2 text-gray-300">{r.target_user ?? '—'}</td>
-              <td className="px-3 py-2 text-gray-500 text-[11px] font-mono break-all">
-                {r.metadata ? JSON.stringify(r.metadata) : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-2">
+      {rows.map((r) => (
+        <AuditCard key={r.id} row={r} />
+      ))}
+    </div>
+  );
+}
+
+// One audit row as a card. The previous table layout broke on mobile —
+// the metadata column was wider than the viewport because some entries
+// (model_fallback journey) carry chunky JSON. Cards stack vertically and
+// give each field its own line, so phones don't get a horizontal scroll.
+function AuditCard({ row }: { row: AuditEntry }) {
+  const meta = row.metadata as Record<string, unknown> | null;
+  const isFallback = row.action === 'model_fallback';
+
+  // Compact summary for fallback events — show the journey as
+  // arrows so admin doesn't have to read JSON.
+  const fallbackSummary = isFallback && meta && Array.isArray(meta.journey)
+    ? (meta.journey as Array<{ stage: string; outcome: string; error?: string }>)
+        .map((s) => `${s.stage}=${s.outcome}${s.error ? `(${s.error})` : ''}`)
+        .join(' → ')
+    : null;
+
+  return (
+    <div className="bg-gray-900 border border-gray-700 rounded p-3 text-xs">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-1">
+        <span className="text-gray-500 whitespace-nowrap">{shortTime(row.timestamp)}</span>
+        <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+          {row.action}
+        </span>
+        <span className="text-gray-400">
+          <span className="text-gray-600">by</span> {row.admin ?? '—'}
+          {row.target_user && row.target_user !== row.admin && (
+            <>
+              {' '}
+              <span className="text-gray-600">→</span> {row.target_user}
+            </>
+          )}
+        </span>
+      </div>
+      {fallbackSummary && (
+        <div className="text-[11px] font-mono text-gray-300 mb-1 break-all">
+          {(meta?.provider as string) ?? '?'}: {fallbackSummary}
+        </div>
+      )}
+      {meta && (
+        <details className="text-[11px] text-gray-500">
+          <summary className="cursor-pointer text-gray-600 hover:text-gray-400 select-none">
+            {isFallback ? 'JSON 細節' : '細節'}
+          </summary>
+          <pre className="mt-1 font-mono text-[10.5px] whitespace-pre-wrap break-all bg-gray-950 border border-gray-800 rounded p-2 leading-relaxed">
+            {JSON.stringify(meta, null, 2)}
+          </pre>
+        </details>
+      )}
     </div>
   );
 }
