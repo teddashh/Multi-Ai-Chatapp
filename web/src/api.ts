@@ -529,6 +529,22 @@ export async function adminGetUsage(): Promise<UsageRow[]> {
   return data.users;
 }
 
+export interface ModelStatRow {
+  provider: AIProvider;
+  model: string;
+  attempts: number;
+  successes: number;
+  failures: number;
+  success_rate: number | null;
+  last_seen: number | null;
+  recent_errors: Array<{ code: string; n: number }>;
+}
+
+export async function adminGetModelStats(): Promise<ModelStatRow[]> {
+  const data = (await adminFetch('/model-stats')) as { stats: ModelStatRow[] };
+  return data.stats;
+}
+
 // Streams chat events via SSE. Calls onEvent for each SSEEvent until 'finish'
 // or an abort. Returns when the stream ends.
 export async function streamChat(

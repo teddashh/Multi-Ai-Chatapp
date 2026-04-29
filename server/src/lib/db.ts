@@ -90,6 +90,11 @@ addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'verify_token', 'TEXT');
 addColumnIfMissing('users', 'verify_expires_at', 'INTEGER');
 addColumnIfMissing('chat_sessions', 'deleted_at', 'INTEGER');
+// Phase 1 of fallback chain: track per-call success and the error_code that
+// caused a failure (e.g. "429", "timeout", "5xx"). Existing rows are all
+// successes so default success=1.
+addColumnIfMissing('usage_log', 'success', 'INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('usage_log', 'error_code', 'TEXT');
 
 // Audit trail — admin actions on users / sessions are recorded here. The
 // admin sees them; users do not. We never delete rows.
@@ -464,10 +469,35 @@ export const usageStmts = {
     number | null,
     number | null,
     number,
+    number,
+    string | null,
   ]>(
     `INSERT INTO usage_log
-       (user_id, provider, model, mode, prompt_chars, completion_chars, tokens_in, tokens_out, is_estimated)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (user_id, provider, model, mode, prompt_chars, completion_chars, tokens_in, tokens_out, is_estimated, success, error_code)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  // Per-(provider, model) success/failure rollup for the admin dashboard.
+  // Rows where success=0 carry the error_code that caused the failure.
+  byModel: db.prepare(
+    `SELECT provider, model,
+            COUNT(*) AS attempts,
+            SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) AS successes,
+            SUM(CASE WHEN success=0 THEN 1 ELSE 0 END) AS failures,
+            MAX(timestamp) AS last_seen
+     FROM usage_log
+     GROUP BY provider, model
+     ORDER BY provider, model`,
+  ),
+  // Recent error codes per (provider, model) so admin can see what's
+  // actually failing — top 5 codes by frequency in the last 7 days.
+  recentFailureCodes: db.prepare<[number]>(
+    `SELECT provider, model, error_code, COUNT(*) AS n
+     FROM usage_log
+     WHERE success = 0
+       AND error_code IS NOT NULL
+       AND timestamp >= ?
+     GROUP BY provider, model, error_code
+     ORDER BY provider, model, n DESC`,
   ),
   // Per-user totals across all providers/models.
   totalsByUser: db.prepare(

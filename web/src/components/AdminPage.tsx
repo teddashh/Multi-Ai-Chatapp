@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  adminGetModelStats,
   adminGetSession,
   adminGetUsage,
   adminListAudit,
@@ -13,6 +14,7 @@ import {
   type AdminSessionSummary,
   type AdminUser,
   type AuditEntry,
+  type ModelStatRow,
   type UsageRow,
   type User,
 } from '../api';
@@ -25,7 +27,7 @@ interface Props {
   onExit: () => void;
 }
 
-type View = 'users' | 'audit' | 'stats' | 'user-detail' | 'session-viewer';
+type View = 'users' | 'audit' | 'stats' | 'models' | 'user-detail' | 'session-viewer';
 
 const TIERS: Tier[] = ['free', 'standard', 'pro', 'super', 'admin'];
 
@@ -104,6 +106,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
         {([
           ['users', '使用者 / Users'],
           ['stats', '用量 / Usage'],
+          ['models', 'Model 健康度'],
           ['audit', '稽核紀錄 / Audit'],
         ] as Array<[View, string]>).map(([k, label]) => (
           <button
@@ -158,6 +161,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
         )}
         {view === 'audit' && <AuditList onError={setError} />}
         {view === 'stats' && <StatsView onError={setError} />}
+        {view === 'models' && <ModelStatsView onError={setError} />}
       </div>
     </div>
   );
@@ -895,6 +899,91 @@ function StatsView({ onError }: { onError: (msg: string) => void }) {
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// =====================================================================
+// Model health — per-(provider, model) success rate + recent error codes
+// =====================================================================
+
+function ModelStatsView({ onError }: { onError: (msg: string) => void }) {
+  const [rows, setRows] = useState<ModelStatRow[] | null>(null);
+  useEffect(() => {
+    onError('');
+    adminGetModelStats()
+      .then(setRows)
+      .catch((err: Error) => onError(err.message));
+  }, [onError]);
+
+  if (!rows) return <div className="text-xs text-gray-500">載入中...</div>;
+
+  const fmtRate = (r: number | null) => (r === null ? '—' : `${(r * 100).toFixed(1)}%`);
+  const rateColor = (r: number | null, attempts: number) => {
+    if (r === null || attempts === 0) return 'text-gray-500';
+    if (r >= 0.98) return 'text-green-400';
+    if (r >= 0.9) return 'text-yellow-400';
+    return 'text-red-400';
+  };
+
+  return (
+    <div className="space-y-2">
+      <p className="text-[11px] text-gray-500 leading-relaxed">
+        每個 (provider, model) 的 success rate。失敗會在 <code>usage_log</code>{' '}
+        留下一筆 <code>success=0</code>，error_code 是分類過的短碼（429 / timeout /
+        5xx 等）。最近 7 天的失敗碼會顯示在最右欄。
+      </p>
+      <table className="w-full text-xs">
+        <thead className="text-gray-500 sticky top-0 bg-gray-950">
+          <tr className="border-b border-gray-800">
+            <th className="text-left py-1.5 pr-2">Provider</th>
+            <th className="text-left py-1.5 pr-2">Model</th>
+            <th className="text-right py-1.5 pr-2">Attempts</th>
+            <th className="text-right py-1.5 pr-2">Success</th>
+            <th className="text-right py-1.5 pr-2">Fail</th>
+            <th className="text-right py-1.5 pr-2">Rate</th>
+            <th className="text-left py-1.5 pr-2">Last seen</th>
+            <th className="text-left py-1.5">Recent errors (7d)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.provider}-${r.model}`} className="border-b border-gray-800/50">
+              <td className="py-1 pr-2 text-gray-400">{r.provider}</td>
+              <td className="py-1 pr-2 font-mono">{r.model}</td>
+              <td className="py-1 pr-2 text-right font-mono">{r.attempts}</td>
+              <td className="py-1 pr-2 text-right font-mono text-green-400">
+                {r.successes}
+              </td>
+              <td className="py-1 pr-2 text-right font-mono text-red-400">
+                {r.failures}
+              </td>
+              <td
+                className={`py-1 pr-2 text-right font-mono font-bold ${rateColor(
+                  r.success_rate,
+                  r.attempts,
+                )}`}
+              >
+                {fmtRate(r.success_rate)}
+              </td>
+              <td className="py-1 pr-2 text-gray-500 whitespace-nowrap">
+                {r.last_seen ? shortTime(r.last_seen) : '—'}
+              </td>
+              <td className="py-1 text-[11px]">
+                {r.recent_errors.length === 0 ? (
+                  <span className="text-gray-600">—</span>
+                ) : (
+                  <span className="text-gray-400">
+                    {r.recent_errors
+                      .map((e) => `${e.code}×${e.n}`)
+                      .join(', ')}
+                  </span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

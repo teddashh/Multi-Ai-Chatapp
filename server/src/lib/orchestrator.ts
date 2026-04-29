@@ -1,4 +1,4 @@
-import { runCLI } from './cli.js';
+import { classifyError, recordCallFailure, runCLI } from './cli.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
 import type { MessageRow } from './db.js';
@@ -330,6 +330,14 @@ export async function runOne(
     // fallback instead of "[Error: 429 ...]". The 'done' text is what
     // gets persisted as the AI bubble's content.
     console.error(`[${provider}] step failed:`, message);
+    recordCallFailure({
+      userId: p.userId,
+      provider,
+      model,
+      mode: p.mode,
+      promptChars: finalPrompt.length,
+      errorCode: classifyError(err),
+    });
     p.emit({ type: 'error', provider, message });
     p.emit({ type: 'done', provider, text: failureText(p.lang) });
     throw err;

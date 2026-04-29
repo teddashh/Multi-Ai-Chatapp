@@ -21,7 +21,8 @@ import {
 } from '../lib/db.js';
 import { sendInviteEmail } from '../lib/mail.js';
 import { estimateCost } from '../shared/prices.js';
-import type { Tier } from '../shared/types.js';
+import { TIER_MODELS } from '../shared/models.js';
+import type { AIProvider, Tier } from '../shared/types.js';
 
 export const adminRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -447,6 +448,89 @@ adminRoute.get('/audit', (c) => {
 });
 
 // === USAGE STATS ===
+
+// Per-(provider, model) success rate. Includes all models known to TIER_MODELS
+// even if they have zero attempts — that way admin can see "claude-opus has
+// never been called" rather than just an empty row. Recent failure codes (last
+// 7 days) are attached so admin can spot patterns like persistent 429s.
+adminRoute.get('/model-stats', (c) => {
+  const rollup = usageStmts.byModel.all() as Array<{
+    provider: string;
+    model: string;
+    attempts: number;
+    successes: number;
+    failures: number;
+    last_seen: number | null;
+  }>;
+  const sevenDaysAgo = Math.floor(Date.now() / 1000) - 7 * 24 * 3600;
+  const recentCodes = usageStmts.recentFailureCodes.all(sevenDaysAgo) as Array<{
+    provider: string;
+    model: string;
+    error_code: string;
+    n: number;
+  }>;
+  const codesByModel = new Map<string, Array<{ code: string; n: number }>>();
+  for (const r of recentCodes) {
+    const key = `${r.provider}:${r.model}`;
+    const list = codesByModel.get(key) ?? [];
+    list.push({ code: r.error_code, n: r.n });
+    codesByModel.set(key, list);
+  }
+
+  // Build a stable union of every (provider, model) we know about — both
+  // the ones that have logs and the ones declared in TIER_MODELS.
+  const seen = new Set(rollup.map((r) => `${r.provider}:${r.model}`));
+  const modelsByKey = new Map<string, { provider: AIProvider; model: string }>();
+  for (const r of rollup) {
+    modelsByKey.set(`${r.provider}:${r.model}`, {
+      provider: r.provider as AIProvider,
+      model: r.model,
+    });
+  }
+  for (const tier of Object.values(TIER_MODELS)) {
+    for (const provider of Object.keys(tier) as AIProvider[]) {
+      for (const model of tier[provider].options) {
+        const key = `${provider}:${model}`;
+        if (!seen.has(key)) {
+          modelsByKey.set(key, { provider, model });
+          seen.add(key);
+        }
+      }
+    }
+  }
+
+  const rollupByKey = new Map<string, (typeof rollup)[number]>(
+    rollup.map((r) => [`${r.provider}:${r.model}`, r]),
+  );
+
+  const stats = Array.from(modelsByKey.values()).map(({ provider, model }) => {
+    const key = `${provider}:${model}`;
+    const r = rollupByKey.get(key);
+    const attempts = r?.attempts ?? 0;
+    const successes = r?.successes ?? 0;
+    const failures = r?.failures ?? 0;
+    const rate = attempts > 0 ? successes / attempts : null;
+    return {
+      provider,
+      model,
+      attempts,
+      successes,
+      failures,
+      success_rate: rate,
+      last_seen: r?.last_seen ?? null,
+      recent_errors: codesByModel.get(key) ?? [],
+    };
+  });
+
+  // Sort: providers grouped, within each provider failures first then by attempts desc
+  stats.sort((a, b) => {
+    if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
+    if (a.failures !== b.failures) return b.failures - a.failures;
+    return b.attempts - a.attempts;
+  });
+
+  return c.json({ stats });
+});
 
 adminRoute.get('/usage', (c) => {
   const totals = usageStmts.totalsByUser.all() as Array<{

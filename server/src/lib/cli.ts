@@ -223,11 +223,60 @@ function recordUsage(
       tokensIn,
       tokensOut,
       isEstimated ? 1 : 0,
+      1,
+      null,
     );
   } catch (err) {
     // Don't let usage logging break a real request.
     console.error('usage_log insert failed', (err as Error).message);
   }
+}
+
+// Log a failed call attempt. We don't know real token counts, so output
+// columns stay 0 and is_estimated=1. error_code is a short tag like
+// "429", "timeout", or "spawn_failed" — enough to drive the admin
+// success-rate dashboard without leaking long error strings.
+export function recordCallFailure(args: {
+  userId?: number;
+  provider: AIProvider;
+  model: string;
+  mode?: ChatMode;
+  promptChars: number;
+  errorCode: string;
+}): void {
+  if (!args.userId) return;
+  try {
+    usageStmts.insert.run(
+      args.userId,
+      args.provider,
+      args.model,
+      args.mode ?? null,
+      args.promptChars,
+      0,
+      null,
+      null,
+      1,
+      0,
+      args.errorCode.slice(0, 60),
+    );
+  } catch (err) {
+    console.error('usage_log failure insert failed', (err as Error).message);
+  }
+}
+
+// Bucket a raw error message into a short code for the dashboard.
+export function classifyError(err: unknown): string {
+  const msg = (err as Error)?.message ?? String(err);
+  const m = msg.toLowerCase();
+  if (m.includes('429') || m.includes('rate limit') || m.includes('quota')) return '429';
+  if (m.includes('timeout') || m.includes('timed out') || m.includes('etimedout')) return 'timeout';
+  if (m.includes('aborted')) return 'aborted';
+  if (m.match(/\b5\d{2}\b/)) return '5xx';
+  if (m.includes('401') || m.includes('unauthorized')) return '401';
+  if (m.includes('403') || m.includes('forbidden')) return '403';
+  if (m.includes('enoent') || m.includes('spawn')) return 'spawn_failed';
+  if (m.includes('network') || m.includes('econnrefused') || m.includes('econnreset')) return 'network';
+  return 'other';
 }
 
 export async function runCLI(opts: CLIRunOptions): Promise<CLIRunResult> {
