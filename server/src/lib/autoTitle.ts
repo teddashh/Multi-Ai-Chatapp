@@ -18,7 +18,10 @@ export async function generateSessionTitle(
   userMessage: string,
   lang: 'zh-TW' | 'en',
 ): Promise<string | null> {
-  if (!process.env.NVIDIA_API_KEY) return null;
+  if (!process.env.NVIDIA_API_KEY) {
+    console.warn('[auto-title] skipped — NVIDIA_API_KEY not set');
+    return null;
+  }
 
   const systemPrompt =
     lang === 'zh-TW'
@@ -39,10 +42,13 @@ export async function generateSessionTitle(
       maxTokens: 60,
     });
     const title = cleanTitle(raw);
-    if (!title) return null;
-    // Sanity cap — anything past ~40 chars is the model rambling, not titling.
-    if (title.length > 40) return title.slice(0, 40);
-    return title;
+    if (!title) {
+      console.warn('[auto-title] empty/cleaned-empty result; raw=', raw.slice(0, 100));
+      return null;
+    }
+    const final = title.length > 40 ? title.slice(0, 40) : title;
+    console.log('[auto-title] generated:', final);
+    return final;
   } catch (err) {
     console.error('[auto-title] generation failed', (err as Error).message);
     return null;

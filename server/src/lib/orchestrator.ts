@@ -483,6 +483,14 @@ export async function runOne(
 
     try {
       const result = await stage.run();
+      // Treat an empty / whitespace-only result as a soft failure and
+      // fall through to the next stage. Otherwise the user sees an
+      // empty bubble with no error, no fallback, no audit (Ted hit
+      // this on dev Grok where xAI returned no content after exhausting
+      // tool iterations and runXAIChat resolved with text='').
+      if (!result.text || result.text.trim() === '') {
+        throw new Error(`${stage.name} returned empty response`);
+      }
       journey.push({ stage: stage.name, outcome: 'success', model: result.modelUsed });
 
       // Only log usage manually for non-cli stages — the CLI path already

@@ -312,11 +312,15 @@ chatRoute.post('/send', requireAuth, async (c) => {
       // fires (~1-2s extra latency on the first turn only). Failures are
       // swallowed — the heuristic placeholder from deriveTitle stays.
       if (isNew) {
+        console.log('[auto-title] starting for session', sessionId);
         try {
           const title = await generateSessionTitle(text, user.lang);
           if (title) {
             sessionStmts.rename.run(title, sessionId, user.id);
             send({ type: 'session_title', sessionId, title });
+            console.log('[auto-title] sent session_title event for', sessionId);
+          } else {
+            console.log('[auto-title] generator returned null; keeping heuristic title');
           }
         } catch (err) {
           console.error('[auto-title] failed for', sessionId, (err as Error).message);
