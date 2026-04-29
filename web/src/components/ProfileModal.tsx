@@ -359,7 +359,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
                           <td className="py-1 text-right font-mono">{m.calls}</td>
                           <td className="py-1 text-right font-mono">
                             {(m.tokens_in + m.tokens_out).toLocaleString()}
-                            {m.is_estimated && <span className="text-yellow-500 ml-0.5">⚠</span>}
                           </td>
                           <td className="py-1 text-right font-mono">
                             ${m.cost_usd.toFixed(m.cost_usd < 1 ? 4 : 2)}

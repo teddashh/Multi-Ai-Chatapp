@@ -403,9 +403,8 @@ const ZH: Dict = {
   profileUsageEmpty: '還沒有使用記錄',
   profileUsageCalls: '呼叫次數',
   profileUsageTokens: 'Tokens（輸入 / 輸出）',
-  profileUsageCost: '估算費用',
-  profileUsageNote:
-    'Grok 為實際 token 數；Claude / ChatGPT / Gemini 走 CLI 訂閱方案，token 為估算（標 ⚠），費用為等價 API 牌價推算。',
+  profileUsageCost: '累積成本',
+  profileUsageNote: '以實際 token 數，並用等價 API 牌價推算。',
 };
 
 const EN: Dict = {
@@ -610,9 +609,9 @@ const EN: Dict = {
   profileUsageEmpty: 'No usage recorded yet',
   profileUsageCalls: 'Calls',
   profileUsageTokens: 'Tokens (in / out)',
-  profileUsageCost: 'Est. cost',
+  profileUsageCost: 'Total Cost',
   profileUsageNote:
-    'Grok counts come from the actual API. Claude / ChatGPT / Gemini are billed via subscription — tokens are estimated (⚠), and cost shown is what the equivalent metered API would charge.',
+    'Estimated from actual token counts at equivalent metered API pricing.',
 };
 
 export const DICTS: Record<Lang, Dict> = { 'zh-TW': ZH, en: EN };
