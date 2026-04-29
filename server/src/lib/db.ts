@@ -269,6 +269,32 @@ if (ver3 < 3) {
   `);
 }
 
+// v4: rewrite stale absolute avatar_path values that still point at the
+// pre-split layout (`/server/data/uploads/_avatars/<id>.<ext>`). The
+// dev/prod split moved files via `mv data data-prod` but didn't update
+// DB rows, so users 3 / 13 were silently 404'ing on every avatar fetch
+// and Ted thought their pictures kept "getting wiped". Rebuild the path
+// from current process.env.UPLOAD_DIR + the original `<id>.<ext>` tail.
+const ver4 = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver4 < 4) {
+  const uploadDir = process.env.UPLOAD_DIR || './data/uploads';
+  const rows = db
+    .prepare('SELECT id, avatar_path FROM users WHERE avatar_path IS NOT NULL')
+    .all() as Array<{ id: number; avatar_path: string }>;
+  const update = db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?');
+  for (const r of rows) {
+    // Strip everything up to and including the `_avatars/` token, keep
+    // only the `<id>.<ext>` suffix, rebuild against current UPLOAD_DIR.
+    const m = r.avatar_path.match(/_avatars[\\/]+(.+)$/);
+    if (!m) continue;
+    const fixed = `${uploadDir}/_avatars/${m[1]}`;
+    if (fixed !== r.avatar_path) {
+      update.run(fixed, r.id);
+    }
+  }
+  db.exec('PRAGMA user_version = 4');
+}
+
 export interface UserRow {
   id: number;
   username: string;
