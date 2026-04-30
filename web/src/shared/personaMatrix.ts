@@ -20,7 +20,7 @@ const SUN_PREFIX: Record<SignKey, string> = {
   libra: '選擇障礙的',
   scorpio: '腹黑致命的',
   sagittarius: '隨時會消失的',
-  capricorn: '莫得感情的',
+  capricorn: '冷面執行長的',
   aquarius: '來自外星的',
   pisces: '活在夢裡的',
 };
