@@ -659,6 +659,44 @@ export async function getAIProfile(
   return res.json() as Promise<AIProfileResponse>;
 }
 
+export interface UserProfileResponse {
+  username: string;
+  nickname: string | null;
+  hasAvatar: boolean;
+  memberSince: number;
+  stats: {
+    totalPosts: number;
+    totalComments: number;
+    totalLikes: number;
+  };
+  recentPosts: Array<{
+    id: number;
+    title: string;
+    category: string;
+    bodyPreview: string;
+    thumbsCount: number;
+    commentCount: number;
+    createdAt: number;
+  }>;
+  recentComments: Array<{
+    id: number;
+    body: string;
+    thumbsCount: number;
+    createdAt: number;
+    postId: number;
+    postTitle: string;
+    postCategory: string;
+  }>;
+}
+
+export async function getUserProfile(
+  username: string,
+): Promise<UserProfileResponse> {
+  const res = await fetch(`/api/forum/user/${encodeURIComponent(username)}`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<UserProfileResponse>;
+}
+
 export interface ForumLiker {
   username: string;
   nickname: string | null;

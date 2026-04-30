@@ -30,6 +30,7 @@ import {
 import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
 import AIProfile from './AIProfile';
+import UserProfile from './UserProfile';
 
 interface Props {
   pathname: string;
@@ -58,6 +59,9 @@ export default function Forum({ pathname, navigate, user }: Props) {
       {route.kind === 'ai' && (
         <AIProfile provider={route.provider} navigate={navigate} />
       )}
+      {route.kind === 'user' && (
+        <UserProfile username={route.username} navigate={navigate} />
+      )}
     </>
   );
 }
@@ -66,7 +70,13 @@ interface RouteIndex { kind: 'index' }
 interface RouteCategory { kind: 'category'; category: string }
 interface RoutePost { kind: 'post'; postId: number }
 interface RouteAI { kind: 'ai'; provider: AIProvider }
-type ForumRoute = RouteIndex | RouteCategory | RoutePost | RouteAI;
+interface RouteUser { kind: 'user'; username: string }
+type ForumRoute =
+  | RouteIndex
+  | RouteCategory
+  | RoutePost
+  | RouteAI
+  | RouteUser;
 
 const AI_PROVIDERS_SET = new Set<string>(['claude', 'chatgpt', 'gemini', 'grok']);
 
@@ -84,6 +94,10 @@ function parseForumPath(p: string): ForumRoute {
     if (AI_PROVIDERS_SET.has(prov)) {
       return { kind: 'ai', provider: prov as AIProvider };
     }
+  }
+  if (p.startsWith('/forum/user/')) {
+    const username = decodeURIComponent(p.slice('/forum/user/'.length));
+    if (username) return { kind: 'user', username };
   }
   return { kind: 'index' };
 }
@@ -327,7 +341,20 @@ function ForumPostView({
                 />
               )}
               <span className="text-gray-500">·</span>
-              <span className="text-gray-400">{post.authorDisplay}</span>
+              {post.authorUsername && !post.isAnonymous ? (
+                <button
+                  onClick={() =>
+                    navigate(
+                      `/forum/user/${encodeURIComponent(post.authorUsername!)}`,
+                    )
+                  }
+                  className="text-gray-400 hover:text-white hover:underline"
+                >
+                  {post.authorDisplay}
+                </button>
+              ) : (
+                <span className="text-gray-400">{post.authorDisplay}</span>
+              )}
               <span className="text-gray-500">·</span>
               <span className="text-gray-500">
                 {relativeTime(post.createdAt)}
@@ -419,6 +446,11 @@ function PostCard({
         <span className="text-gray-500">·</span>
         <span className="text-gray-500">{relativeTime(post.createdAt)}</span>
       </div>
+      {/* PostCard has the entire card as a button — clicking the
+          author would also navigate into the post. We deliberately
+          don't add a separate author link inside the card to avoid
+          nested clickable hierarchies. The post-detail page is where
+          you click through to the user profile. */}
       <div className="text-base font-semibold text-gray-100 mb-1">{post.title}</div>
       <div className="text-sm text-gray-400 line-clamp-2">{post.bodyPreview}</div>
       <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
@@ -456,10 +488,23 @@ function CommentRow({
   const metaParts: string[] = [];
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
-  const goToAIProfile = () => {
+  // Clicking the avatar / name jumps to the author's profile page.
+  // Anonymous users have no profile (server returns 404 for them) so
+  // we don't wire a click handler at all in that case.
+  const userClickable =
+    !isAi && !comment.isAnonymous && !!comment.authorUsername;
+  const goToAuthor = () => {
     if (isAi && provider) navigate(`/forum/ai/${provider}`);
+    else if (userClickable && comment.authorUsername) {
+      navigate(`/forum/user/${encodeURIComponent(comment.authorUsername)}`);
+    }
   };
-  const aiHover = isAi && provider ? `查看 ${capitalize(provider)} 的個人檔案` : undefined;
+  const isClickable = isAi || userClickable;
+  const hoverLabel = isAi && provider
+    ? `查看 ${capitalize(provider)} 的個人檔案`
+    : userClickable
+      ? `查看 ${comment.authorDisplay} 的個人檔案`
+      : undefined;
   const stat = isAi && provider ? aiStats[provider] : null;
   const level = stat ? aiLevel(stat.totalComments, stat.totalLikes) : null;
 
@@ -475,10 +520,10 @@ function CommentRow({
       <div className="flex flex-col items-center gap-1 flex-none isolate">
         <div
           className={`relative ${
-            isAi ? 'cursor-pointer hover:opacity-80 transition-opacity group/aiav' : ''
+            isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity group/aiav' : ''
           }`}
-          title={aiHover}
-          onClick={goToAIProfile}
+          title={hoverLabel}
+          onClick={goToAuthor}
         >
           <CommentAvatar comment={comment} size={36} />
           {isAi && provider && stat && (
@@ -487,7 +532,7 @@ function CommentRow({
               level={aiLevel(stat.totalComments, stat.totalLikes)}
               totalComments={stat.totalComments}
               totalLikes={stat.totalLikes}
-              onGoToProfile={goToAIProfile}
+              onGoToProfile={goToAuthor}
             />
           )}
         </div>
@@ -504,12 +549,16 @@ function CommentRow({
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1">
           <span
             className={`text-sm ${
-              isAi
-                ? 'text-gray-100 font-semibold cursor-pointer hover:text-white hover:underline'
-                : 'text-gray-200 font-medium'
+              isClickable
+                ? isAi
+                  ? 'text-gray-100 font-semibold cursor-pointer hover:text-white hover:underline'
+                  : 'text-gray-200 font-medium cursor-pointer hover:text-white hover:underline'
+                : isAi
+                  ? 'text-gray-100 font-semibold'
+                  : 'text-gray-200 font-medium'
             }`}
-            title={aiHover}
-            onClick={isAi ? goToAIProfile : undefined}
+            title={hoverLabel}
+            onClick={isClickable ? goToAuthor : undefined}
           >
             {primaryName}
           </span>

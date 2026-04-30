@@ -941,6 +941,36 @@ export const forumStmts = {
      WHERE author_type = 'ai' AND author_ai_provider IS NOT NULL
      GROUP BY author_ai_provider`,
   ),
+  // User-side counterparts — user profile page calls these. Stats are
+  // computed live (no denormalised counters) since the forum is small.
+  userPostStats: db.prepare<[number]>(
+    `SELECT COUNT(*) AS total_posts,
+            COALESCE(SUM(thumbs_count), 0) AS post_likes
+     FROM forum_posts WHERE author_user_id = ?`,
+  ),
+  userCommentStats: db.prepare<[number]>(
+    `SELECT COUNT(*) AS total_comments,
+            COALESCE(SUM(thumbs_count), 0) AS comment_likes
+     FROM forum_comments
+     WHERE author_user_id = ? AND author_type = 'user'`,
+  ),
+  userRecentPosts: db.prepare<[number, number]>(
+    `SELECT id, title, category, body, thumbs_count, comment_count,
+            is_anonymous, created_at
+     FROM forum_posts
+     WHERE author_user_id = ?
+     ORDER BY id DESC
+     LIMIT ?`,
+  ),
+  userRecentComments: db.prepare<[number, number]>(
+    `SELECT c.id, c.body, c.thumbs_count, c.created_at, c.is_anonymous,
+            p.id AS post_id, p.title AS post_title, p.category AS post_category
+     FROM forum_comments c
+     JOIN forum_posts p ON p.id = c.post_id
+     WHERE c.author_user_id = ? AND c.author_type = 'user'
+     ORDER BY c.id DESC
+     LIMIT ?`,
+  ),
   // Recent activity for the AI profile — last N comments by this
   // provider, joined with the parent post for context.
   aiRecentComments: db.prepare<[string, number]>(

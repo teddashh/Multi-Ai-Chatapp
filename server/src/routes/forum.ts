@@ -17,10 +17,12 @@ import {
   forumStmts,
   messageStmts,
   sessionStmts,
+  userStmts,
   type ForumCommentRow,
   type ForumPostRow,
   type MessageRow,
   type SessionRow,
+  type UserRow,
 } from '../lib/db.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 
@@ -448,6 +450,95 @@ forumRoute.get('/ai/:provider', (c) => {
       postTitle: r.post_title,
       postCategory: r.post_category,
     })),
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/forum/user/:username — public user profile.
+// Returns basic profile + cumulative forum stats + recent activity.
+// Anonymous-flagged posts/comments are excluded from the recent feed
+// (the user posted them anonymously — surfacing them on a profile page
+// would defeat the point) but still counted in stats. We only show the
+// profile if the user actually has any forum activity, otherwise return
+// 404 to avoid revealing every account name to an enumerating client.
+// ---------------------------------------------------------------------------
+forumRoute.get('/user/:username', (c) => {
+  const username = c.req.param('username') ?? '';
+  if (!username) return c.json({ error: 'username required' }, 400);
+  const user = userStmts.findByUsername.get(username) as UserRow | undefined;
+  if (!user) return c.json({ error: 'not found' }, 404);
+
+  const postRow = forumStmts.userPostStats.get(user.id) as {
+    total_posts: number;
+    post_likes: number;
+  };
+  const commentRow = forumStmts.userCommentStats.get(user.id) as {
+    total_comments: number;
+    comment_likes: number;
+  };
+
+  // Hide enumeration of every registered username — only expose profiles
+  // for users who've actually participated in the forum.
+  if (postRow.total_posts === 0 && commentRow.total_comments === 0) {
+    return c.json({ error: 'not found' }, 404);
+  }
+
+  const recentPosts = forumStmts.userRecentPosts.all(user.id, 10) as Array<{
+    id: number;
+    title: string;
+    category: string;
+    body: string;
+    thumbs_count: number;
+    comment_count: number;
+    is_anonymous: number;
+    created_at: number;
+  }>;
+  const recentComments = forumStmts.userRecentComments.all(
+    user.id,
+    10,
+  ) as Array<{
+    id: number;
+    body: string;
+    thumbs_count: number;
+    created_at: number;
+    is_anonymous: number;
+    post_id: number;
+    post_title: string;
+    post_category: string;
+  }>;
+
+  return c.json({
+    username: user.username,
+    nickname: user.nickname,
+    hasAvatar: !!user.avatar_path,
+    memberSince: user.created_at * 1000,
+    stats: {
+      totalPosts: postRow.total_posts,
+      totalComments: commentRow.total_comments,
+      totalLikes: postRow.post_likes + commentRow.comment_likes,
+    },
+    recentPosts: recentPosts
+      .filter((p) => !p.is_anonymous)
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        category: p.category,
+        bodyPreview: p.body.length > 200 ? p.body.slice(0, 200) + '…' : p.body,
+        thumbsCount: p.thumbs_count,
+        commentCount: p.comment_count,
+        createdAt: p.created_at * 1000,
+      })),
+    recentComments: recentComments
+      .filter((cm) => !cm.is_anonymous)
+      .map((cm) => ({
+        id: cm.id,
+        body: cm.body.length > 240 ? cm.body.slice(0, 240) + '…' : cm.body,
+        thumbsCount: cm.thumbs_count,
+        createdAt: cm.created_at * 1000,
+        postId: cm.post_id,
+        postTitle: cm.post_title,
+        postCategory: cm.post_category,
+      })),
   });
 });
 

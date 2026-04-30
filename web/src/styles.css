@@ -179,10 +179,15 @@ body::before {
 [data-theme='chatgpt'] .text-white {
   color: #0f172a;
 }
+/* text-gray-100 was missing from this list — forum post titles use it
+   and were rendering near-white on the light pastel backgrounds. */
+[data-theme='summer'] .text-gray-100,
 [data-theme='summer'] .text-gray-200,
 [data-theme='summer'] .text-gray-300,
+[data-theme='claude'] .text-gray-100,
 [data-theme='claude'] .text-gray-200,
 [data-theme='claude'] .text-gray-300,
+[data-theme='chatgpt'] .text-gray-100,
 [data-theme='chatgpt'] .text-gray-200,
 [data-theme='chatgpt'] .text-gray-300 {
   color: #1e293b;
@@ -260,23 +265,22 @@ body::before {
 /* ================================================================
    Surface overlays — for hover cards, popovers, and other floating
    elements where the regular bg-gray-* (semi-transparent on themes)
-   would let text bleed through from below. Always close to fully
-   opaque, theme-aware, and gets a slight backdrop blur so anything
-   poking out at the edges (z-index ties) looks intentional.
+   would let text bleed through from below. Fully opaque (no alpha)
+   because users dismiss them by mousing away, so visual layering
+   beats letting the background image peek through. Theme-aware.
    ================================================================ */
 .bg-surface-overlay {
-  background-color: rgba(11, 18, 32, 0.97); /* default: solid dark */
-  backdrop-filter: blur(6px);
+  background-color: #0b1220; /* default: solid dark */
 }
 [data-theme='winter'] .bg-surface-overlay,
 [data-theme='grok'] .bg-surface-overlay,
 [data-theme='gemini'] .bg-surface-overlay {
-  background-color: rgba(11, 18, 32, 0.97);
+  background-color: #0b1220;
 }
 [data-theme='summer'] .bg-surface-overlay,
 [data-theme='claude'] .bg-surface-overlay,
 [data-theme='chatgpt'] .bg-surface-overlay {
-  background-color: rgba(255, 255, 255, 0.97);
+  background-color: #ffffff;
 }
 
 /* ================================================================

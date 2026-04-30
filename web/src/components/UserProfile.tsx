@@ -1,0 +1,198 @@
+// User profile page (/forum/user/:username). Mirrors AIProfile shape:
+// big avatar + name + member-since, cumulative forum stats, and a
+// recent-activity feed (posts + comments interleaved by time).
+//
+// Anonymous-flagged contributions are server-filtered from the recent
+// feed but still counted in stats — the user posted them anonymously,
+// so listing them on a public profile would defeat the point.
+
+import React, { useEffect, useState } from 'react';
+import {
+  avatarUrl,
+  getUserProfile,
+  type UserProfileResponse,
+} from '../api';
+
+interface Props {
+  username: string;
+  navigate: (path: string) => void;
+}
+
+export default function UserProfile({ username, navigate }: Props) {
+  const [data, setData] = useState<UserProfileResponse | null>(null);
+  const [err, setErr] = useState<string>('');
+
+  useEffect(() => {
+    let alive = true;
+    setData(null);
+    setErr('');
+    getUserProfile(username)
+      .then((d) => {
+        if (alive) setData(d);
+      })
+      .catch((e: Error) => {
+        if (alive) setErr(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [username]);
+
+  if (err) return <div className="p-4 text-red-400 text-sm">{err}</div>;
+  if (!data) return <div className="p-4 text-gray-500 text-sm">載入中…</div>;
+
+  const displayName = data.nickname || data.username;
+
+  return (
+    <div className="max-w-3xl mx-auto p-4 space-y-4">
+      <div className="text-xs text-gray-500">
+        <button
+          onClick={() => navigate('/forum')}
+          className="hover:text-white"
+        >
+          ← 返回討論區
+        </button>
+      </div>
+
+      {/* Header card */}
+      <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 flex gap-4 items-start">
+        {data.hasAvatar ? (
+          <img
+            src={avatarUrl(data.username, 0)}
+            alt={displayName}
+            className="w-[72px] h-[72px] rounded-full object-cover border border-gray-700 flex-none"
+          />
+        ) : (
+          <div
+            className="rounded-full bg-gray-700 flex items-center justify-center text-gray-200 font-bold flex-none"
+            style={{ width: 72, height: 72, fontSize: 28 }}
+          >
+            {displayName.slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-bold text-gray-100">{displayName}</h1>
+          <div className="text-xs text-gray-500 mb-3">
+            @{data.username} · {memberSinceLabel(data.memberSince)}
+          </div>
+          <p className="text-sm text-gray-400 leading-relaxed">
+            {/* Bio not yet a feature for users — placeholder copy until
+                we add a profile-bio field. */}
+            這位用戶還沒寫個人介紹。
+          </p>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <Stat label="發文" value={data.stats.totalPosts} />
+        <Stat label="留言" value={data.stats.totalComments} />
+        <Stat label="收到讚" value={data.stats.totalLikes} />
+      </div>
+
+      {/* Recent posts */}
+      {data.recentPosts.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-2">
+            最近發文
+          </h2>
+          <div className="space-y-2">
+            {data.recentPosts.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => navigate(`/forum/post/${p.id}`)}
+                className="block w-full text-left bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg p-3 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-1">
+                  <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+                    {p.category}
+                  </span>
+                  <span className="text-gray-400">{relTime(p.createdAt)}</span>
+                  <span className="text-gray-600 ml-auto">
+                    👍 {p.thumbsCount} · 💬 {p.commentCount}
+                  </span>
+                </div>
+                <div className="text-sm font-semibold text-gray-100 mb-1">
+                  {p.title}
+                </div>
+                <div className="text-xs text-gray-400 line-clamp-2">
+                  {p.bodyPreview}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Recent comments */}
+      {data.recentComments.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-2">
+            最近留言
+          </h2>
+          <div className="space-y-2">
+            {data.recentComments.map((cm) => (
+              <button
+                key={cm.id}
+                onClick={() => navigate(`/forum/post/${cm.postId}`)}
+                className="block w-full text-left bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg p-3 transition-colors"
+              >
+                <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-1">
+                  <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+                    {cm.postCategory}
+                  </span>
+                  <span className="text-gray-400 truncate">{cm.postTitle}</span>
+                  <span className="text-gray-600 ml-auto">
+                    👍 {cm.thumbsCount}
+                  </span>
+                </div>
+                <div className="text-sm text-gray-300 line-clamp-3 whitespace-pre-wrap">
+                  {cm.body}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.recentPosts.length === 0 && data.recentComments.length === 0 && (
+        <div className="text-gray-500 text-sm text-center py-8">
+          {displayName} 還沒有公開的論壇活動。
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center">
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
+        {label}
+      </div>
+      <div className="text-2xl font-bold text-gray-100">
+        {value.toLocaleString()}
+      </div>
+    </div>
+  );
+}
+
+function memberSinceLabel(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days < 30) return `加入 ${days} 天`;
+  if (days < 365) return `加入 ${Math.floor(days / 30)} 個月`;
+  return `加入 ${Math.floor(days / 365)} 年`;
+}
+
+function relTime(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return '剛剛';
+  const m = Math.floor(diff / 60_000);
+  if (m < 60) return `${m} 分鐘前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小時前`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} 天前`;
+  const date = new Date(ms);
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
