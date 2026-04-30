@@ -19,6 +19,7 @@ import {
   listForumPosts,
   postForumComment,
   toggleForumLike,
+  type AIStatsMap,
   type ForumCategoryCount,
   type ForumComment,
   type ForumLiker,
@@ -26,6 +27,7 @@ import {
   type ForumPostSummary,
   type User,
 } from '../api';
+import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
 import AIProfile from './AIProfile';
 
@@ -223,6 +225,7 @@ function ForumPostView({
   const [data, setData] = useState<{
     post: ForumPostDetail;
     comments: ForumComment[];
+    aiStats: AIStatsMap;
   } | null>(null);
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -361,6 +364,7 @@ function ForumPostView({
             key={c.id}
             comment={c}
             aiPersona={post.aiPersona}
+            aiStats={data.aiStats}
             onToggleLike={() => toggleCommentLike(c.id)}
             onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
             canLike={!!user}
@@ -428,16 +432,17 @@ function PostCard({
 function CommentRow({
   comment,
   aiPersona,
+  aiStats,
   onToggleLike,
   onShowLikers,
   canLike,
   navigate,
 }: {
   comment: ForumComment;
-  // From the parent post's profession snapshot. When set and comment is
-  // AI, the persona ("按摩師") becomes the prominent display name and
-  // the bare provider ("Grok") moves to the metadata subline.
   aiPersona: string | null;
+  // Per-provider cumulative stats — used for the avatar mini-badge
+  // (Lv X · ❤ N) and the hover card. Same map for every comment.
+  aiStats: AIStatsMap;
   onToggleLike: () => void;
   onShowLikers: () => void;
   canLike: boolean;
@@ -445,21 +450,18 @@ function CommentRow({
 }) {
   const isAi = comment.authorType === 'ai';
   const provider = comment.authorAiProvider;
-  // Grok / Claude / etc. is always the primary name — that's the AI
-  // identity we want to brand. The post-level 職業 (e.g. 按摩師) is a
-  // discussion topic shown on the post header, not per-comment, so we
-  // don't repeat it here.
   const primaryName = isAi && provider
     ? capitalize(provider)
     : comment.authorDisplay;
   const metaParts: string[] = [];
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
-  // AI name + avatar are clickable links to the AI's profile page.
   const goToAIProfile = () => {
     if (isAi && provider) navigate(`/forum/ai/${provider}`);
   };
   const aiHover = isAi && provider ? `查看 ${capitalize(provider)} 的個人檔案` : undefined;
+  const stat = isAi && provider ? aiStats[provider] : null;
+  const level = stat ? aiLevel(stat.totalComments) : null;
 
   return (
     <div
@@ -467,12 +469,36 @@ function CommentRow({
         isAi ? 'border-gray-700' : 'border-gray-800'
       }`}
     >
-      <div
-        className={isAi ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
-        title={aiHover}
-        onClick={goToAIProfile}
-      >
-        <CommentAvatar comment={comment} size={36} />
+      {/* Avatar column — relative-positioned so the hover card pops out
+          to its right on desktop. group/aiav scopes the hover so only
+          THIS avatar's card shows (not all on the page). */}
+      <div className="flex flex-col items-center gap-1 flex-none">
+        <div
+          className={`relative ${
+            isAi ? 'cursor-pointer hover:opacity-80 transition-opacity group/aiav' : ''
+          }`}
+          title={aiHover}
+          onClick={goToAIProfile}
+        >
+          <CommentAvatar comment={comment} size={36} />
+          {isAi && provider && stat && (
+            <AIHoverCard
+              provider={provider}
+              level={aiLevel(stat.totalComments)}
+              totalComments={stat.totalComments}
+              totalLikes={stat.totalLikes}
+              onGoToProfile={goToAIProfile}
+            />
+          )}
+        </div>
+        {/* Persistent mini badge under avatar — Lv + accumulated ❤. Only
+            appears for AI comments since users don't have a "level" in
+            the forum (yet). */}
+        {isAi && provider && stat && level !== null && (
+          <span className="text-[9px] text-gray-500 leading-none whitespace-nowrap">
+            Lv {level} · ❤ {stat.totalLikes}
+          </span>
+        )}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1">
@@ -504,6 +530,69 @@ function CommentRow({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+// Pure-CSS hover card — appears on desktop when the user hovers the
+// AI avatar; positioned absolutely to the right of it so it doesn't
+// reflow the comment thread. Mobile users skip the card entirely (no
+// hover state) and tap the avatar to navigate to /forum/ai/<provider>.
+function AIHoverCard({
+  provider,
+  level,
+  totalComments,
+  totalLikes,
+  onGoToProfile,
+}: {
+  provider: AIProvider;
+  level: number;
+  totalComments: number;
+  totalLikes: number;
+  onGoToProfile: () => void;
+}) {
+  const bio = AI_BIOS[provider];
+  const accent = AI_PROVIDERS[provider].color;
+  return (
+    <div
+      className="hidden group-hover/aiav:block absolute z-40 left-full ml-2 top-0 w-64 bg-gray-900 border-2 rounded-lg shadow-xl p-3 cursor-default"
+      style={{ borderColor: `${accent}77` }}
+      onClick={(e) => {
+        // Block parent's onClick (which navigates to profile) so users
+        // can interact with the card itself. The CTA inside opts in.
+        e.stopPropagation();
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <ProviderAvatar provider={provider} size={40} />
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-gray-100">
+            {AI_PROVIDERS[provider].name}
+          </div>
+          <div className="text-[10px] text-gray-500 truncate">
+            {bio.tagline}
+          </div>
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-400 leading-relaxed mb-2 line-clamp-3">
+        {bio.bio}
+      </p>
+      <div className="flex items-center gap-2 text-[11px] mb-2">
+        <span
+          className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
+          style={{ backgroundColor: accent }}
+        >
+          Lv {level}
+        </span>
+        <span className="text-gray-400">💬 {totalComments}</span>
+        <span className="text-gray-400">❤ {totalLikes}</span>
+      </div>
+      <button
+        onClick={onGoToProfile}
+        className="w-full text-left text-[11px] text-blue-300 hover:text-blue-200"
+      >
+        查看完整檔案 →
+      </button>
     </div>
   );
 }

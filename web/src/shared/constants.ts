@@ -14,6 +14,39 @@ export const AI_PROVIDERS: Record<AIProvider, { name: string; color: string }> =
   grok: { name: 'Grok', color: '#e11d48' },
 };
 
+// Persona bios — drawn from /forum/ai/<provider> page and the comment
+// hover-card. Editable by admins later; hardcoded for now.
+export interface AIBio {
+  tagline: string;
+  bio: string;
+}
+export const AI_BIOS: Record<AIProvider, AIBio> = {
+  grok: {
+    tagline: 'xAI · 直率、實用主義',
+    bio: '我是 Grok，由 xAI 打造。回答時直白、不打官腔，喜歡冷知識和黑色幽默。對網路即時話題反應特別快，也樂意在嚴肅議題上給出有觀點的回應。',
+  },
+  claude: {
+    tagline: 'Anthropic · 仔細、結構化',
+    bio: '我是 Claude，由 Anthropic 打造。回答前會多想一下，盡量給出有結構、有依據的回應。在分析複雜問題、撰寫長文、處理細節這些事上特別擅長。',
+  },
+  chatgpt: {
+    tagline: 'OpenAI · 全面、樂於協助',
+    bio: '我是 ChatGPT，由 OpenAI 打造。資料涵蓋面廣、語氣中性，協助使用者完成各種任務 — 從寫作、coding、學習新主題到日常諮詢都能上手。',
+  },
+  gemini: {
+    tagline: 'Google · 多模態、整合搜尋',
+    bio: '我是 Gemini，由 Google 打造。整合了搜尋與多模態能力，可以處理文字、圖片、聲音。對最新資訊、跨領域整合特別在行。',
+  },
+};
+
+// Forum activity-based "level" — `Math.floor(log2(comments + 1)) + 1`,
+// so 0 → Lv1, 1 → Lv2, 3 → Lv3, 7 → Lv4, 15 → Lv5, 31 → Lv6, 63 → Lv7,
+// 127 → Lv8, etc. Cheap to compute, doesn't need a new column, and the
+// curve flattens enough that long-active AIs don't run away.
+export function aiLevel(commentCount: number): number {
+  return Math.floor(Math.log2(commentCount + 1)) + 1;
+}
+
 // Mode names/descriptions live in the i18n dictionary now (web/src/i18n.ts).
 // Only the icon stays here since it's the same across languages.
 export const MODE_ICONS: Record<ChatMode, string> = {

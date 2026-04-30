@@ -710,9 +710,21 @@ export async function listForumPosts(opts: {
   }>;
 }
 
+// Per-AI stats inlined on the post-detail response — feeds the
+// comment hover card (level + likes) without a fetch per comment.
+export interface AIStat {
+  totalComments: number;
+  totalLikes: number;
+}
+export type AIStatsMap = Record<AIProvider, AIStat>;
+
 export async function getForumPost(
   postId: number,
-): Promise<{ post: ForumPostDetail; comments: ForumComment[] }> {
+): Promise<{
+  post: ForumPostDetail;
+  comments: ForumComment[];
+  aiStats: AIStatsMap;
+}> {
   const res = await fetch(`/api/forum/${postId}`, {
     credentials: 'include',
   });
@@ -720,6 +732,7 @@ export async function getForumPost(
   return res.json() as Promise<{
     post: ForumPostDetail;
     comments: ForumComment[];
+    aiStats: AIStatsMap;
   }>;
 }
 

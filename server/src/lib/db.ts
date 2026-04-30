@@ -930,6 +930,17 @@ export const forumStmts = {
      FROM forum_comments
      WHERE author_type = 'ai' AND author_ai_provider = ?`,
   ),
+  // Same shape as aiCommentStats but rolled up for every provider in
+  // one query. Inlined into post-detail responses so the comment hover
+  // card has stats without N extra round-trips.
+  allAIStats: db.prepare(
+    `SELECT author_ai_provider AS provider,
+            COUNT(*) AS total_comments,
+            COALESCE(SUM(thumbs_count), 0) AS total_likes
+     FROM forum_comments
+     WHERE author_type = 'ai' AND author_ai_provider IS NOT NULL
+     GROUP BY author_ai_provider`,
+  ),
   // Recent activity for the AI profile — last N comments by this
   // provider, joined with the parent post for context.
   aiRecentComments: db.prepare<[string, number]>(

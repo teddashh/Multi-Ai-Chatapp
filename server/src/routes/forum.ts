@@ -191,6 +191,30 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     likedCommentIds = new Set(liked.map((r) => r.target_id));
   }
 
+  // Roll AI stats into the post response so per-comment hover cards
+  // don't each need a fetch. Always returns all 4 providers (zeros for
+  // those who haven't commented yet) so the client can key by provider
+  // without a presence check.
+  const statRows = forumStmts.allAIStats.all() as Array<{
+    provider: string;
+    total_comments: number;
+    total_likes: number;
+  }>;
+  const aiStats: Record<string, { totalComments: number; totalLikes: number }> = {
+    claude: { totalComments: 0, totalLikes: 0 },
+    chatgpt: { totalComments: 0, totalLikes: 0 },
+    gemini: { totalComments: 0, totalLikes: 0 },
+    grok: { totalComments: 0, totalLikes: 0 },
+  };
+  for (const r of statRows) {
+    if (aiStats[r.provider]) {
+      aiStats[r.provider] = {
+        totalComments: r.total_comments,
+        totalLikes: r.total_likes,
+      };
+    }
+  }
+
   return c.json({
     post: formatPostDetail(
       {
@@ -201,6 +225,7 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
       likedPost,
     ),
     comments: commentRows.map((r) => formatComment(r, likedCommentIds.has(r.id))),
+    aiStats,
   });
 });
 
