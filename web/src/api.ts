@@ -644,9 +644,15 @@ export interface ForumComment {
 
 export interface AIProfileResponse {
   provider: AIProvider;
+  // Tier badge — AIs are 'admin' tier per spec.
+  tier: 'admin';
   stats: {
     totalComments: number;
     totalLikes: number;
+    // Lifetime usage across every user that hit this provider.
+    totalTokens: number;
+    totalCalls: number;
+    totalCost: number;
   };
   recent: Array<{
     id: number;
@@ -673,11 +679,16 @@ export interface UserProfileResponse {
   nickname: string | null;
   hasAvatar: boolean;
   memberSince: number;
+  tier: Tier;
   bio: string;
   stats: {
     totalPosts: number;
     totalComments: number;
     totalLikes: number;
+    // Lifetime API usage by this user.
+    totalTokens: number;
+    totalCalls: number;
+    totalCost: number;
   };
   recentPosts: Array<{
     id: number;
@@ -759,10 +770,13 @@ export async function listForumPosts(opts: {
 }
 
 // Per-AI stats inlined on the post-detail response — feeds the
-// comment hover card (level + likes) without a fetch per comment.
+// comment hover card without a fetch per comment.
 export interface AIStat {
   totalComments: number;
   totalLikes: number;
+  totalTokens: number;
+  totalCalls: number;
+  totalCost: number;
 }
 export type AIStatsMap = Record<AIProvider, AIStat>;
 
@@ -772,11 +786,15 @@ export type AIStatsMap = Record<AIProvider, AIStat>;
 export interface UserStat {
   username: string;
   nickname: string | null;
+  tier: Tier;
   hasAvatar: boolean;
   memberSince: number;
   totalPosts: number;
   totalComments: number;
   totalLikes: number;
+  totalTokens: number;
+  totalCalls: number;
+  totalCost: number;
 }
 
 export async function getForumPost(

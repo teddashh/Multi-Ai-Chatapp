@@ -980,8 +980,9 @@ export const forumStmts = {
   ),
   // Inlined into post-detail responses to back the user hover-card —
   // returns one row per non-anonymous participant (post author + every
-  // user commenter on this post) with their cumulative forum stats.
-  // Two ?-binds because the participants CTE references post_id twice.
+  // user commenter on this post) with their cumulative forum stats +
+  // tier (for the badge) + user_id (callers compute usage_log totals
+  // separately and join on this).
   participantStats: db.prepare<[number, number]>(
     `WITH participants AS (
        SELECT DISTINCT author_user_id AS uid
@@ -992,7 +993,7 @@ export const forumStmts = {
        SELECT author_user_id AS uid
          FROM forum_posts WHERE id = ? AND is_anonymous = 0
      )
-     SELECT u.username, u.nickname,
+     SELECT u.id AS user_id, u.username, u.nickname, u.tier,
             CASE WHEN u.avatar_path IS NOT NULL THEN 1 ELSE 0 END AS has_avatar,
             u.created_at AS member_since,
             COALESCE(p.cnt, 0) AS total_posts,
@@ -1011,6 +1012,41 @@ export const forumStmts = {
        FROM forum_comments WHERE author_type = 'user'
        GROUP BY author_user_id
      ) c ON c.author_user_id = u.id`,
+  ),
+  // Successful-call rollup per (provider, model) for one user — feeds
+  // the four "lifetime usage" metrics (tokens, calls, cost, tier).
+  // Cost is computed in JS via estimateCost(provider, model, tin, tout)
+  // since priced lookup needs price-table knowledge.
+  userUsageByModel: db.prepare<[number]>(
+    `SELECT provider, model,
+            COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out
+     FROM usage_log
+     WHERE user_id = ? AND success = 1
+     GROUP BY provider, model`,
+  ),
+  // Same shape, scoped to one provider — for the AI profile aggregate.
+  aiProviderUsageByModel: db.prepare<[string]>(
+    `SELECT provider, model,
+            COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out
+     FROM usage_log
+     WHERE provider = ? AND success = 1
+     GROUP BY provider, model`,
+  ),
+  // Cross-provider usage rollup for the post-detail aiStats map. Caller
+  // groups in JS by provider and pipes through estimateCost — one
+  // round-trip beats four queries (one per provider).
+  allUsageByProviderAndModel: db.prepare(
+    `SELECT provider, model,
+            COUNT(*) AS calls,
+            COALESCE(SUM(tokens_in), 0) AS tokens_in,
+            COALESCE(SUM(tokens_out), 0) AS tokens_out
+     FROM usage_log
+     WHERE success = 1
+     GROUP BY provider, model`,
   ),
   // Recent activity for the AI profile — last N comments by this
   // provider, joined with the parent post for context.

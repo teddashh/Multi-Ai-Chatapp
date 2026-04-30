@@ -539,20 +539,42 @@ function CommentRow({
         >
           <CommentAvatar comment={comment} size={36} />
           {isAi && provider && stat && (
-            <AIHoverCard
-              provider={provider}
-              level={aiLevel(stat.totalComments, stat.totalLikes)}
-              totalComments={stat.totalComments}
-              totalLikes={stat.totalLikes}
+            <HoverCard
+              avatarSlot={<ProviderAvatar provider={provider} size={40} />}
+              primaryName={AI_PROVIDERS[provider].name}
+              tier="admin"
+              subline={AI_BIOS[provider].tagline}
+              bio={AI_BIOS[provider].bio}
+              comments={stat.totalComments}
+              likes={stat.totalLikes}
+              tokens={stat.totalTokens}
+              calls={stat.totalCalls}
+              cost={stat.totalCost}
+              accent={AI_PROVIDERS[provider].color}
               onGoToProfile={goToAuthor}
             />
           )}
-          {userClickable && comment.authorUsername && userStats[comment.authorUsername] && (
-            <UserHoverCard
-              stats={userStats[comment.authorUsername]}
-              onGoToProfile={goToAuthor}
-            />
-          )}
+          {userClickable &&
+            comment.authorUsername &&
+            userStats[comment.authorUsername] && (
+              <HoverCard
+                avatarSlot={
+                  <UserHoverAvatar stats={userStats[comment.authorUsername]} />
+                }
+                primaryName={
+                  userStats[comment.authorUsername].nickname ||
+                  userStats[comment.authorUsername].username
+                }
+                tier={userStats[comment.authorUsername].tier}
+                subline={`@${userStats[comment.authorUsername].username} · ${memberSinceShort(userStats[comment.authorUsername].memberSince)}`}
+                comments={userStats[comment.authorUsername].totalComments}
+                likes={userStats[comment.authorUsername].totalLikes}
+                tokens={userStats[comment.authorUsername].totalTokens}
+                calls={userStats[comment.authorUsername].totalCalls}
+                cost={userStats[comment.authorUsername].totalCost}
+                onGoToProfile={goToAuthor}
+              />
+            )}
         </div>
         {/* Persistent mini badge under avatar — Lv + accumulated ❤. Only
             appears for AI comments since users don't have a "level" in
@@ -601,70 +623,25 @@ function CommentRow({
   );
 }
 
-// Same hover-card pattern as the AI version but for user comments.
-// Shows nickname, @username, join date, posts/comments/likes summary
-// and a CTA to /forum/user/<username>. Bio (if set) is intentionally
-// omitted from the hover — too long to fit comfortably; user has to
-// click through to see it.
-function UserHoverCard({
-  stats,
-  onGoToProfile,
-}: {
-  stats: UserStat;
-  onGoToProfile: () => void;
-}) {
+// Avatar variant used inside the user HoverCard — picks between
+// uploaded avatar / initial fallback.
+function UserHoverAvatar({ stats }: { stats: UserStat }) {
   const display = stats.nickname || stats.username;
+  if (stats.hasAvatar) {
+    return (
+      <img
+        src={avatarUrl(stats.username, 0)}
+        alt={display}
+        className="w-10 h-10 rounded-full object-cover border border-gray-700 flex-none"
+      />
+    );
+  }
   return (
     <div
-      className="hidden group-hover/aiav:block absolute z-[100] left-full ml-2 top-0 w-64 border border-gray-700 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
-      onClick={(e) => e.stopPropagation()}
+      className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-200 font-bold flex-none"
+      style={{ fontSize: 16 }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        {stats.hasAvatar ? (
-          <img
-            src={avatarUrl(stats.username, 0)}
-            alt={display}
-            className="w-10 h-10 rounded-full object-cover border border-gray-700"
-          />
-        ) : (
-          <div
-            className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-200 font-bold"
-            style={{ fontSize: 16 }}
-          >
-            {display.slice(0, 1).toUpperCase()}
-          </div>
-        )}
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-gray-100 truncate">
-            {display}
-          </div>
-          <div className="text-[10px] text-gray-500 truncate">
-            @{stats.username} · {memberSinceShort(stats.memberSince)}
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-1 text-center mb-2">
-        <Stat3 label="發文" value={stats.totalPosts} />
-        <Stat3 label="留言" value={stats.totalComments} />
-        <Stat3 label="❤" value={stats.totalLikes} />
-      </div>
-      <button
-        onClick={onGoToProfile}
-        className="w-full text-left text-[11px] text-blue-300 hover:text-blue-200"
-      >
-        查看完整檔案 →
-      </button>
-    </div>
-  );
-}
-
-function Stat3({ label, value }: { label: string; value: number }) {
-  return (
-    <div>
-      <div className="text-[9px] uppercase tracking-wider text-gray-500">
-        {label}
-      </div>
-      <div className="text-sm font-bold text-gray-100">{value}</div>
+      {display.slice(0, 1).toUpperCase()}
     </div>
   );
 }
@@ -676,62 +653,113 @@ function memberSinceShort(ms: number): string {
   return `加入 ${Math.floor(days / 365)} 年`;
 }
 
-// Pure-CSS hover card — appears on desktop when the user hovers the
-// AI avatar; positioned absolutely to the right of it so it doesn't
-// reflow the comment thread. Mobile users skip the card entirely (no
-// hover state) and tap the avatar to navigate to /forum/ai/<provider>.
-function AIHoverCard({
-  provider,
-  level,
-  totalComments,
-  totalLikes,
-  onGoToProfile,
-}: {
-  provider: AIProvider;
-  level: number;
-  totalComments: number;
-  totalLikes: number;
+// Tier-badge palette. AIs share the 'admin' label (per spec — AIs are
+// first-class members, not gated by tier).
+const TIER_BADGES: Record<string, { label: string; bg: string }> = {
+  free: { label: 'Free', bg: '#6b7280' },
+  standard: { label: 'Standard', bg: '#4b5563' },
+  pro: { label: 'Pro', bg: '#2563eb' },
+  super: { label: 'Super', bg: '#f59e0b' },
+  admin: { label: 'Admin', bg: '#dc2626' },
+};
+function TierBadge({ tier }: { tier: string }) {
+  const t = TIER_BADGES[tier] ?? TIER_BADGES.free;
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap flex-none"
+      style={{ backgroundColor: t.bg }}
+    >
+      {t.label}
+    </span>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+// Unified hover-card — shared between AI and user comment avatars so
+// the layout (header, bio, 5-metric stats row, CTA) is identical and
+// only the data differs. AIs always render with tier='admin' and a
+// brand-coloured border; users get a neutral border + their actual
+// tier badge.
+interface HoverCardProps {
+  // The avatar element to render in the header (40px). Caller decides
+  // whether it's a ProviderAvatar (AI) or img/InitialAvatar (user).
+  avatarSlot: React.ReactNode;
+  primaryName: string;
+  tier: string;
+  // Tagline for AI ("xAI · 直率、實用主義") or "@username · 加入 N 天"
+  // for user.
+  subline: string;
+  // Optional 2-line bio. AIs always have one (hardcoded in AI_BIOS),
+  // users only when they've filled in their public bio.
+  bio?: string;
+  comments: number;
+  likes: number;
+  tokens: number;
+  calls: number;
+  cost: number;
+  // Border accent — provider colour for AIs, neutral for users.
+  accent?: string;
   onGoToProfile: () => void;
-}) {
-  const bio = AI_BIOS[provider];
-  const accent = AI_PROVIDERS[provider].color;
+}
+function HoverCard({
+  avatarSlot,
+  primaryName,
+  tier,
+  subline,
+  bio,
+  comments,
+  likes,
+  tokens,
+  calls,
+  cost,
+  accent,
+  onGoToProfile,
+}: HoverCardProps) {
   return (
     <div
-      // bg-surface-overlay → theme-aware fully-opaque background (defined
-      // in styles.css). z bumped to 100; lower values get trapped behind
-      // sibling content under certain stacking-context conditions on
-      // some themes, this is high enough to win in all of them.
-      className="hidden group-hover/aiav:block absolute z-[100] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
-      style={{ borderColor: `${accent}aa` }}
+      // bg-surface-overlay → theme-aware fully-opaque background.
+      // z-[100] + the deliberately removed hover-opacity on the parent
+      // wrapper keep the card above the comment body on every theme.
+      className={`hidden group-hover/aiav:block absolute z-[100] left-full ml-2 top-0 w-64 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay ${
+        accent ? 'border-2' : 'border border-gray-700'
+      }`}
+      style={accent ? { borderColor: `${accent}aa` } : undefined}
       onClick={(e) => {
-        // Block parent's onClick (which navigates to profile) so users
-        // can interact with the card itself. The CTA inside opts in.
+        // Block parent's onClick (navigates to profile) so users can
+        // interact with the card itself. The CTA inside opts in.
         e.stopPropagation();
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <ProviderAvatar provider={provider} size={40} />
-        <div className="min-w-0">
-          <div className="text-sm font-bold text-gray-100">
-            {AI_PROVIDERS[provider].name}
+      <div className="flex items-start gap-2 mb-2">
+        {avatarSlot}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-sm font-bold text-gray-100 truncate">
+              {primaryName}
+            </span>
+            <TierBadge tier={tier} />
           </div>
-          <div className="text-[10px] text-gray-500 truncate">
-            {bio.tagline}
-          </div>
+          <div className="text-[10px] text-gray-500 truncate">{subline}</div>
         </div>
       </div>
-      <p className="text-[11px] text-gray-400 leading-relaxed mb-2 line-clamp-3">
-        {bio.bio}
-      </p>
-      <div className="flex items-center gap-2 text-[11px] mb-2">
-        <span
-          className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white"
-          style={{ backgroundColor: accent }}
-        >
-          Lv {level}
+      {bio && (
+        <p className="text-[11px] text-gray-400 leading-relaxed mb-2 line-clamp-2">
+          {bio}
+        </p>
+      )}
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-300 mb-2">
+        <span title="留言數">💬 {comments}</span>
+        <span title="收到讚">❤ {likes}</span>
+        <span title="累計 tokens">🔢 {formatTokens(tokens)}</span>
+        <span title="呼叫次數">📞 {calls}</span>
+        <span title="累計成本" className="col-span-2 text-gray-400">
+          💰 ${cost.toFixed(2)}
         </span>
-        <span className="text-gray-400">💬 {totalComments}</span>
-        <span className="text-gray-400">❤ {totalLikes}</span>
       </div>
       <button
         onClick={onGoToProfile}

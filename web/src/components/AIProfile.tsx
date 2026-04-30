@@ -62,6 +62,13 @@ export default function AIProfile({ provider, navigate }: Props) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold text-gray-100">{meta.name}</h1>
+            <span
+              className="px-2 py-0.5 rounded text-xs font-bold text-white"
+              style={{ backgroundColor: '#dc2626' }}
+              title="AI 角色一律是 Admin 等級"
+            >
+              Admin
+            </span>
             {level !== null && (
               <span
                 className="px-2 py-0.5 rounded text-xs font-bold text-white"
@@ -76,16 +83,32 @@ export default function AIProfile({ provider, navigate }: Props) {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* Stats — five-metric grid, mirrors UserProfile so both pages
+          share visual rhythm. */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         <Stat
           label="累計留言"
-          value={data ? data.stats.totalComments : null}
+          value={data ? String(data.stats.totalComments) : null}
           accent={meta.color}
         />
         <Stat
           label="累計收到讚"
-          value={data ? data.stats.totalLikes : null}
+          value={data ? String(data.stats.totalLikes) : null}
+          accent={meta.color}
+        />
+        <Stat
+          label="累計 tokens"
+          value={data ? formatTokens(data.stats.totalTokens) : null}
+          accent={meta.color}
+        />
+        <Stat
+          label="呼叫次數"
+          value={data ? data.stats.totalCalls.toLocaleString() : null}
+          accent={meta.color}
+        />
+        <Stat
+          label="累計成本"
+          value={data ? `$${data.stats.totalCost.toFixed(2)}` : null}
           accent={meta.color}
         />
       </div>
@@ -135,7 +158,7 @@ function Stat({
   accent,
 }: {
   label: string;
-  value: number | null;
+  value: string | null;
   accent: string;
 }) {
   return (
@@ -146,9 +169,15 @@ function Stat({
       <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
         {label}
       </div>
-      <div className="text-2xl font-bold text-gray-100">
-        {value === null ? '…' : value.toLocaleString()}
+      <div className="text-xl font-bold text-gray-100">
+        {value === null ? '…' : value}
       </div>
     </div>
   );
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
 }

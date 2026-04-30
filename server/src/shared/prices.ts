@@ -100,7 +100,14 @@ const PROVIDER_FALLBACK: Record<string, ModelPrice> = {
 };
 
 export function priceFor(provider: string, model: string): ModelPrice {
-  return PRICES[model] ?? PROVIDER_FALLBACK[provider] ?? { inputPer1M: 0, outputPer1M: 0 };
+  // Strip the stage prefix (e.g. "claude_api:", "openai_image_api:") that
+  // orchestrator attaches when logging non-CLI usage. The prefix isn't
+  // part of the SKU's pricing key, so without this strip every fallback
+  // /image-gen row was hitting PROVIDER_FALLBACK instead of the exact
+  // entry — costs were under/over-counted accordingly.
+  const colonIdx = model.indexOf(':');
+  const cleanModel = colonIdx >= 0 ? model.slice(colonIdx + 1) : model;
+  return PRICES[cleanModel] ?? PROVIDER_FALLBACK[provider] ?? { inputPer1M: 0, outputPer1M: 0 };
 }
 
 // Cost for a given (tokens_in, tokens_out) usage row, in USD.

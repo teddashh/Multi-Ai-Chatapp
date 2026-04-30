@@ -25,6 +25,36 @@ import {
   type UserRow,
 } from '../lib/db.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
+import { estimateCost } from '../shared/prices.js';
+
+interface UsageRollup {
+  totalTokens: number;
+  totalCalls: number;
+  totalCost: number;
+}
+
+interface UsageRollupRow {
+  provider: string;
+  model: string;
+  calls: number;
+  tokens_in: number;
+  tokens_out: number;
+}
+
+// Aggregate (provider, model) usage rows into (tokens, calls, cost).
+// Cost is computed per-row because price varies by SKU; it's the only
+// metric we can't sum at the SQL level.
+function rollupUsage(rows: UsageRollupRow[]): UsageRollup {
+  let totalTokens = 0;
+  let totalCalls = 0;
+  let totalCost = 0;
+  for (const r of rows) {
+    totalTokens += r.tokens_in + r.tokens_out;
+    totalCalls += r.calls;
+    totalCost += estimateCost(r.provider, r.model, r.tokens_in, r.tokens_out);
+  }
+  return { totalTokens, totalCalls, totalCost };
+}
 
 export const forumRoute = new Hono<{ Variables: AppVariables }>();
 
@@ -202,26 +232,53 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     total_comments: number;
     total_likes: number;
   }>;
-  const aiStats: Record<string, { totalComments: number; totalLikes: number }> = {
-    claude: { totalComments: 0, totalLikes: 0 },
-    chatgpt: { totalComments: 0, totalLikes: 0 },
-    gemini: { totalComments: 0, totalLikes: 0 },
-    grok: { totalComments: 0, totalLikes: 0 },
+  // Lifetime usage per provider — used by the hover card to mirror the
+  // user-side metric shape (tokens / calls / cost).
+  const usageRows = forumStmts.allUsageByProviderAndModel.all() as UsageRollupRow[];
+  const usageByProvider: Record<string, UsageRollup> = {
+    claude: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+    chatgpt: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+    gemini: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+    grok: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+  };
+  for (const r of usageRows) {
+    const slot = usageByProvider[r.provider];
+    if (!slot) continue;
+    slot.totalTokens += r.tokens_in + r.tokens_out;
+    slot.totalCalls += r.calls;
+    slot.totalCost += estimateCost(r.provider, r.model, r.tokens_in, r.tokens_out);
+  }
+  const aiStats: Record<
+    string,
+    {
+      totalComments: number;
+      totalLikes: number;
+      totalTokens: number;
+      totalCalls: number;
+      totalCost: number;
+    }
+  > = {
+    claude: { totalComments: 0, totalLikes: 0, ...usageByProvider.claude },
+    chatgpt: { totalComments: 0, totalLikes: 0, ...usageByProvider.chatgpt },
+    gemini: { totalComments: 0, totalLikes: 0, ...usageByProvider.gemini },
+    grok: { totalComments: 0, totalLikes: 0, ...usageByProvider.grok },
   };
   for (const r of statRows) {
     if (aiStats[r.provider]) {
-      aiStats[r.provider] = {
-        totalComments: r.total_comments,
-        totalLikes: r.total_likes,
-      };
+      aiStats[r.provider].totalComments = r.total_comments;
+      aiStats[r.provider].totalLikes = r.total_likes;
     }
   }
 
   // Per-participant stats inlined for the user hover card. Keyed by
-  // username so the client looks up O(1) per comment.
+  // username so the client looks up O(1) per comment. We also compute
+  // per-user lifetime token/call/cost — small post = few participants
+  // = few extra queries.
   const participantRows = forumStmts.participantStats.all(postId, postId) as Array<{
+    user_id: number;
     username: string;
     nickname: string | null;
+    tier: string;
     has_avatar: number;
     member_since: number;
     total_posts: number;
@@ -231,21 +288,31 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
   const userStats: Record<string, {
     username: string;
     nickname: string | null;
+    tier: string;
     hasAvatar: boolean;
     memberSince: number;
     totalPosts: number;
     totalComments: number;
     totalLikes: number;
+    totalTokens: number;
+    totalCalls: number;
+    totalCost: number;
   }> = {};
   for (const r of participantRows) {
+    const usageRows = forumStmts.userUsageByModel.all(r.user_id) as UsageRollupRow[];
+    const usage = rollupUsage(usageRows);
     userStats[r.username] = {
       username: r.username,
       nickname: r.nickname,
+      tier: r.tier,
       hasAvatar: !!r.has_avatar,
       memberSince: r.member_since * 1000,
       totalPosts: r.total_posts,
       totalComments: r.total_comments,
       totalLikes: r.total_likes,
+      totalTokens: usage.totalTokens,
+      totalCalls: usage.totalCalls,
+      totalCost: usage.totalCost,
     };
   }
 
@@ -467,11 +534,23 @@ forumRoute.get('/ai/:provider', (c) => {
     post_title: string;
     post_category: string;
   }>;
+  // Lifetime token / call / cost — sums every successful usage_log
+  // row across all users that hit this provider.
+  const usageRows = forumStmts.aiProviderUsageByModel.all(
+    provider,
+  ) as UsageRollupRow[];
+  const usage = rollupUsage(usageRows);
   return c.json({
     provider,
+    // Per spec: admin and AIs share the "Admin" badge — AIs are first-
+    // class members on the platform, not gated by tier.
+    tier: 'admin',
     stats: {
       totalComments: stats.total_comments,
       totalLikes: stats.total_likes,
+      totalTokens: usage.totalTokens,
+      totalCalls: usage.totalCalls,
+      totalCost: usage.totalCost,
     },
     recent: recent.map((r) => ({
       id: r.id,
@@ -540,16 +619,26 @@ forumRoute.get('/user/:username', (c) => {
     post_category: string;
   }>;
 
+  // Lifetime usage rollup (success=1) across every provider/model.
+  const userUsageRows = forumStmts.userUsageByModel.all(
+    user.id,
+  ) as UsageRollupRow[];
+  const userUsage = rollupUsage(userUsageRows);
+
   return c.json({
     username: user.username,
     nickname: user.nickname,
     hasAvatar: !!user.avatar_path,
     memberSince: user.created_at * 1000,
+    tier: user.tier,
     bio: user.bio ?? '',
     stats: {
       totalPosts: postRow.total_posts,
       totalComments: commentRow.total_comments,
       totalLikes: postRow.post_likes + commentRow.comment_likes,
+      totalTokens: userUsage.totalTokens,
+      totalCalls: userUsage.totalCalls,
+      totalCost: userUsage.totalCost,
     },
     recentPosts: recentPosts
       .filter((p) => !p.is_anonymous)

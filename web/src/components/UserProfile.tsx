@@ -71,7 +71,10 @@ export default function UserProfile({ username, navigate }: Props) {
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-gray-100">{displayName}</h1>
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-2xl font-bold text-gray-100">{displayName}</h1>
+            <TierBadge tier={data.tier} />
+          </div>
           <div className="text-xs text-gray-500 mb-3">
             @{data.username} · {memberSinceLabel(data.memberSince)}
           </div>
@@ -83,11 +86,20 @@ export default function UserProfile({ username, navigate }: Props) {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats — six metrics in two rows. Mirrors AIProfile. */}
       <div className="grid grid-cols-3 gap-2">
-        <Stat label="發文" value={data.stats.totalPosts} />
-        <Stat label="留言" value={data.stats.totalComments} />
-        <Stat label="收到讚" value={data.stats.totalLikes} />
+        <Stat label="發文" value={String(data.stats.totalPosts)} />
+        <Stat label="留言" value={String(data.stats.totalComments)} />
+        <Stat label="收到讚" value={String(data.stats.totalLikes)} />
+        <Stat
+          label="累計 tokens"
+          value={formatTokens(data.stats.totalTokens)}
+        />
+        <Stat
+          label="呼叫次數"
+          value={data.stats.totalCalls.toLocaleString()}
+        />
+        <Stat label="累計成本" value={`$${data.stats.totalCost.toFixed(2)}`} />
       </div>
 
       {/* Recent posts */}
@@ -164,17 +176,40 @@ export default function UserProfile({ username, navigate }: Props) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 text-center">
       <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
         {label}
       </div>
-      <div className="text-2xl font-bold text-gray-100">
-        {value.toLocaleString()}
-      </div>
+      <div className="text-xl font-bold text-gray-100">{value}</div>
     </div>
   );
+}
+
+const TIER_BADGES: Record<string, { label: string; bg: string }> = {
+  free: { label: 'Free', bg: '#6b7280' },
+  standard: { label: 'Standard', bg: '#4b5563' },
+  pro: { label: 'Pro', bg: '#2563eb' },
+  super: { label: 'Super', bg: '#f59e0b' },
+  admin: { label: 'Admin', bg: '#dc2626' },
+};
+function TierBadge({ tier }: { tier: string }) {
+  const t = TIER_BADGES[tier] ?? TIER_BADGES.free;
+  return (
+    <span
+      className="px-2 py-0.5 rounded text-xs font-bold text-white whitespace-nowrap"
+      style={{ backgroundColor: t.bg }}
+    >
+      {t.label}
+    </span>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 function memberSinceLabel(ms: number): string {
