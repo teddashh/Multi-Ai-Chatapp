@@ -59,8 +59,11 @@ const PRO: Record<AIProvider, ModelChoices> = {
     options: ['claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
   chatgpt: {
+    // Pro users keep gpt-5.4 as default for chat; o4-mini is the
+    // reasoning option visible in 深度思考 mode (cheap reasoning).
+    // o3 stays super-only — it's 4-5x more expensive per token.
     default: 'gpt-5.4',
-    options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+    options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'o4-mini'],
   },
   gemini: {
     default: 'gemini-3.1-pro-preview',

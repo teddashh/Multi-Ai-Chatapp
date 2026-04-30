@@ -239,16 +239,8 @@ export async function runAnthropic(opts: CLIRunOptions): Promise<AnthropicResult
     // No tool requested → final answer. Forced final on last iteration.
     if (round.stopReason !== 'tool_use' || round.toolUses.length === 0 || isLast) {
       finalText = round.text.trim();
-      console.log(
-        `[anthropic] iter=${iter} isLast=${isLast} stopReason=${round.stopReason} ` +
-        `textLen=${finalText.length} toolUses=${round.toolUses.length}`,
-      );
       break;
     }
-    console.log(
-      `[anthropic] iter=${iter} continuing with ${round.toolUses.length} tool_use(s) ` +
-      `(text so far: ${round.text.length} chars)`,
-    );
 
     // Append the assistant's tool_use turn (must include both any text
     // it spoke and the tool_use block, in order, so Anthropic accepts

@@ -172,6 +172,11 @@ chatRoute.post('/send', requireAuth, async (c) => {
     const isAgentMode =
       mode === 'personal' || mode === 'profession' ||
       mode === 'reasoning' || mode === 'image';
+    if (isAgentMode && !singleProvider) {
+      console.warn(
+        `[chat] Agent-mode session ${sessionId} created with no singleProvider — sidebar restore will be broken. Likely client bundle is stale.`,
+      );
+    }
     if (isAgentMode && singleProvider) {
       const meta: Record<string, unknown> = { provider: singleProvider };
       if (mode === 'profession' && profession) meta.profession = profession;
