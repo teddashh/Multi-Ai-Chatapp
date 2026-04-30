@@ -316,6 +316,14 @@ chatRoute.post('/send', requireAuth, async (c) => {
           }
         } else {
           console.log('[auto-title] generator returned null; keeping heuristic');
+          // Surface the miss in Model Trail so admin can spot bad days
+          // (NVIDIA outage, model returning garbage, etc.).
+          logAudit({
+            actorUserId: user.id,
+            targetSessionId: sessionId,
+            action: 'auto_title_fail',
+            metadata: { lang: user.lang },
+          });
         }
       });
     }

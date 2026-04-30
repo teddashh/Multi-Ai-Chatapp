@@ -323,8 +323,6 @@ export default function App() {
   }, []);
 
   const handleEvent = useCallback((ev: SSEEvent) => {
-    // eslint-disable-next-line no-console
-    console.log('[sse]', ev.type, 'sessionId' in ev ? ev.sessionId : '');
     switch (ev.type) {
       case 'session':
         setActiveSessionId(ev.sessionId);
@@ -456,21 +454,14 @@ export default function App() {
         break;
       case 'session_title':
         // NVIDIA-generated title for a brand-new session. Swap in the
-        // real summary directly so the sidebar updates instantly. Also
-        // schedule a refreshSessions() so any other state on the row
-        // (timestamp etc) reconciles, and as belt-and-suspenders if the
-        // local prev didn't have the row yet (race on first message of
-        // a brand new session).
-        // eslint-disable-next-line no-console
-        console.log('[session_title]', ev.sessionId, '→', ev.title);
-        setSessions((prev) => {
-          const matched = prev.some((s) => s.id === ev.sessionId);
-          // eslint-disable-next-line no-console
-          console.log('[session_title] matched in sidebar:', matched);
-          return prev.map((s) =>
+        // real summary directly so the sidebar updates instantly, plus
+        // a refreshSessions() as belt-and-suspenders if prev didn't yet
+        // have the row (first-message race on brand-new sessions).
+        setSessions((prev) =>
+          prev.map((s) =>
             s.id === ev.sessionId ? { ...s, title: ev.title } : s,
-          );
-        });
+          ),
+        );
         refreshSessions();
         break;
       case 'finish':

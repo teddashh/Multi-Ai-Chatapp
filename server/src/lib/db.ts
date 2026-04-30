@@ -295,6 +295,24 @@ if (ver4 < 4) {
   db.exec('PRAGMA user_version = 4');
 }
 
+// v5: collapse avatar_path from absolute to a bare `<id>.<ext>` filename
+// resolved at read time. Future uploads-dir moves won't break rows again.
+// Idempotent: rows already in `<id>.<ext>` form are left alone.
+const ver5 = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver5 < 5) {
+  const rows = db
+    .prepare('SELECT id, avatar_path FROM users WHERE avatar_path IS NOT NULL')
+    .all() as Array<{ id: number; avatar_path: string }>;
+  const update = db.prepare('UPDATE users SET avatar_path = ? WHERE id = ?');
+  for (const r of rows) {
+    if (!r.avatar_path.includes('/') && !r.avatar_path.includes('\\')) continue;
+    const m = r.avatar_path.match(/[\\/]([^\\/]+)$/);
+    if (!m) continue;
+    update.run(m[1], r.id);
+  }
+  db.exec('PRAGMA user_version = 5');
+}
+
 export interface UserRow {
   id: number;
   username: string;

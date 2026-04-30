@@ -29,8 +29,11 @@ export function isSupportedAvatarMime(mime: string): boolean {
   return mime in AVATAR_MIME_EXT;
 }
 
-// Saves the avatar bytes for a user, replacing any prior file. Returns the
-// absolute path that should be persisted in users.avatar_path.
+// Saves the avatar bytes for a user, replacing any prior file. Returns
+// the *relative* filename (`<id>.<ext>`) to persist in users.avatar_path.
+// Storing only the filename keeps the row portable — moving the uploads
+// dir or renaming UPLOAD_DIR (e.g. the Apr-29 dev/prod split that broke
+// scarletlin / tedjchuang avatars) won't invalidate the DB.
 export function saveAvatar(
   userId: number,
   mime: string,
@@ -46,14 +49,17 @@ export function saveAvatar(
       // ignore — file may not exist
     }
   }
-  const path = join(AVATAR_DIR, `${userId}.${ext}`);
-  writeFileSync(path, buffer);
-  return path;
+  const filename = `${userId}.${ext}`;
+  writeFileSync(join(AVATAR_DIR, filename), buffer);
+  return filename;
 }
 
-export function readAvatar(path: string): Buffer | null {
+// Accepts either the new relative `<id>.<ext>` or a legacy absolute path
+// (pre-v5 backfill). Heuristic: bare filenames have no path separator.
+export function readAvatar(ref: string): Buffer | null {
+  const abs = ref.includes('/') || ref.includes('\\') ? ref : join(AVATAR_DIR, ref);
   try {
-    return readFileSync(path);
+    return readFileSync(abs);
   } catch {
     return null;
   }

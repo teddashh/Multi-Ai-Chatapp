@@ -769,7 +769,7 @@ function SessionViewer({
 
 type AuditCategory = 'admin' | 'model' | 'user';
 function categoryOf(action: string): AuditCategory {
-  if (action === 'model_fallback') return 'model';
+  if (action === 'model_fallback' || action === 'auto_title_fail') return 'model';
   if (action.startsWith('user_')) return 'user';
   return 'admin';
 }

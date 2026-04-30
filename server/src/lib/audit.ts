@@ -19,7 +19,9 @@ import { auditStmts } from './db.js';
 export type AuditCategory = 'admin' | 'model' | 'user';
 
 export function categoryOf(action: string): AuditCategory {
-  if (action === 'model_fallback') return 'model';
+  // Model Trail covers anything about model behavior — fallback chain
+  // events plus background tasks like the auto-title NVIDIA call.
+  if (action === 'model_fallback' || action === 'auto_title_fail') return 'model';
   if (action.startsWith('user_')) return 'user';
   return 'admin';
 }
