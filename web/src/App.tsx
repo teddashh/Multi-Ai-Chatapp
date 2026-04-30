@@ -313,17 +313,46 @@ export default function App() {
     async (id: string) => {
       try {
         const detail = await getSession(id);
+        const m = detail.session.mode as ChatMode;
         setActiveSessionId(detail.session.id);
-        setMode(detail.session.mode as ChatMode);
+        setMode(m);
+        // Restore Agent-mode state from the session's stored metadata
+        // so the AI / profession / image model picker matches what the
+        // session was originally created with. Without this, clicking a
+        // Grok personal-chat session left the picker on whatever AI was
+        // currently selected and you'd be talking to the wrong AI.
+        const isAgent = modeGroupOf(m) === 'agent';
+        if (isAgent && detail.session.meta) {
+          const meta = detail.session.meta as {
+            provider?: AIProvider;
+            profession?: string;
+            imageModel?: string;
+          };
+          if (meta.provider) {
+            setSingleProviderRaw(meta.provider);
+          }
+          if (m === 'profession' && meta.profession) {
+            setProfession(meta.profession);
+          }
+          if (m === 'image' && meta.imageModel && meta.provider) {
+            setModelOverrides((prev) => ({
+              ...prev,
+              [meta.provider as AIProvider]: meta.imageModel as string,
+            }));
+          }
+        } else if (m !== 'free' && detail.session.meta) {
+          // Multi sequential modes — restore role assignments.
+          setRoles(detail.session.meta as ModeRoles);
+        }
         setMessages(
-          detail.messages.map((m) => ({
-            id: m.id,
-            role: m.role,
-            provider: m.provider,
-            modeRole: m.modeRole,
-            content: m.content,
-            timestamp: m.timestamp,
-            attachments: m.attachments,
+          detail.messages.map((msg) => ({
+            id: msg.id,
+            role: msg.role,
+            provider: msg.provider,
+            modeRole: msg.modeRole,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            attachments: msg.attachments,
           })),
         );
       } catch (err) {

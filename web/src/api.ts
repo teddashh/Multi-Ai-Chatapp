@@ -311,10 +311,21 @@ export async function uploadFile(file: File): Promise<MessageAttachment> {
 
 // === Sessions ===
 
+// Agent-mode session metadata. Stored in chat_sessions.roles_json on
+// creation so clicking a sidebar entry can restore mode + AI + extras.
+export interface AgentSessionMeta {
+  provider?: AIProvider;
+  profession?: string;
+  imageModel?: string;
+}
+
 export interface SessionSummary {
   id: string;
   title: string;
   mode: ChatMode;
+  // For Agent modes: AgentSessionMeta. For Multi sequential modes:
+  // ModeRoles. For free mode: null.
+  meta: AgentSessionMeta | ModeRoles | null;
   created_at: number;
   updated_at: number;
   msg_count: number;
@@ -325,6 +336,7 @@ export interface SessionDetail {
     id: string;
     title: string;
     mode: ChatMode;
+    meta: AgentSessionMeta | ModeRoles | null;
     created_at: number;
     updated_at: number;
   };

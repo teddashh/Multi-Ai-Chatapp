@@ -165,7 +165,23 @@ chatRoute.post('/send', requireAuth, async (c) => {
   }
   if (!sessionId) {
     sessionId = randomUUID();
-    const rolesJson = roles && mode !== 'free' ? JSON.stringify(roles) : null;
+    // roles_json doubles as Agent-mode state storage so single-AI sessions
+    // remember which AI / profession / image model the user picked. Each
+    // mode uses a different shape; the client parses based on session.mode.
+    let rolesJson: string | null = null;
+    const isAgentMode =
+      mode === 'personal' || mode === 'profession' ||
+      mode === 'reasoning' || mode === 'image';
+    if (isAgentMode && singleProvider) {
+      const meta: Record<string, unknown> = { provider: singleProvider };
+      if (mode === 'profession' && profession) meta.profession = profession;
+      if (mode === 'image' && modelOverrides?.[singleProvider]) {
+        meta.imageModel = modelOverrides[singleProvider];
+      }
+      rolesJson = JSON.stringify(meta);
+    } else if (roles && mode !== 'free') {
+      rolesJson = JSON.stringify(roles);
+    }
     const initialTitle = deriveTitle(text);
     sessionStmts.insert.run(sessionId, user.id, initialTitle, mode, rolesJson);
     isNew = true;

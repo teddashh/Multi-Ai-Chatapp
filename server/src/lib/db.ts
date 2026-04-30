@@ -528,7 +528,7 @@ export const sessionStmts = {
   // Active sessions only — soft-deleted ones still live in the DB but
   // disappear from the user's sidebar.
   listForUser: db.prepare<[number]>(
-    `SELECT s.id, s.title, s.mode, s.created_at, s.updated_at,
+    `SELECT s.id, s.title, s.mode, s.roles_json, s.created_at, s.updated_at,
             (SELECT COUNT(*) FROM chat_messages m WHERE m.session_id = s.id) AS msg_count
      FROM chat_sessions s
      WHERE s.user_id = ? AND s.deleted_at IS NULL

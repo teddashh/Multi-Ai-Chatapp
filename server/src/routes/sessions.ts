@@ -18,11 +18,32 @@ sessionsRoute.get('/', (c) => {
     id: string;
     title: string;
     mode: string;
+    roles_json: string | null;
     created_at: number;
     updated_at: number;
     msg_count: number;
   }>;
-  return c.json({ sessions: rows });
+  // Parse roles_json into a structured `meta` field. For multi modes
+  // it carries ModeRoles; for Agent modes it carries
+  // {provider, profession?, imageModel?} so the client can restore
+  // the right state when the user clicks back into a session.
+  return c.json({
+    sessions: rows.map((r) => {
+      let meta: unknown = null;
+      if (r.roles_json) {
+        try { meta = JSON.parse(r.roles_json); } catch { meta = null; }
+      }
+      return {
+        id: r.id,
+        title: r.title,
+        mode: r.mode,
+        meta,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        msg_count: r.msg_count,
+      };
+    }),
+  });
 });
 
 sessionsRoute.get('/:id', (c) => {
@@ -32,8 +53,19 @@ sessionsRoute.get('/:id', (c) => {
   if (!session) return c.json({ error: 'not found' }, 404);
   const messages = messageStmts.listForSession.all(id) as MessageRow[];
   const isAdmin = user.tier === 'admin';
+  let meta: unknown = null;
+  if (session.roles_json) {
+    try { meta = JSON.parse(session.roles_json); } catch { meta = null; }
+  }
   return c.json({
-    session,
+    session: {
+      id: session.id,
+      title: session.title,
+      mode: session.mode,
+      meta,
+      created_at: session.created_at,
+      updated_at: session.updated_at,
+    },
     messages: messages.map((m) => {
       const attachments = attachmentStmts.listForMessage.all(m.id) as Array<{
         id: string;

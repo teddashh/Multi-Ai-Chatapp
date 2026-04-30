@@ -912,6 +912,48 @@ async function runReasoning(p: OrchestratorParams): Promise<void> {
   ).catch(() => {});
 }
 
+// Universal image-gen fallback. We don't have Flux / SDXL keys (BFL,
+// Replicate, fal.ai aren't wired), so when a user picks Claude+Flux or
+// any vendor's "sdxl" option, this is what actually runs. Cheapest
+// available OpenAI image SKU = gpt-image-1-low (~$0.02/img).
+const IMAGE_FALLBACK_MODEL = 'gpt-image-1-low';
+const IMAGE_FALLBACK_STAGE = 'openai_image_api';
+
+interface ImageRunResult {
+  result: { bytes: Buffer; mimeType: string; modelUsed: string };
+  stageName: string;
+}
+
+async function tryImageNative(
+  prompt: string,
+  model: string,
+  signal: AbortSignal | undefined,
+): Promise<ImageRunResult> {
+  if (isOpenAIImageModel(model)) {
+    return {
+      result: await runOpenAIImage({ prompt, model, signal }),
+      stageName: 'openai_image_api',
+    };
+  }
+  if (isXAIImageModel(model)) {
+    return {
+      result: await runXAIImage({ prompt, model, signal }),
+      stageName: 'xai_image_api',
+    };
+  }
+  if (isGoogleImageModel(model)) {
+    return {
+      result: await runGoogleImage({ prompt, model, signal }),
+      stageName: 'google_image_api',
+    };
+  }
+  // Flux (no BFL key) and 'sdxl' (no Replicate key) land here. Caller
+  // catches and routes through universal fallback.
+  throw new Error(
+    `Image model '${model}' has no native handler — falling back to ${IMAGE_FALLBACK_MODEL}`,
+  );
+}
+
 // 出圖模式 — single AI generates one image. The result is delivered as
 // a chat message with a markdown image link pointing at the saved
 // attachment, so react-markdown renders it inline. We persist the
@@ -932,32 +974,58 @@ async function runImage(p: OrchestratorParams): Promise<void> {
 
   let result: { bytes: Buffer; mimeType: string; modelUsed: string };
   let stageName = 'image_api';
+  let didFallback = false;
   try {
-    if (isOpenAIImageModel(model)) {
-      result = await runOpenAIImage({ prompt: p.text, model, signal: p.signal });
-      stageName = 'openai_image_api';
-    } else if (isXAIImageModel(model)) {
-      result = await runXAIImage({ prompt: p.text, model, signal: p.signal });
-      stageName = 'xai_image_api';
-    } else if (isGoogleImageModel(model)) {
-      result = await runGoogleImage({ prompt: p.text, model, signal: p.signal });
-      stageName = 'google_image_api';
-    } else {
-      // Flux (Claude family) + universal SDXL fallback land in Phase C.
-      throw new Error(
-        `Image generation for model '${model}' is not yet implemented. Pick a gpt-image-1-* / grok-imagine-image / imagen-4 / gemini-*-image option.`,
-      );
+    const out = await tryImageNative(p.text, model, p.signal);
+    result = out.result;
+    stageName = out.stageName;
+  } catch (primaryErr) {
+    const primaryMsg = (primaryErr as Error).message;
+    console.error(`[image] ${provider}/${model} primary failed:`, primaryMsg);
+    // Universal fallback — same UX bridge as text fallbacks. User sees
+    // "我換個方式畫一下，請等等" briefly while we retry with the cheap
+    // OpenAI fallback. The badge will show the fallback model so admin
+    // knows what actually drew it.
+    p.emit({ type: 'fallback_notice', provider, message: bridgeText(p.lang) });
+    try {
+      const out = await tryImageNative(p.text, IMAGE_FALLBACK_MODEL, p.signal);
+      result = out.result;
+      stageName = out.stageName;
+      didFallback = true;
+    } catch (fallbackErr) {
+      const fbMsg = (fallbackErr as Error).message;
+      console.error(`[image] ${provider}/${model} fallback also failed:`, fbMsg);
+      p.emit({ type: 'error', provider, message: fbMsg });
+      p.emit({
+        type: 'done',
+        provider,
+        text: exhaustedFallbackText(p.lang, p.tier),
+      });
+      return;
     }
-  } catch (err) {
-    const msg = (err as Error).message;
-    console.error(`[image] ${provider}/${model} failed:`, msg);
-    p.emit({ type: 'error', provider, message: msg });
-    p.emit({
-      type: 'done',
-      provider,
-      text: failureText(p.lang),
-    });
-    return;
+  }
+  if (didFallback) {
+    // Audit the fallback so admin sees which combos forced the OpenAI
+    // path (Claude+Flux today, anyone picking SDXL).
+    try {
+      auditStmts.insert.run(
+        p.userId,
+        p.userId,
+        p.sessionId ?? null,
+        'model_fallback',
+        JSON.stringify({
+          provider,
+          primary_model: model,
+          mode: 'image',
+          journey: [
+            { stage: 'image_native', outcome: 'failed', model, error: 'no_handler' },
+            { stage: stageName, outcome: 'success', model: result.modelUsed },
+          ],
+        }),
+      );
+    } catch (e) {
+      console.error('image fallback audit insert failed', (e as Error).message);
+    }
   }
 
   // Persist the image as a chat_attachments row owned by the user, then

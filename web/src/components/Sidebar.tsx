@@ -1,10 +1,34 @@
 import React, { useState } from 'react';
 import { AI_PROVIDERS } from '../shared/constants';
-import type { SessionSummary } from '../api';
+import type { AgentSessionMeta, SessionSummary } from '../api';
 import { deleteSession, getSession, renameSession } from '../api';
 import { modeName, useT } from '../i18n';
 import type { Dict } from '../i18n';
 import type { ChatMode } from '../shared/types';
+import { modeGroupOf } from '../shared/types';
+
+// Session row subtitle: "{relative time} · {mode}{·provider}{·extra}"
+// so users can scan the sidebar and tell at a glance "this thread was a
+// 個性化聊天 with Grok" vs "this was a 指定職業 doctor session".
+function buildSubtitle(
+  t: Dict,
+  session: SessionSummary,
+): string {
+  const time = relativeTime(t, session.updated_at);
+  const modeLabel = modeName(t, session.mode);
+  const isAgent = modeGroupOf(session.mode) === 'agent';
+  if (!isAgent) return `${time} · ${modeLabel}`;
+  const meta = session.meta as AgentSessionMeta | null;
+  const provider = meta?.provider;
+  const providerLabel = provider ? AI_PROVIDERS[provider].name : '';
+  let extra = '';
+  if (session.mode === 'profession' && meta?.profession) {
+    extra = ` · ${meta.profession}`;
+  } else if (session.mode === 'image' && meta?.imageModel) {
+    extra = ` · ${meta.imageModel}`;
+  }
+  return `${time} · ${modeLabel}${providerLabel ? ' / ' + providerLabel : ''}${extra}`;
+}
 
 interface Props {
   sessions: SessionSummary[];
@@ -190,8 +214,8 @@ export default function Sidebar({
                     )}
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] text-gray-500">
-                      {relativeTime(t, s.updated_at)}
+                    <span className="text-[10px] text-gray-500 truncate flex-1 mr-1">
+                      {buildSubtitle(t, s)}
                     </span>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity text-[10px]">
                       <button
