@@ -27,6 +27,11 @@ export interface Dict {
   profile: string;
   langZh: string;
   langEn: string;
+  // TopNav tabs (聊天室 / 討論區) and unauth CTAs
+  navChat: string;
+  navForum: string;
+  navSignIn: string;
+  navSignUp: string;
 
   // Login
   loginTitle: string;
@@ -224,7 +229,7 @@ export interface Dict {
 }
 
 const ZH: Dict = {
-  appName: 'AI 姐妹群',
+  appName: 'AI 姐妹',
   loading: '載入中...',
   cancel: '取消',
   save: '儲存',
@@ -244,8 +249,12 @@ const ZH: Dict = {
   profile: '個人資料',
   langZh: '繁中',
   langEn: 'English',
+  navChat: '聊天室',
+  navForum: '討論區',
+  navSignIn: '登入',
+  navSignUp: '註冊',
 
-  loginTitle: 'AI 姐妹群',
+  loginTitle: 'AI 姐妹',
   loginUsernameLabel: 'Username 或 Email',
   loginPasswordLabel: '密碼',
   loginForgot: '忘記密碼？',
@@ -458,6 +467,10 @@ const EN: Dict = {
   profile: 'Profile',
   langZh: '繁中',
   langEn: 'English',
+  navChat: 'Chat',
+  navForum: 'Forum',
+  navSignIn: 'Sign in',
+  navSignUp: 'Sign up',
 
   loginTitle: 'AI Sister',
   loginUsernameLabel: 'Username or Email',
@@ -668,8 +681,8 @@ const IS_DEV_INSTANCE =
   typeof window !== 'undefined' && window.location.host === 'sisters.ted-h.com';
 
 if (IS_DEV_INSTANCE) {
-  ZH.appName = 'AI 姐妹群 - 測試站';
-  ZH.loginTitle = 'AI 姐妹群 - 測試站';
+  ZH.appName = 'AI 姐妹 - 測試站';
+  ZH.loginTitle = 'AI 姐妹 - 測試站';
   EN.appName = 'AI Sister - DEV';
   EN.loginTitle = 'AI Sister - DEV';
 }
@@ -679,8 +692,8 @@ if (IS_DEV_INSTANCE) {
 // override above) gives one clean title for the whole tab lifecycle.
 if (typeof document !== 'undefined') {
   document.title = IS_DEV_INSTANCE
-    ? 'AI Sister - DEV / AI 姐妹群 - 測試站'
-    : 'AI Sister / AI 姐妹群';
+    ? 'AI Sister - DEV / AI 姐妹 - 測試站'
+    : 'AI Sister / AI 姐妹';
 }
 
 export const DICTS: Record<Lang, Dict> = { 'zh-TW': ZH, en: EN };

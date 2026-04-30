@@ -920,6 +920,27 @@ export const forumStmts = {
   decCommentThumbs: db.prepare<[number]>(
     `UPDATE forum_comments SET thumbs_count = MAX(0, thumbs_count - 1) WHERE id = ?`,
   ),
+  // AI profile aggregates — total comments and total received likes
+  // for one provider (claude/chatgpt/gemini/grok) across the entire
+  // forum. Used by the per-AI profile page.
+  aiCommentStats: db.prepare<[string]>(
+    `SELECT
+       COUNT(*) AS total_comments,
+       COALESCE(SUM(thumbs_count), 0) AS total_likes
+     FROM forum_comments
+     WHERE author_type = 'ai' AND author_ai_provider = ?`,
+  ),
+  // Recent activity for the AI profile — last N comments by this
+  // provider, joined with the parent post for context.
+  aiRecentComments: db.prepare<[string, number]>(
+    `SELECT c.id, c.body, c.thumbs_count, c.created_at, c.is_imported,
+            p.id AS post_id, p.title AS post_title, p.category AS post_category
+     FROM forum_comments c
+     JOIN forum_posts p ON p.id = c.post_id
+     WHERE c.author_type = 'ai' AND c.author_ai_provider = ?
+     ORDER BY c.id DESC
+     LIMIT ?`,
+  ),
   // Public list of who liked a target — backs the "點 thumbs 看誰按過"
   // popover. Anonymity at like-time is not yet supported (Phase 2 if
   // wanted); for now usernames are always visible.

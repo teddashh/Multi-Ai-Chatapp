@@ -633,6 +633,32 @@ export interface ForumComment {
   liked: boolean;
 }
 
+export interface AIProfileResponse {
+  provider: AIProvider;
+  stats: {
+    totalComments: number;
+    totalLikes: number;
+  };
+  recent: Array<{
+    id: number;
+    body: string;
+    thumbsCount: number;
+    createdAt: number;
+    isImported: boolean;
+    postId: number;
+    postTitle: string;
+    postCategory: string;
+  }>;
+}
+
+export async function getAIProfile(
+  provider: AIProvider,
+): Promise<AIProfileResponse> {
+  const res = await fetch(`/api/forum/ai/${provider}`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<AIProfileResponse>;
+}
+
 export interface ForumLiker {
   username: string;
   nickname: string | null;

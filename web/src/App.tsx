@@ -39,10 +39,10 @@ import ChatArea from './components/ChatArea';
 import InputBar from './components/InputBar';
 import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
-import LangToggle from './components/LangToggle';
 import ProfileModal from './components/ProfileModal';
 import Forum from './components/Forum';
 import ShareToForumModal from './components/ShareToForumModal';
+import TopNav from './components/TopNav';
 import { DICTS, I18nContext, useT, type Lang } from './i18n';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
@@ -724,6 +724,34 @@ export default function App() {
         {t.loading}
       </div>
     );
+  } else if (pathname.startsWith('/forum')) {
+    // Forum is browseable by anonymous viewers — keep before the !user
+    // gate so unauthed visitors land on read-only forum instead of Login.
+    content = (
+      <div className="flex flex-col h-screen">
+        <TopNav
+          user={user}
+          pathname={pathname}
+          navigate={navigate}
+          lang={lang}
+          onLangChange={handleLangToggle}
+          onProfileClick={() => setShowProfile(true)}
+          onLogout={handleLogout}
+          avatarBust={avatarBust}
+        />
+        <div className="flex-1 min-h-0 overflow-y-auto bg-gray-950">
+          <Forum pathname={pathname} navigate={navigate} user={user} />
+        </div>
+        {user && (
+          <ProfileModal
+            isOpen={showProfile}
+            user={user}
+            onClose={() => setShowProfile(false)}
+            onUpdate={handleProfileUpdate}
+          />
+        )}
+      </div>
+    );
   } else if (!user) {
     content = <Login onLogin={setUser} />;
   } else if (pathname === '/admin' && user.tier === 'admin') {
@@ -733,91 +761,34 @@ export default function App() {
         onExit={() => navigate('/')}
       />
     );
-  } else if (pathname.startsWith('/forum')) {
-    content = <Forum pathname={pathname} navigate={navigate} user={user} />;
   } else {
-    const displayName = user.nickname || user.username;
-    const avatarSrc = user.hasAvatar
-      ? avatarUrl(user.username, avatarBust)
-      : null;
     content = (
-      <div className="flex h-screen">
-        <Sidebar
-          sessions={sessions}
-          activeId={activeSessionId}
-          onSelect={handleSelectSession}
-          onNew={handleNewChat}
-          onRefresh={refreshSessions}
-          onShare={(sessionId, defaultTitle) =>
-            setShareTarget({ sessionId, defaultTitle })
-          }
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
+      <div className="flex flex-col h-screen">
+        <TopNav
+          user={user}
+          pathname={pathname}
+          navigate={navigate}
+          lang={lang}
+          onLangChange={handleLangToggle}
+          onProfileClick={() => setShowProfile(true)}
+          onLogout={handleLogout}
+          onSidebarToggle={() => setSidebarOpen(true)}
+          avatarBust={avatarBust}
         />
-        <div className="flex flex-col flex-1 min-w-0">
-          <div className="flex-none border-b border-gray-800 p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSidebarOpen(true)}
-                  className="lg:hidden text-gray-400 hover:text-white"
-                  title={t.sidebarOpen}
-                >
-                  ☰
-                </button>
-                <h1 className="text-lg font-bold">{t.appName}</h1>
-                <button
-                  onClick={() => navigate('/forum')}
-                  className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300"
-                  title="AI-Sister 論壇"
-                >
-                  論壇
-                </button>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <LangToggle lang={lang} onChange={handleLangToggle} />
-                <button
-                  onClick={() => setShowProfile(true)}
-                  title={t.profile}
-                  className="flex items-center gap-1.5 hover:bg-gray-800 rounded px-1.5 py-0.5 transition-colors"
-                >
-                  {avatarSrc ? (
-                    <img
-                      src={avatarSrc}
-                      alt={displayName}
-                      className="w-6 h-6 rounded-full object-cover border border-gray-700"
-                    />
-                  ) : (
-                    <span className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold">
-                      {displayName.slice(0, 1).toUpperCase()}
-                    </span>
-                  )}
-                  <span className="text-gray-300 hidden sm:inline" title={user.username}>
-                    {displayName}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-gray-800 text-[10px] uppercase tracking-wider">
-                    {user.tier}
-                  </span>
-                </button>
-                {user.tier === 'admin' && (
-                  <button
-                    onClick={() => navigate('/admin')}
-                    className="text-gray-400 hover:text-white"
-                    title={t.manageUsers}
-                  >
-                    Admin
-                  </button>
-                )}
-                <button
-                  onClick={handleLogout}
-                  className="text-gray-500 hover:text-red-400"
-                >
-                  {t.logout}
-                </button>
-              </div>
-            </div>
-          </div>
-
+        <div className="flex flex-1 min-h-0">
+          <Sidebar
+            sessions={sessions}
+            activeId={activeSessionId}
+            onSelect={handleSelectSession}
+            onNew={handleNewChat}
+            onRefresh={refreshSessions}
+            onShare={(sessionId, defaultTitle) =>
+              setShareTarget({ sessionId, defaultTitle })
+            }
+            isOpen={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <div className="flex flex-col flex-1 min-w-0">
           {/* Row order (top-down) so the most-frequently-changed knobs
               are closest to the chat input:
                 1. mode group + inner mode
@@ -959,6 +930,7 @@ export default function App() {
               navigate(`/forum/post/${postId}`);
             }}
           />
+          </div>
         </div>
       </div>
     );

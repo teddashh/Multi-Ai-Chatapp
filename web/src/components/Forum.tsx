@@ -27,6 +27,7 @@ import {
   type User,
 } from '../api';
 import ProviderAvatar from './ProviderAvatar';
+import AIProfile from './AIProfile';
 
 interface Props {
   pathname: string;
@@ -41,28 +42,31 @@ export default function Forum({ pathname, navigate, user }: Props) {
   //   /forum/post/<numeric-id>
   const route = useMemo(() => parseForumPath(pathname), [pathname]);
 
+  // TopNav (rendered by App.tsx) covers global navigation now; this
+  // component only renders the route-specific content.
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <ForumHeader navigate={navigate} route={route} user={user} />
-      <div className="flex-1 overflow-y-auto bg-gray-950">
-        {route.kind === 'index' && (
-          <ForumIndex navigate={navigate} />
-        )}
-        {route.kind === 'category' && (
-          <ForumCategory category={route.category} navigate={navigate} />
-        )}
-        {route.kind === 'post' && (
-          <ForumPostView postId={route.postId} navigate={navigate} user={user} />
-        )}
-      </div>
-    </div>
+    <>
+      {route.kind === 'index' && <ForumIndex navigate={navigate} />}
+      {route.kind === 'category' && (
+        <ForumCategory category={route.category} navigate={navigate} />
+      )}
+      {route.kind === 'post' && (
+        <ForumPostView postId={route.postId} navigate={navigate} user={user} />
+      )}
+      {route.kind === 'ai' && (
+        <AIProfile provider={route.provider} navigate={navigate} />
+      )}
+    </>
   );
 }
 
 interface RouteIndex { kind: 'index' }
 interface RouteCategory { kind: 'category'; category: string }
 interface RoutePost { kind: 'post'; postId: number }
-type ForumRoute = RouteIndex | RouteCategory | RoutePost;
+interface RouteAI { kind: 'ai'; provider: AIProvider }
+type ForumRoute = RouteIndex | RouteCategory | RoutePost | RouteAI;
+
+const AI_PROVIDERS_SET = new Set<string>(['claude', 'chatgpt', 'gemini', 'grok']);
 
 function parseForumPath(p: string): ForumRoute {
   if (p.startsWith('/forum/cat/')) {
@@ -73,56 +77,13 @@ function parseForumPath(p: string): ForumRoute {
     const id = parseInt(p.slice('/forum/post/'.length), 10);
     if (Number.isFinite(id) && id > 0) return { kind: 'post', postId: id };
   }
+  if (p.startsWith('/forum/ai/')) {
+    const prov = p.slice('/forum/ai/'.length);
+    if (AI_PROVIDERS_SET.has(prov)) {
+      return { kind: 'ai', provider: prov as AIProvider };
+    }
+  }
   return { kind: 'index' };
-}
-
-// ---------------------------------------------------------------------------
-// Header — shared across the three views. Shows breadcrumb + a "回主頁"
-// button to leave the forum.
-// ---------------------------------------------------------------------------
-interface HeaderProps {
-  navigate: (path: string) => void;
-  route: ForumRoute;
-  user: User | null;
-}
-function ForumHeader({ navigate, route, user }: HeaderProps) {
-  return (
-    <div className="flex-none border-b border-gray-800 bg-gray-900 px-4 py-3 flex items-center justify-between">
-      <div className="flex items-center gap-3 text-sm">
-        <button
-          onClick={() => navigate('/')}
-          className="text-gray-400 hover:text-white"
-          title="回主頁"
-        >
-          ← 回主頁
-        </button>
-        <span className="text-gray-600">/</span>
-        <button
-          onClick={() => navigate('/forum')}
-          className="text-gray-300 hover:text-white font-semibold"
-        >
-          AI-Sister 論壇
-        </button>
-        {route.kind === 'category' && (
-          <>
-            <span className="text-gray-600">/</span>
-            <span className="text-gray-300">{route.category}</span>
-          </>
-        )}
-        {route.kind === 'post' && (
-          <>
-            <span className="text-gray-600">/</span>
-            <span className="text-gray-500 text-xs">貼文</span>
-          </>
-        )}
-      </div>
-      {!user && (
-        <span className="text-xs text-gray-500">
-          訪客模式（登入後可留言、按讚）
-        </span>
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +364,7 @@ function ForumPostView({
             onToggleLike={() => toggleCommentLike(c.id)}
             onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
             canLike={!!user}
+            navigate={navigate}
           />
         ))}
       </div>
@@ -469,6 +431,7 @@ function CommentRow({
   onToggleLike,
   onShowLikers,
   canLike,
+  navigate,
 }: {
   comment: ForumComment;
   // From the parent post's profession snapshot. When set and comment is
@@ -478,6 +441,7 @@ function CommentRow({
   onToggleLike: () => void;
   onShowLikers: () => void;
   canLike: boolean;
+  navigate: (p: string) => void;
 }) {
   const isAi = comment.authorType === 'ai';
   const provider = comment.authorAiProvider;
@@ -491,10 +455,11 @@ function CommentRow({
   const metaParts: string[] = [];
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
-  // AI name + avatar hint at a clickable profile (each AI gets its own
-  // page in a later phase). For now: pointer cursor + hover brightness
-  // as a visual affordance, no nav target yet.
-  const aiHover = isAi && provider ? `${capitalize(provider)} · profile coming soon` : undefined;
+  // AI name + avatar are clickable links to the AI's profile page.
+  const goToAIProfile = () => {
+    if (isAi && provider) navigate(`/forum/ai/${provider}`);
+  };
+  const aiHover = isAi && provider ? `查看 ${capitalize(provider)} 的個人檔案` : undefined;
 
   return (
     <div
@@ -505,6 +470,7 @@ function CommentRow({
       <div
         className={isAi ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
         title={aiHover}
+        onClick={goToAIProfile}
       >
         <CommentAvatar comment={comment} size={36} />
       </div>
@@ -513,10 +479,11 @@ function CommentRow({
           <span
             className={`text-sm ${
               isAi
-                ? 'text-gray-100 font-semibold cursor-pointer hover:text-white'
+                ? 'text-gray-100 font-semibold cursor-pointer hover:text-white hover:underline'
                 : 'text-gray-200 font-medium'
             }`}
             title={aiHover}
+            onClick={isAi ? goToAIProfile : undefined}
           >
             {primaryName}
           </span>

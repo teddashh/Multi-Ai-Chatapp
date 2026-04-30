@@ -383,6 +383,50 @@ forumRoute.post('/:postId/comments', requireAuth, async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /api/forum/ai/:provider — public AI profile.
+// Returns stats (comment count + received likes) and the AI's recent
+// forum comments. Bio is held client-side (per-provider hardcoded).
+// ---------------------------------------------------------------------------
+const VALID_PROVIDERS = new Set(['claude', 'chatgpt', 'gemini', 'grok']);
+forumRoute.get('/ai/:provider', (c) => {
+  const provider = c.req.param('provider') ?? '';
+  if (!VALID_PROVIDERS.has(provider)) {
+    return c.json({ error: 'invalid provider' }, 400);
+  }
+  const stats = forumStmts.aiCommentStats.get(provider) as {
+    total_comments: number;
+    total_likes: number;
+  };
+  const recent = forumStmts.aiRecentComments.all(provider, 20) as Array<{
+    id: number;
+    body: string;
+    thumbs_count: number;
+    created_at: number;
+    is_imported: number;
+    post_id: number;
+    post_title: string;
+    post_category: string;
+  }>;
+  return c.json({
+    provider,
+    stats: {
+      totalComments: stats.total_comments,
+      totalLikes: stats.total_likes,
+    },
+    recent: recent.map((r) => ({
+      id: r.id,
+      body: r.body.length > 240 ? r.body.slice(0, 240) + '…' : r.body,
+      thumbsCount: r.thumbs_count,
+      createdAt: r.created_at * 1000,
+      isImported: !!r.is_imported,
+      postId: r.post_id,
+      postTitle: r.post_title,
+      postCategory: r.post_category,
+    })),
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/forum/likers/:targetType/:targetId — public list of who liked.
 // Anonymous like is not (yet) a thing, so usernames are always visible.
 // ---------------------------------------------------------------------------
