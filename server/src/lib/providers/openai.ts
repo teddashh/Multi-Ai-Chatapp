@@ -14,6 +14,7 @@
 import type { CLIRunOptions, CLIRunResult } from '../cli.js';
 import { imageAttachments, readImageBase64 } from '../uploads.js';
 import { languageSystemPrompt } from './openrouter.js';
+import { needsResponsesAPI, runOpenAIResponses } from './openai-responses.js';
 import {
   MAX_TOOL_ITERATIONS,
   TOOL_DESCRIPTION,
@@ -168,6 +169,14 @@ async function streamOpenAIRound(
 }
 
 export async function runOpenAI(opts: CLIRunOptions): Promise<OpenAIResult> {
+  // Dispatch to /v1/responses for SKUs that don't live on chat
+  // completions (-pro, o-series reasoning, codex variants). The
+  // result shape is identical to ours so callers don't care which
+  // endpoint actually served the request.
+  if (needsResponsesAPI(opts.model)) {
+    return runOpenAIResponses(opts);
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('OPENAI_API_KEY is not set in server/.env');

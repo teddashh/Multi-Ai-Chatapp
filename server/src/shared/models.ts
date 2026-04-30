@@ -81,13 +81,21 @@ const SUPER: Record<AIProvider, ModelChoices> = {
     options: ['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
   },
   chatgpt: {
-    // The "-pro" SKUs use OpenAI's /v1/responses endpoint, not the
-    // /v1/chat/completions one our openai.ts client targets. Trying
-    // them today gives "not a chat model" 404 + falls through the
-    // chain to OR. Hidden from the dropdown until we wire a Responses
-    // API client; same applies to o1/o3/o4-mini reasoning SKUs.
+    // -pro / o-series / codex SKUs route through openai-responses.ts
+    // (different endpoint, same caller surface) so they're safe to
+    // expose. Default stays at gpt-5.5 — picking a -pro / o-series is
+    // deliberately spending more for that turn.
     default: 'gpt-5.5',
-    options: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini'],
+    options: [
+      'gpt-5.5-pro',
+      'gpt-5.5',
+      'gpt-5.4-pro',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'o3',
+      'o4-mini',
+      'gpt-5-codex',
+    ],
   },
   gemini: {
     default: 'gemini-3.1-pro-preview',
