@@ -256,3 +256,69 @@ body::before {
 [data-theme='chatgpt'] .bg-gray-950 {
   background-color: rgba(236, 253, 245, 0.92); /* mint */
 }
+
+/* ================================================================
+   Surface overlays — for hover cards, popovers, and other floating
+   elements where the regular bg-gray-* (semi-transparent on themes)
+   would let text bleed through from below. Always close to fully
+   opaque, theme-aware, and gets a slight backdrop blur so anything
+   poking out at the edges (z-index ties) looks intentional.
+   ================================================================ */
+.bg-surface-overlay {
+  background-color: rgba(11, 18, 32, 0.97); /* default: solid dark */
+  backdrop-filter: blur(6px);
+}
+[data-theme='winter'] .bg-surface-overlay,
+[data-theme='grok'] .bg-surface-overlay,
+[data-theme='gemini'] .bg-surface-overlay {
+  background-color: rgba(11, 18, 32, 0.97);
+}
+[data-theme='summer'] .bg-surface-overlay,
+[data-theme='claude'] .bg-surface-overlay,
+[data-theme='chatgpt'] .bg-surface-overlay {
+  background-color: rgba(255, 255, 255, 0.97);
+}
+
+/* ================================================================
+   Light-theme-only tweaks for forum elements that the generic dark
+   gray overrides above don't quite cover.
+   ================================================================ */
+/* Liked button: pink-700/40 + pink-200 needs more contrast on light. */
+[data-theme='summer'] .bg-pink-700\/40,
+[data-theme='claude'] .bg-pink-700\/40,
+[data-theme='chatgpt'] .bg-pink-700\/40 {
+  background-color: rgba(190, 24, 93, 0.18);
+}
+[data-theme='summer'] .text-pink-200,
+[data-theme='claude'] .text-pink-200,
+[data-theme='chatgpt'] .text-pink-200 {
+  color: #9d174d;
+}
+
+/* Amber-tinted persona pill border: mute on light themes so the
+   warm card border doesn't fight the page tint. */
+[data-theme='summer'] .border-amber-700\/40,
+[data-theme='claude'] .border-amber-700\/40,
+[data-theme='chatgpt'] .border-amber-700\/40 {
+  border-color: rgba(180, 83, 9, 0.25);
+}
+[data-theme='summer'] .text-amber-200,
+[data-theme='claude'] .text-amber-200,
+[data-theme='chatgpt'] .text-amber-200 {
+  color: #b45309;
+}
+
+/* Mini avatar badge under AI comments: text-gray-500 on light themes
+   already maps to #64748b, but the leading-none spacing made it look
+   thin. Bump to medium weight so it reads at small size. */
+[data-theme='summer'] .text-\[9px\],
+[data-theme='claude'] .text-\[9px\],
+[data-theme='chatgpt'] .text-\[9px\] {
+  font-weight: 500;
+}
+
+/* Forum post body (.whitespace-pre-wrap inside posts) — dark themes
+   have it on a 78%-opaque dark card; light themes need slightly bumped
+   text colour for readability against the white-ish surface. The
+   shared `.text-gray-200` override above handles AI/User comments;
+   this catches the post body which uses `text-gray-200` already. */

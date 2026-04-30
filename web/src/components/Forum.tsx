@@ -555,15 +555,12 @@ function AIHoverCard({
   const accent = AI_PROVIDERS[provider].color;
   return (
     <div
-      className="hidden group-hover/aiav:block absolute z-[60] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default"
-      style={{
-        // Inline solid background — avoids any theme-injected
-        // transparency on bg-gray-900 that was making the card see-
-        // through against the comment text behind it.
-        backgroundColor: '#0b1220',
-        borderColor: `${accent}aa`,
-        backdropFilter: 'blur(4px)',
-      }}
+      // bg-surface-overlay → theme-aware fully-opaque background (defined
+      // in styles.css). Avoids the 78%-translucent bg-gray-900 that
+      // every dark theme uses for cards — stacked on the comment card
+      // it'd let the text behind bleed through.
+      className="hidden group-hover/aiav:block absolute z-[60] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
+      style={{ borderColor: `${accent}aa` }}
       onClick={(e) => {
         // Block parent's onClick (which navigates to profile) so users
         // can interact with the card itself. The CTA inside opts in.
@@ -800,7 +797,7 @@ function LikersModal({
       onClick={onClose}
     >
       <div
-        className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-sm p-4 space-y-3"
+        className="bg-surface-overlay border border-gray-800 rounded-lg w-full max-w-sm p-4 space-y-3"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">

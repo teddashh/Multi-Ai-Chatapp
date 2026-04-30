@@ -57,7 +57,7 @@ export default function ShareToForumModal({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-lg p-5 space-y-4">
+      <div className="bg-surface-overlay border border-gray-800 rounded-lg w-full max-w-lg p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-100">分享到論壇</h2>
           <button
