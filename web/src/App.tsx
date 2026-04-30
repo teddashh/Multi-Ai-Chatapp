@@ -791,6 +791,7 @@ export default function App() {
                 modelOverride={modelOverrides[singleProvider]}
                 onModelChange={(model) => handleModelSelect(singleProvider, model)}
                 label={t.agentTalkTo}
+                lockedModelLabel={mode === 'reasoning' ? REASONING_MODEL_HINT[singleProvider] : undefined}
               />
             )}
             {mode === 'profession' && (
@@ -920,6 +921,18 @@ const PROVIDER_NAME: Record<AIProvider, string> = {
 };
 const PROVIDER_ORDER: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
 
+// Mirrors orchestrator.REASONING_MODEL — labels shown in the Agent
+// picker when 深度思考 mode is active. The server still authoritatively
+// resolves the actual model based on the user's tier; this is purely
+// a UI hint so the user knows what flagship reasoning model is being
+// used per family.
+const REASONING_MODEL_HINT: Record<AIProvider, string> = {
+  claude: 'claude-opus-4-7',
+  chatgpt: 'o3',
+  gemini: 'gemini-3.1-pro-preview',
+  grok: 'grok-4.20-0309-reasoning',
+};
+
 interface SingleProviderPickerProps {
   models: Record<AIProvider, { default: string; options: string[] }>;
   provider: AIProvider;
@@ -927,6 +940,10 @@ interface SingleProviderPickerProps {
   modelOverride: string | undefined;
   onModelChange: (model: string) => void;
   label: string;
+  // When set, hide the model dropdown and instead display this string
+  // (used by 深度思考 mode where the model is server-locked to each
+  // family's reasoning variant).
+  lockedModelLabel?: string;
 }
 
 function SingleProviderPicker({
@@ -936,6 +953,7 @@ function SingleProviderPicker({
   modelOverride,
   onModelChange,
   label,
+  lockedModelLabel,
 }: SingleProviderPickerProps) {
   const currentModel = modelOverride ?? models[provider].default;
   const options = models[provider].options;
@@ -961,18 +979,24 @@ function SingleProviderPicker({
           );
         })}
       </div>
-      <select
-        value={currentModel}
-        onChange={(e) => onModelChange(e.target.value)}
-        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 max-w-full"
-        style={{ minWidth: '12em' }}
-      >
-        {options.map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
+      {lockedModelLabel ? (
+        <span className="px-2 py-1 rounded bg-gray-900 border border-gray-800 text-[11px] text-gray-400 font-mono">
+          🧠 {lockedModelLabel}
+        </span>
+      ) : (
+        <select
+          value={currentModel}
+          onChange={(e) => onModelChange(e.target.value)}
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 max-w-full"
+          style={{ minWidth: '12em' }}
+        >
+          {options.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      )}
     </div>
   );
 }

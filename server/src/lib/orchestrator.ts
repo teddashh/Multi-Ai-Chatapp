@@ -829,8 +829,12 @@ export async function runMode(p: OrchestratorParams): Promise<void> {
     await runProfession(p);
     return;
   }
-  if (p.mode === 'reasoning' || p.mode === 'image') {
-    throw new Error(`mode '${p.mode}' is not yet implemented`);
+  if (p.mode === 'reasoning') {
+    await runReasoning(p);
+    return;
+  }
+  if (p.mode === 'image') {
+    throw new Error(`mode 'image' is not yet implemented`);
   }
   const roles = p.roles ?? defaultRolesFor(p.mode);
   if (!roles) {
@@ -858,6 +862,43 @@ async function runPersonal(p: OrchestratorParams): Promise<void> {
 // runPersonal but the prompt the model sees is "Play a {profession}
 // and answer:\n\n{user text}". User's chat_messages row keeps the
 // raw text — the prefix is only injected for the AI call.
+// Per-family "best reasoning model" override used by 深度思考 mode.
+// resolveModel still gates on tier, so a free-tier user picking
+// chatgpt + reasoning won't actually receive o3 — they'll fall back to
+// their tier's default. UI surfaces this caveat ("需 Pro 以上才有最強")
+// when we add tier gating; for now it's silent.
+const REASONING_MODEL: Record<AIProvider, string> = {
+  claude: 'claude-opus-4-7',
+  chatgpt: 'o3',
+  gemini: 'gemini-3.1-pro-preview',
+  grok: 'grok-4.20-0309-reasoning',
+};
+
+// Single-AI mode that locks the model to each family's reasoning
+// variant. Slower but deeper than personal mode; useful for hard
+// analytical questions.
+async function runReasoning(p: OrchestratorParams): Promise<void> {
+  const provider = p.singleProvider;
+  if (!provider) {
+    throw new Error('reasoning mode requires a singleProvider');
+  }
+  const reasoningModel = REASONING_MODEL[provider];
+  await runOne(
+    {
+      ...p,
+      // Inject the reasoning override on top of any modelOverrides the
+      // client sent. resolveModel inside runOne still respects tier
+      // permissions so this gracefully degrades for lower tiers.
+      modelOverrides: {
+        ...(p.modelOverrides ?? {}),
+        [provider]: reasoningModel,
+      },
+    },
+    provider,
+    p.text,
+  ).catch(() => {});
+}
+
 async function runProfession(p: OrchestratorParams): Promise<void> {
   const provider = p.singleProvider;
   if (!provider) {

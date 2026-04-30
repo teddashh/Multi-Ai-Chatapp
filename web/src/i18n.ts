@@ -328,7 +328,7 @@ const ZH: Dict = {
   modeGroupMulti: '多人模式',
   agentTalkTo: '對象',
   comingSoon: '尚未開放',
-  modeProfessionLabel: '扮演',
+  modeProfessionLabel: '職業',
   modeProfessionPlaceholder: '例如：醫生、律師、心理師、品酒師...',
   modeProfessionRequired: '請輸入要扮演的職業',
 
@@ -546,7 +546,7 @@ const EN: Dict = {
   modeGroupMulti: 'Multi Mode',
   agentTalkTo: 'Talk to',
   comingSoon: 'Coming soon',
-  modeProfessionLabel: 'Role',
+  modeProfessionLabel: 'Profession',
   modeProfessionPlaceholder: 'e.g. Doctor, Lawyer, Therapist, Sommelier...',
   modeProfessionRequired: 'Enter the profession to play',
 
