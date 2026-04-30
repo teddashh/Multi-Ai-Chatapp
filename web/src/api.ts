@@ -30,6 +30,9 @@ export interface User {
   theme: ThemeId;
   emailVerified: boolean;
   models: Record<AIProvider, ModelChoices>;
+  // Self-edited public bio shown on the user's forum profile page.
+  // Empty string when not set.
+  bio: string;
 }
 
 export async function verifyEmail(token: string): Promise<User> {
@@ -63,6 +66,7 @@ export async function updateProfile(patch: {
   nickname?: string | null;
   password?: string | null;
   theme?: ThemeId;
+  bio?: string;
 }): Promise<User> {
   const res = await fetch('/api/auth/profile', {
     method: 'PATCH',
@@ -664,6 +668,7 @@ export interface UserProfileResponse {
   nickname: string | null;
   hasAvatar: boolean;
   memberSince: number;
+  bio: string;
   stats: {
     totalPosts: number;
     totalComments: number;
@@ -756,12 +761,26 @@ export interface AIStat {
 }
 export type AIStatsMap = Record<AIProvider, AIStat>;
 
+// Per-user stats inlined on the post-detail response — feeds the user
+// hover card. Keyed by username; only non-anonymous participants are
+// included.
+export interface UserStat {
+  username: string;
+  nickname: string | null;
+  hasAvatar: boolean;
+  memberSince: number;
+  totalPosts: number;
+  totalComments: number;
+  totalLikes: number;
+}
+
 export async function getForumPost(
   postId: number,
 ): Promise<{
   post: ForumPostDetail;
   comments: ForumComment[];
   aiStats: AIStatsMap;
+  userStats: Record<string, UserStat>;
 }> {
   const res = await fetch(`/api/forum/${postId}`, {
     credentials: 'include',
@@ -771,6 +790,7 @@ export async function getForumPost(
     post: ForumPostDetail;
     comments: ForumComment[];
     aiStats: AIStatsMap;
+    userStats: Record<string, UserStat>;
   }>;
 }
 

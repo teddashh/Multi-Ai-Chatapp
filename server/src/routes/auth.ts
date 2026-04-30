@@ -62,6 +62,7 @@ function buildUserDTO(user: UserRow) {
     theme: user.theme,
     emailVerified: !!user.email_verified,
     models: TIER_MODELS[user.tier],
+    bio: user.bio ?? '',
   };
 }
 
@@ -385,6 +386,7 @@ authRoute.patch('/profile', requireAuth, async (c) => {
         nickname?: string | null;
         password?: string | null;
         theme?: string;
+        bio?: string;
       }
     | null;
   if (!body) return c.json({ error: 'invalid body' }, 400);
@@ -407,6 +409,13 @@ authRoute.patch('/profile', requireAuth, async (c) => {
       user.id,
     );
     if ((body.nickname || null) !== user.nickname) changed.push('nickname');
+  }
+  if (body.bio !== undefined) {
+    // Cap to 500 chars server-side; the textarea limits at 500 too
+    // but trust nothing the client sends.
+    const trimmed = (body.bio ?? '').slice(0, 500).trim();
+    userStmts.updateBio.run(trimmed || null, user.id);
+    if ((trimmed || null) !== ((user.bio ?? null))) changed.push('bio');
   }
   if (body.password) {
     if (body.password.length < 6) {

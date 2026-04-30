@@ -217,6 +217,38 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     }
   }
 
+  // Per-participant stats inlined for the user hover card. Keyed by
+  // username so the client looks up O(1) per comment.
+  const participantRows = forumStmts.participantStats.all(postId, postId) as Array<{
+    username: string;
+    nickname: string | null;
+    has_avatar: number;
+    member_since: number;
+    total_posts: number;
+    total_comments: number;
+    total_likes: number;
+  }>;
+  const userStats: Record<string, {
+    username: string;
+    nickname: string | null;
+    hasAvatar: boolean;
+    memberSince: number;
+    totalPosts: number;
+    totalComments: number;
+    totalLikes: number;
+  }> = {};
+  for (const r of participantRows) {
+    userStats[r.username] = {
+      username: r.username,
+      nickname: r.nickname,
+      hasAvatar: !!r.has_avatar,
+      memberSince: r.member_since * 1000,
+      totalPosts: r.total_posts,
+      totalComments: r.total_comments,
+      totalLikes: r.total_likes,
+    };
+  }
+
   return c.json({
     post: formatPostDetail(
       {
@@ -228,6 +260,7 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     ),
     comments: commentRows.map((r) => formatComment(r, likedCommentIds.has(r.id))),
     aiStats,
+    userStats,
   });
 });
 
@@ -512,6 +545,7 @@ forumRoute.get('/user/:username', (c) => {
     nickname: user.nickname,
     hasAvatar: !!user.avatar_path,
     memberSince: user.created_at * 1000,
+    bio: user.bio ?? '',
     stats: {
       totalPosts: postRow.total_posts,
       totalComments: commentRow.total_comments,

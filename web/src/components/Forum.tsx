@@ -26,6 +26,7 @@ import {
   type ForumPostDetail,
   type ForumPostSummary,
   type User,
+  type UserStat,
 } from '../api';
 import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
@@ -240,6 +241,7 @@ function ForumPostView({
     post: ForumPostDetail;
     comments: ForumComment[];
     aiStats: AIStatsMap;
+    userStats: Record<string, UserStat>;
   } | null>(null);
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -392,6 +394,7 @@ function ForumPostView({
             comment={c}
             aiPersona={post.aiPersona}
             aiStats={data.aiStats}
+            userStats={data.userStats}
             onToggleLike={() => toggleCommentLike(c.id)}
             onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
             canLike={!!user}
@@ -465,6 +468,7 @@ function CommentRow({
   comment,
   aiPersona,
   aiStats,
+  userStats,
   onToggleLike,
   onShowLikers,
   canLike,
@@ -475,6 +479,10 @@ function CommentRow({
   // Per-provider cumulative stats — used for the avatar mini-badge
   // (Lv X · ❤ N) and the hover card. Same map for every comment.
   aiStats: AIStatsMap;
+  // Per-username stats keyed by comment author. Server inlines stats
+  // for every non-anonymous participant in this post so user hover
+  // cards have data without a fetch per comment.
+  userStats: Record<string, UserStat>;
   onToggleLike: () => void;
   onShowLikers: () => void;
   canLike: boolean;
@@ -514,14 +522,18 @@ function CommentRow({
         isAi ? 'border-gray-700' : 'border-gray-800'
       }`}
     >
-      {/* Avatar column — relative + isolate so the hover card creates
-          its own stacking context above the comment body to its right.
-          group/aiav scopes the hover so only THIS avatar's card shows. */}
-      <div className="flex flex-col items-center gap-1 flex-none isolate">
+      {/* Avatar column. Two earlier mistakes here:
+          - `isolate` trapped the popup inside the avatar column's
+            stacking context, so the comment body sibling painted over
+            it.
+          - `hover:opacity-80` on the wrapper ALSO created a stacking
+            context (per CSS spec, opacity < 1 establishes one) the
+            moment hover engaged, defeating the popup's z-index.
+          Now: no isolate, no hover-opacity. The popup itself is the
+          hover affordance — visual feedback comes from it appearing. */}
+      <div className="flex flex-col items-center gap-1 flex-none">
         <div
-          className={`relative ${
-            isClickable ? 'cursor-pointer hover:opacity-80 transition-opacity group/aiav' : ''
-          }`}
+          className={`relative ${isClickable ? 'cursor-pointer group/aiav' : ''}`}
           title={hoverLabel}
           onClick={goToAuthor}
         >
@@ -532,6 +544,12 @@ function CommentRow({
               level={aiLevel(stat.totalComments, stat.totalLikes)}
               totalComments={stat.totalComments}
               totalLikes={stat.totalLikes}
+              onGoToProfile={goToAuthor}
+            />
+          )}
+          {userClickable && comment.authorUsername && userStats[comment.authorUsername] && (
+            <UserHoverCard
+              stats={userStats[comment.authorUsername]}
               onGoToProfile={goToAuthor}
             />
           )}
@@ -583,6 +601,81 @@ function CommentRow({
   );
 }
 
+// Same hover-card pattern as the AI version but for user comments.
+// Shows nickname, @username, join date, posts/comments/likes summary
+// and a CTA to /forum/user/<username>. Bio (if set) is intentionally
+// omitted from the hover — too long to fit comfortably; user has to
+// click through to see it.
+function UserHoverCard({
+  stats,
+  onGoToProfile,
+}: {
+  stats: UserStat;
+  onGoToProfile: () => void;
+}) {
+  const display = stats.nickname || stats.username;
+  return (
+    <div
+      className="hidden group-hover/aiav:block absolute z-[100] left-full ml-2 top-0 w-64 border border-gray-700 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        {stats.hasAvatar ? (
+          <img
+            src={avatarUrl(stats.username, 0)}
+            alt={display}
+            className="w-10 h-10 rounded-full object-cover border border-gray-700"
+          />
+        ) : (
+          <div
+            className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-gray-200 font-bold"
+            style={{ fontSize: 16 }}
+          >
+            {display.slice(0, 1).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-gray-100 truncate">
+            {display}
+          </div>
+          <div className="text-[10px] text-gray-500 truncate">
+            @{stats.username} · {memberSinceShort(stats.memberSince)}
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-1 text-center mb-2">
+        <Stat3 label="發文" value={stats.totalPosts} />
+        <Stat3 label="留言" value={stats.totalComments} />
+        <Stat3 label="❤" value={stats.totalLikes} />
+      </div>
+      <button
+        onClick={onGoToProfile}
+        className="w-full text-left text-[11px] text-blue-300 hover:text-blue-200"
+      >
+        查看完整檔案 →
+      </button>
+    </div>
+  );
+}
+
+function Stat3({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="text-[9px] uppercase tracking-wider text-gray-500">
+        {label}
+      </div>
+      <div className="text-sm font-bold text-gray-100">{value}</div>
+    </div>
+  );
+}
+
+function memberSinceShort(ms: number): string {
+  const days = Math.floor((Date.now() - ms) / 86400000);
+  if (days < 30) return `加入 ${days} 天`;
+  if (days < 365) return `加入 ${Math.floor(days / 30)} 個月`;
+  return `加入 ${Math.floor(days / 365)} 年`;
+}
+
 // Pure-CSS hover card — appears on desktop when the user hovers the
 // AI avatar; positioned absolutely to the right of it so it doesn't
 // reflow the comment thread. Mobile users skip the card entirely (no
@@ -605,10 +698,10 @@ function AIHoverCard({
   return (
     <div
       // bg-surface-overlay → theme-aware fully-opaque background (defined
-      // in styles.css). Avoids the 78%-translucent bg-gray-900 that
-      // every dark theme uses for cards — stacked on the comment card
-      // it'd let the text behind bleed through.
-      className="hidden group-hover/aiav:block absolute z-[60] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
+      // in styles.css). z bumped to 100; lower values get trapped behind
+      // sibling content under certain stacking-context conditions on
+      // some themes, this is high enough to win in all of them.
+      className="hidden group-hover/aiav:block absolute z-[100] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default bg-surface-overlay"
       style={{ borderColor: `${accent}aa` }}
       onClick={(e) => {
         // Block parent's onClick (which navigates to profile) so users

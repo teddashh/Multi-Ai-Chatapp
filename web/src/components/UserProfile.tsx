@@ -75,10 +75,10 @@ export default function UserProfile({ username, navigate }: Props) {
           <div className="text-xs text-gray-500 mb-3">
             @{data.username} · {memberSinceLabel(data.memberSince)}
           </div>
-          <p className="text-sm text-gray-400 leading-relaxed">
-            {/* Bio not yet a feature for users — placeholder copy until
-                we add a profile-bio field. */}
-            這位用戶還沒寫個人介紹。
+          <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+            {data.bio?.trim()
+              ? data.bio
+              : '這位用戶還沒寫個人介紹。'}
           </p>
         </div>
       </div>

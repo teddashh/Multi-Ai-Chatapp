@@ -135,6 +135,9 @@ addColumnIfMissing('users', 'lang', "TEXT NOT NULL DEFAULT 'zh-TW'");
 addColumnIfMissing('users', 'avatar_path', 'TEXT');
 addColumnIfMissing('users', 'theme', "TEXT NOT NULL DEFAULT 'winter'");
 addColumnIfMissing('users', 'real_name', 'TEXT');
+// Self-edited public bio shown on the user's forum profile page. Plain
+// text, capped server-side. Empty by default.
+addColumnIfMissing('users', 'bio', 'TEXT');
 // Existing users default to verified (1). New /signup flow flips to 0.
 addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'verify_token', 'TEXT');
@@ -385,6 +388,7 @@ export interface UserRow {
   email_verified: number;
   verify_token: string | null;
   verify_expires_at: number | null;
+  bio: string | null;
 }
 
 export interface PasswordResetRow {
@@ -446,6 +450,9 @@ export const userStmts = {
   ),
   updateRealName: db.prepare<[string | null, string]>(
     'UPDATE users SET real_name = ? WHERE username = ?',
+  ),
+  updateBio: db.prepare<[string | null, number]>(
+    'UPDATE users SET bio = ? WHERE id = ?',
   ),
   // First-login username pick (gated to unverified rows by the auth
   // route — the schema-level UNIQUE on username still protects us).
@@ -970,6 +977,40 @@ export const forumStmts = {
      WHERE c.author_user_id = ? AND c.author_type = 'user'
      ORDER BY c.id DESC
      LIMIT ?`,
+  ),
+  // Inlined into post-detail responses to back the user hover-card —
+  // returns one row per non-anonymous participant (post author + every
+  // user commenter on this post) with their cumulative forum stats.
+  // Two ?-binds because the participants CTE references post_id twice.
+  participantStats: db.prepare<[number, number]>(
+    `WITH participants AS (
+       SELECT DISTINCT author_user_id AS uid
+         FROM forum_comments
+         WHERE post_id = ? AND author_type = 'user'
+           AND is_anonymous = 0 AND author_user_id IS NOT NULL
+       UNION
+       SELECT author_user_id AS uid
+         FROM forum_posts WHERE id = ? AND is_anonymous = 0
+     )
+     SELECT u.username, u.nickname,
+            CASE WHEN u.avatar_path IS NOT NULL THEN 1 ELSE 0 END AS has_avatar,
+            u.created_at AS member_since,
+            COALESCE(p.cnt, 0) AS total_posts,
+            COALESCE(c.cnt, 0) AS total_comments,
+            COALESCE(p.likes, 0) + COALESCE(c.likes, 0) AS total_likes
+     FROM participants part
+     JOIN users u ON u.id = part.uid
+     LEFT JOIN (
+       SELECT author_user_id, COUNT(*) AS cnt,
+              COALESCE(SUM(thumbs_count), 0) AS likes
+       FROM forum_posts GROUP BY author_user_id
+     ) p ON p.author_user_id = u.id
+     LEFT JOIN (
+       SELECT author_user_id, COUNT(*) AS cnt,
+              COALESCE(SUM(thumbs_count), 0) AS likes
+       FROM forum_comments WHERE author_type = 'user'
+       GROUP BY author_user_id
+     ) c ON c.author_user_id = u.id`,
   ),
   // Recent activity for the AI profile — last N comments by this
   // provider, joined with the parent post for context.

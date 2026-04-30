@@ -34,6 +34,7 @@ const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
 export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props) {
   const { t, setLang } = useI18n();
   const [nickname, setNickname] = useState(user.nickname || '');
+  const [bio, setBio] = useState(user.bio || '');
   const [password, setPassword] = useState('');
   const [lang, setLocalLang] = useState<Lang>(user.lang);
   const [theme, setTheme] = useState<ThemeId>(user.theme);
@@ -48,6 +49,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   useEffect(() => {
     if (isOpen) {
       setNickname(user.nickname || '');
+      setBio(user.bio || '');
       setPassword('');
       setLocalLang(user.lang);
       setTheme(user.theme);
@@ -83,6 +85,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
     try {
       const updated = await updateProfile({
         nickname: nickname.trim() || null,
+        bio: bio.slice(0, 500),
         password: password || null,
         lang,
         theme,
@@ -235,6 +238,19 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
           className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
+        />
+
+        {/* Bio — public, shown on /forum/user/<username>. */}
+        <label className="block text-xs text-gray-300 mb-1">
+          個人介紹
+          <span className="text-gray-500 ml-1">（{bio.length}/500）</span>
+        </label>
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value.slice(0, 500))}
+          placeholder="寫一點關於自己的事 — 會出現在你的論壇 profile 頁。"
+          rows={3}
+          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500 resize-y"
         />
 
         {/* Password */}
