@@ -92,9 +92,10 @@ const PRICES: Record<string, ModelPrice> = {
   'sdxl': { perImage: 0.003 },
 
   // Synthetic SKU for the persona-dice feature. Each roll is billed
-  // as if it were one tiny LLM call so the user's cost dashboard
-  // shows the dice activity. Real LLM is never invoked.
-  'persona-dice': { perImage: 0.001 },
+  // as if it were one mid-sized LLM call ($0.1) so users feel a real
+  // cost when re-rolling — discourages spamming the dice for fun and
+  // surfaces a meaningful number on the cost dashboard. No real LLM.
+  'persona-dice': { perImage: 0.1 },
 };
 
 const PROVIDER_FALLBACK: Record<string, ModelPrice> = {
