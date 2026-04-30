@@ -20,15 +20,17 @@ const CLI_BINARY: Record<AIProvider, string> = {
 };
 
 const CLI_TIMEOUT_MS = parseInt(process.env.CLI_TIMEOUT_MS || '600000', 10);
-// Kill the CLI if it produces no stdout for this many ms. Catches "silent
-// hang" cases like Gemini's infinite 429-retry loop, which never errors out
-// but also never streams a single byte. The error code is 'timeout' so the
-// orchestrator falls back through the chain. 120s is the first-token budget
-// — reasoning models (Claude Opus extended thinking, gpt-5.x reasoning,
-// Gemini 3.x with deep thought) can legitimately stay silent for 60-90s
-// before any output, and we don't want to false-trigger fallback on those.
-// Once any chunk arrives the timer resets, so long generations never hit it.
-const CLI_STALL_MS = parseInt(process.env.CLI_STALL_MS || '120000', 10);
+// Kill the CLI if it produces no stdout for this many ms. Two failure modes
+// to balance against:
+//   - Gemini-style infinite 429-retry loops (silent forever) — want to
+//     fail fast so fallback kicks in.
+//   - Claude Code CLI doing WebSearch/WebFetch — Anthropic's hosted tools
+//     are slow and the CLI emits NOTHING to stdout while waiting on each
+//     search call. A research-heavy turn can chain 2-3 of these.
+// 180s gives Claude room to chain slow web searches without killing the
+// run, while still bounded enough that genuinely-stuck CLIs surface
+// within 3 minutes. Override via env if your fan-out differs.
+const CLI_STALL_MS = parseInt(process.env.CLI_STALL_MS || '180000', 10);
 const CLI_CWD = process.env.CLI_CWD || process.cwd();
 
 function tempFile(prefix: string): string {
