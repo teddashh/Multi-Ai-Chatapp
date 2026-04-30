@@ -5,6 +5,8 @@ import { runOpenAI } from './providers/openai.js';
 import { runGemini } from './providers/gemini.js';
 import { runNvidia } from './providers/nvidia.js';
 import { isOpenAIImageModel, runOpenAIImage } from './providers/openai-image.js';
+import { isXAIImageModel, runXAIImage } from './providers/xai-image.js';
+import { isGoogleImageModel, runGoogleImage } from './providers/google-image.js';
 import { saveUpload } from './uploads.js';
 import { attachmentStmts, auditStmts, messageStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
@@ -929,14 +931,21 @@ async function runImage(p: OrchestratorParams): Promise<void> {
   }
 
   let result: { bytes: Buffer; mimeType: string; modelUsed: string };
+  let stageName = 'image_api';
   try {
     if (isOpenAIImageModel(model)) {
       result = await runOpenAIImage({ prompt: p.text, model, signal: p.signal });
+      stageName = 'openai_image_api';
+    } else if (isXAIImageModel(model)) {
+      result = await runXAIImage({ prompt: p.text, model, signal: p.signal });
+      stageName = 'xai_image_api';
+    } else if (isGoogleImageModel(model)) {
+      result = await runGoogleImage({ prompt: p.text, model, signal: p.signal });
+      stageName = 'google_image_api';
     } else {
-      // Phase B / C will fill in xAI / Google / Flux / SDXL fallback.
-      // For now any non-OpenAI image model surfaces a friendly error.
+      // Flux (Claude family) + universal SDXL fallback land in Phase C.
       throw new Error(
-        `Image generation for model '${model}' is not yet implemented. Pick a gpt-image-1-* option.`,
+        `Image generation for model '${model}' is not yet implemented. Pick a gpt-image-1-* / grok-imagine-image / imagen-4 / gemini-*-image option.`,
       );
     }
   } catch (err) {
@@ -968,7 +977,7 @@ async function runImage(p: OrchestratorParams): Promise<void> {
   // which model produced it.
   try {
     messageStmts.setAnswered.run(
-      'openai_image_api',
+      stageName,
       result.modelUsed,
       model,
       msgId,
@@ -984,7 +993,7 @@ async function runImage(p: OrchestratorParams): Promise<void> {
     provider,
     text: markdown,
     messageId: msgId,
-    answeredStage: 'openai_image_api',
+    answeredStage: stageName,
     answeredModel: result.modelUsed,
     requestedModel: model,
   });

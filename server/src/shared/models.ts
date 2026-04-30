@@ -153,20 +153,27 @@ export function availableModelsForMode(
 
 // Image-mode model dropdown — separate catalogue from chat models since
 // each vendor's image gen API is unrelated. SDXL is everyone's universal
-// fallback (Phase C — runImage tries native first, on error retries SDXL
-// with a "我換種方式畫" notice).
+// fallback (Phase C). Verified-against-live-catalog SKU names below.
 export const IMAGE_MODELS: Record<AIProvider, string[]> = {
   chatgpt: ['gpt-image-1-high', 'gpt-image-1-medium', 'gpt-image-1-low', 'sdxl'],
   claude: ['flux-1.1-pro-ultra', 'flux-1.1-pro', 'sdxl'],
-  gemini: ['imagen-4-ultra', 'imagen-4', 'gemini-2.5-flash-image', 'sdxl'],
-  grok: ['grok-2-image', 'sdxl'],
+  gemini: [
+    'imagen-4.0-ultra-generate-001',
+    'imagen-4.0-generate-001',
+    'imagen-4.0-fast-generate-001',
+    'gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image-preview',
+    'gemini-2.5-flash-image',
+    'sdxl',
+  ],
+  grok: ['grok-imagine-image-pro', 'grok-imagine-image', 'sdxl'],
 };
 
 export const IMAGE_MODEL_DEFAULTS: Record<AIProvider, string> = {
   chatgpt: 'gpt-image-1-medium',
   claude: 'flux-1.1-pro',
-  gemini: 'imagen-4',
-  grok: 'grok-2-image',
+  gemini: 'imagen-4.0-generate-001',
+  grok: 'grok-imagine-image',
 };
 
 export function defaultModel(tier: Tier, provider: AIProvider): string {
