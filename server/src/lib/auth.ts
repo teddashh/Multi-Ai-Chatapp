@@ -88,6 +88,37 @@ export async function requireAuth(c: AppContext, next: Next): Promise<Response |
   }
 }
 
+// Same JWT path as requireAuth but never 401s — anonymous callers fall
+// through with no `user` set on the context. Forum routes use this so
+// public read endpoints can populate a per-user `liked` flag when the
+// caller is logged in, without locking out anonymous readers.
+export async function optionalAuth(c: AppContext, next: Next): Promise<Response | void> {
+  const token = getCookie(c, COOKIE_NAME);
+  if (!token) return next();
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as unknown as {
+      sub: number;
+      username: string;
+      tier: Tier;
+    };
+    const user = userStmts.findById.get(decoded.sub) as UserRow | undefined;
+    if (user) {
+      c.set('user', {
+        id: user.id,
+        username: user.username,
+        tier: user.tier,
+        nickname: user.nickname,
+        email: user.email,
+        lang: user.lang,
+        avatarPath: user.avatar_path,
+      });
+    }
+  } catch {
+    // bad/expired token — treat as anonymous, no error
+  }
+  return next();
+}
+
 // Admin tier is the gate for /admin endpoints. Super tier just unlocks
 // top-end models; it is NOT enough to manage other users.
 export async function requireAdmin(c: AppContext, next: Next): Promise<Response | void> {

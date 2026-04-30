@@ -31,6 +31,18 @@ export function modeGroupOf(mode: ChatMode): ModeGroup {
   return AGENT_MODES.includes(mode) ? 'agent' : 'multi';
 }
 
+// Forum 看板 — fixed topic categories (PTT/Reddit-inspired, kept broad).
+// Order is also display order in the index page.
+export const FORUM_CATEGORIES = [
+  '職場',
+  '生活',
+  '科技',
+  '創作',
+  '思辨',
+  '雜談',
+] as const;
+export type ForumCategory = (typeof FORUM_CATEGORIES)[number];
+
 export interface DebateRoles {
   pro: AIProvider;
   con: AIProvider;

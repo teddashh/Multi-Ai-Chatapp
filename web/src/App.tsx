@@ -41,6 +41,8 @@ import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
 import LangToggle from './components/LangToggle';
 import ProfileModal from './components/ProfileModal';
+import Forum from './components/Forum';
+import ShareToForumModal from './components/ShareToForumModal';
 import { DICTS, I18nContext, useT, type Lang } from './i18n';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
@@ -154,6 +156,7 @@ export default function App() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [pathname, setPathname] = useState(window.location.pathname);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -725,6 +728,8 @@ export default function App() {
         onExit={() => navigate('/')}
       />
     );
+  } else if (pathname.startsWith('/forum')) {
+    content = <Forum pathname={pathname} navigate={navigate} user={user} />;
   } else {
     const displayName = user.nickname || user.username;
     const avatarSrc = user.hasAvatar
@@ -753,6 +758,23 @@ export default function App() {
                   ☰
                 </button>
                 <h1 className="text-lg font-bold">{t.appName}</h1>
+                <button
+                  onClick={() => navigate('/forum')}
+                  className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-xs text-gray-300"
+                  title="AI-Sister 論壇"
+                >
+                  論壇
+                </button>
+                {activeSessionId &&
+                  messages.some((m) => m.role === 'user') && (
+                    <button
+                      onClick={() => setShowShareModal(true)}
+                      className="px-2 py-0.5 rounded bg-blue-700/40 hover:bg-blue-700/60 text-xs text-blue-100"
+                      title="把這段對話分享到論壇"
+                    >
+                      分享
+                    </button>
+                  )}
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <LangToggle lang={lang} onChange={handleLangToggle} />
@@ -919,6 +941,27 @@ export default function App() {
             user={user}
             onClose={() => setShowProfile(false)}
             onUpdate={handleProfileUpdate}
+          />
+
+          <ShareToForumModal
+            isOpen={showShareModal}
+            sessionId={activeSessionId}
+            defaultTitle={
+              messages.find((m) => m.role === 'user')?.content.slice(0, 60).trim() ?? ''
+            }
+            onClose={() => setShowShareModal(false)}
+            onShared={(postId, isNew, appended) => {
+              setShowShareModal(false);
+              if (!isNew && appended === 0) {
+                alert('沒有新的訊息可追加到原貼文。');
+                navigate(`/forum/post/${postId}`);
+                return;
+              }
+              if (!isNew) {
+                alert(`已追加 ${appended} 則訊息到原貼文。`);
+              }
+              navigate(`/forum/post/${postId}`);
+            }}
           />
         </div>
       </div>

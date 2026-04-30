@@ -20,6 +20,17 @@ export function modeGroupOf(mode: ChatMode): ModeGroup {
   return AGENT_MODES.includes(mode) ? 'agent' : 'multi';
 }
 
+// Forum 看板 — fixed list, mirrors server/src/shared/types.ts.
+export const FORUM_CATEGORIES = [
+  '職場',
+  '生活',
+  '科技',
+  '創作',
+  '思辨',
+  '雜談',
+] as const;
+export type ForumCategory = (typeof FORUM_CATEGORIES)[number];
+
 // Modes that are visible in the dropdown but not yet implemented on
 // the backend — clicking them shows "Coming soon".
 // (Phase A of image is live for OpenAI gpt-image-1; other vendors

@@ -68,6 +68,56 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_attachments_message ON chat_attachments(message_id);
   CREATE INDEX IF NOT EXISTS idx_attachments_orphaned ON chat_attachments(user_id, message_id);
+
+  -- Forum (Phase 1). A chat session can be "shared" — first user message
+  -- becomes the post body, every later message becomes an imported comment
+  -- in chronological order. Re-share is append-only: any new chat messages
+  -- since the last share land as new imported comments. Schema reserves
+  -- trending_score (Phase 2 hot-topics sort) and author_ai_model
+  -- (5.6 AI peer rating stats) so we don't need another migration later.
+  CREATE TABLE IF NOT EXISTS forum_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    source_session_id TEXT UNIQUE REFERENCES chat_sessions(id) ON DELETE SET NULL,
+    source_mode TEXT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    author_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    is_anonymous INTEGER NOT NULL DEFAULT 0,
+    thumbs_count INTEGER NOT NULL DEFAULT 0,
+    comment_count INTEGER NOT NULL DEFAULT 0,
+    trending_score REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_posts_category ON forum_posts(category, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_forum_posts_session ON forum_posts(source_session_id);
+
+  CREATE TABLE IF NOT EXISTS forum_comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    author_type TEXT NOT NULL CHECK (author_type IN ('user','ai')),
+    author_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    author_ai_provider TEXT,
+    author_ai_model TEXT,
+    body TEXT NOT NULL,
+    is_anonymous INTEGER NOT NULL DEFAULT 0,
+    is_imported INTEGER NOT NULL DEFAULT 0,
+    source_message_id INTEGER REFERENCES chat_messages(id) ON DELETE SET NULL,
+    thumbs_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_comments_post ON forum_comments(post_id, created_at);
+  CREATE INDEX IF NOT EXISTS idx_forum_comments_source ON forum_comments(source_message_id);
+
+  CREATE TABLE IF NOT EXISTS forum_likes (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL CHECK (target_type IN ('post','comment')),
+    target_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    PRIMARY KEY (user_id, target_type, target_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_likes_target ON forum_likes(target_type, target_id);
 `);
 
 // One-shot, idempotent column additions for existing DBs.
@@ -725,6 +775,145 @@ export const usageStmts = {
             COALESCE(SUM(prompt_chars), 0) AS prompt_chars,
             COALESCE(SUM(completion_chars), 0) AS completion_chars
      FROM usage_log WHERE user_id = ? AND success = 1`,
+  ),
+};
+
+export interface ForumPostRow {
+  id: number;
+  category: string;
+  source_session_id: string | null;
+  source_mode: string | null;
+  title: string;
+  body: string;
+  author_user_id: number;
+  is_anonymous: number;
+  thumbs_count: number;
+  comment_count: number;
+  trending_score: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ForumCommentRow {
+  id: number;
+  post_id: number;
+  author_type: 'user' | 'ai';
+  author_user_id: number | null;
+  author_ai_provider: string | null;
+  author_ai_model: string | null;
+  body: string;
+  is_anonymous: number;
+  is_imported: number;
+  source_message_id: number | null;
+  thumbs_count: number;
+  created_at: number;
+}
+
+export const forumStmts = {
+  findPostById: db.prepare<[number]>(
+    `SELECT * FROM forum_posts WHERE id = ?`,
+  ),
+  // Used to detect re-share — same source_session_id → append mode.
+  findPostBySession: db.prepare<[string]>(
+    `SELECT * FROM forum_posts WHERE source_session_id = ?`,
+  ),
+  insertPost: db.prepare<[string, string, string, string, string, number, number]>(
+    `INSERT INTO forum_posts
+       (category, source_session_id, source_mode, title, body, author_user_id, is_anonymous)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  setCommentCount: db.prepare<[number, number]>(
+    `UPDATE forum_posts SET comment_count = ?, updated_at = strftime('%s','now') WHERE id = ?`,
+  ),
+  bumpCommentCount: db.prepare<[number, number]>(
+    `UPDATE forum_posts SET comment_count = comment_count + ?, updated_at = strftime('%s','now') WHERE id = ?`,
+  ),
+  // List with author join — author may be anonymous; the route formatter
+  // hides the username in that case.
+  listByCategory: db.prepare<[string, number, number]>(
+    `SELECT p.*, u.username AS author_username, u.nickname AS author_nickname
+     FROM forum_posts p
+     JOIN users u ON u.id = p.author_user_id
+     WHERE p.category = ?
+     ORDER BY p.created_at DESC
+     LIMIT ? OFFSET ?`,
+  ),
+  listAll: db.prepare<[number, number]>(
+    `SELECT p.*, u.username AS author_username, u.nickname AS author_nickname
+     FROM forum_posts p
+     JOIN users u ON u.id = p.author_user_id
+     ORDER BY p.created_at DESC
+     LIMIT ? OFFSET ?`,
+  ),
+  countByCategory: db.prepare(
+    `SELECT category, COUNT(*) AS n FROM forum_posts GROUP BY category`,
+  ),
+  // Highest source_message_id imported so far for a given post — the
+  // append-on-re-share path takes anything strictly greater than this.
+  maxImportedSourceMsg: db.prepare<[number]>(
+    `SELECT COALESCE(MAX(source_message_id), 0) AS max
+     FROM forum_comments WHERE post_id = ? AND is_imported = 1`,
+  ),
+  insertComment: db.prepare<[
+    number,
+    'user' | 'ai',
+    number | null,
+    string | null,
+    string | null,
+    string,
+    number,
+    number,
+    number | null,
+    number,
+  ]>(
+    `INSERT INTO forum_comments
+       (post_id, author_type, author_user_id, author_ai_provider, author_ai_model,
+        body, is_anonymous, is_imported, source_message_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  findCommentById: db.prepare<[number]>(
+    `SELECT * FROM forum_comments WHERE id = ?`,
+  ),
+  listComments: db.prepare<[number]>(
+    `SELECT c.*, u.username AS author_username, u.nickname AS author_nickname,
+            u.avatar_path AS author_avatar
+     FROM forum_comments c
+     LEFT JOIN users u ON u.id = c.author_user_id
+     WHERE c.post_id = ?
+     ORDER BY c.created_at, c.id`,
+  ),
+  // Likes — toggle-style. Caller checks findLike first, then either
+  // insertLike+inc<*>Thumbs or deleteLike+dec<*>Thumbs.
+  findLike: db.prepare<[number, string, number]>(
+    `SELECT 1 FROM forum_likes WHERE user_id = ? AND target_type = ? AND target_id = ?`,
+  ),
+  insertLike: db.prepare<[number, string, number]>(
+    `INSERT INTO forum_likes (user_id, target_type, target_id) VALUES (?, ?, ?)`,
+  ),
+  deleteLike: db.prepare<[number, string, number]>(
+    `DELETE FROM forum_likes WHERE user_id = ? AND target_type = ? AND target_id = ?`,
+  ),
+  incPostThumbs: db.prepare<[number]>(
+    `UPDATE forum_posts SET thumbs_count = thumbs_count + 1 WHERE id = ?`,
+  ),
+  decPostThumbs: db.prepare<[number]>(
+    `UPDATE forum_posts SET thumbs_count = MAX(0, thumbs_count - 1) WHERE id = ?`,
+  ),
+  incCommentThumbs: db.prepare<[number]>(
+    `UPDATE forum_comments SET thumbs_count = thumbs_count + 1 WHERE id = ?`,
+  ),
+  decCommentThumbs: db.prepare<[number]>(
+    `UPDATE forum_comments SET thumbs_count = MAX(0, thumbs_count - 1) WHERE id = ?`,
+  ),
+  // Liked-by-user lookups — hydrate the `liked` flag on detail view.
+  likedPostByUser: db.prepare<[number, number]>(
+    `SELECT 1 FROM forum_likes WHERE user_id = ? AND target_type = 'post' AND target_id = ?`,
+  ),
+  likedCommentsInPost: db.prepare<[number, number]>(
+    `SELECT l.target_id
+     FROM forum_likes l
+     JOIN forum_comments c ON c.id = l.target_id
+     WHERE l.user_id = ? AND l.target_type = 'comment' AND c.post_id = ?`,
   ),
 };
 

@@ -588,6 +588,142 @@ export async function adminRunDigest(): Promise<{ ok: boolean; error?: string }>
   };
 }
 
+// === Forum ===
+
+export interface ForumPostSummary {
+  id: number;
+  category: string;
+  sourceMode: string | null;
+  title: string;
+  bodyPreview: string;
+  authorDisplay: string;
+  isAnonymous: boolean;
+  thumbsCount: number;
+  commentCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ForumPostDetail extends ForumPostSummary {
+  body: string;
+  liked: boolean;
+}
+
+export interface ForumComment {
+  id: number;
+  authorType: 'user' | 'ai';
+  authorDisplay: string;
+  authorAvatarPath: string | null;
+  authorAiProvider?: AIProvider;
+  authorAiModel?: string;
+  body: string;
+  isAnonymous: boolean;
+  isImported: boolean;
+  thumbsCount: number;
+  createdAt: number;
+  liked: boolean;
+}
+
+export interface ForumCategoryCount {
+  category: string;
+  count: number;
+}
+
+export async function listForumCategories(): Promise<ForumCategoryCount[]> {
+  const res = await fetch('/api/forum/categories');
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = (await res.json()) as { categories: ForumCategoryCount[] };
+  return data.categories;
+}
+
+export async function listForumPosts(opts: {
+  category?: string;
+  page?: number;
+}): Promise<{ posts: ForumPostSummary[]; page: number; pageSize: number }> {
+  const params = new URLSearchParams();
+  if (opts.category) params.set('category', opts.category);
+  if (opts.page) params.set('page', String(opts.page));
+  const qs = params.toString();
+  const res = await fetch(`/api/forum${qs ? '?' + qs : ''}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<{
+    posts: ForumPostSummary[];
+    page: number;
+    pageSize: number;
+  }>;
+}
+
+export async function getForumPost(
+  postId: number,
+): Promise<{ post: ForumPostDetail; comments: ForumComment[] }> {
+  const res = await fetch(`/api/forum/${postId}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.json() as Promise<{
+    post: ForumPostDetail;
+    comments: ForumComment[];
+  }>;
+}
+
+export async function shareSessionToForum(body: {
+  sessionId: string;
+  category: string;
+  isAnonymous?: boolean;
+  title?: string;
+}): Promise<{ postId: number; appended: number; isNew: boolean }> {
+  const res = await fetch('/api/forum/share', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<{
+    postId: number;
+    appended: number;
+    isNew: boolean;
+  }>;
+}
+
+export async function postForumComment(
+  postId: number,
+  body: { body: string; isAnonymous?: boolean },
+): Promise<void> {
+  const res = await fetch(`/api/forum/${postId}/comments`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+}
+
+export async function toggleForumLike(body: {
+  targetType: 'post' | 'comment';
+  targetId: number;
+}): Promise<{ liked: boolean }> {
+  const res = await fetch('/api/forum/like', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<{ liked: boolean }>;
+}
+
 // Streams chat events via SSE. Calls onEvent for each SSEEvent until 'finish'
 // or an abort. Returns when the stream ends.
 export async function streamChat(
