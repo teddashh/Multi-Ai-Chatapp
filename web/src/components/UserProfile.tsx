@@ -12,7 +12,11 @@ import {
   getUserProfile,
   type UserProfileResponse,
 } from '../api';
-import { aiLevel } from '../shared/constants';
+import {
+  aiLevel,
+  daysUntilBirthday,
+  signLabel,
+} from '../shared/constants';
 
 interface Props {
   username: string;
@@ -96,6 +100,19 @@ export default function UserProfile({ username, navigate }: Props) {
           </p>
         </div>
       </div>
+
+      {/* Astro / MBTI section — only renders the rows the user has
+          chosen to expose. Birthday banner appears when within 7 days
+          and the user has the date public. */}
+      <AstroSection
+        birthAt={data.birthAt}
+        birthTz={data.birthTz}
+        showBirthTime={data.showBirthTime}
+        sunSign={data.sunSign}
+        moonSign={data.moonSign}
+        risingSign={data.risingSign}
+        mbti={data.mbti}
+      />
 
       {/* Stats — five metrics matching AIProfile. Posts + comments are
           collapsed into one "累計發文" since both are public posts. */}
@@ -188,6 +205,117 @@ export default function UserProfile({ username, navigate }: Props) {
       )}
     </div>
   );
+}
+
+// Renders the astrology + MBTI block plus a birthday banner when the
+// next birthday is within a week. Any of the props can be null/undefined
+// — empty rows are simply omitted, and the whole section collapses if
+// nothing is exposed.
+export function AstroSection({
+  birthAt,
+  birthTz,
+  showBirthTime,
+  sunSign,
+  moonSign,
+  risingSign,
+  mbti,
+  archetype,
+  archetypeNote,
+}: {
+  birthAt: number | null;
+  birthTz: string | null;
+  showBirthTime: boolean;
+  sunSign: string | null;
+  moonSign: string | null;
+  risingSign: string | null;
+  mbti: string | null;
+  archetype?: string | null;
+  archetypeNote?: string | null;
+}) {
+  const hasBirth = !!birthAt && !!birthTz;
+  const hasSigns = !!(sunSign || moonSign || risingSign);
+  if (!hasBirth && !hasSigns && !mbti && !archetype) return null;
+
+  const birthLabel = hasBirth
+    ? formatBirth(birthAt!, birthTz!, showBirthTime)
+    : null;
+  const days = hasBirth ? daysUntilBirthday(birthAt, birthTz) : null;
+  const banner =
+    days === 0
+      ? '🎂 生日是今天！'
+      : days !== null && days <= 7
+        ? `🎂 生日快到了！（再 ${days} 天）`
+        : null;
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      {banner && (
+        <div className="px-3 py-2 rounded bg-amber-900/30 border border-amber-700/40 text-amber-200 text-sm font-semibold">
+          {banner}
+        </div>
+      )}
+      {archetype && (
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">
+            核心靈魂定位
+          </div>
+          <div className="text-base font-bold text-amber-200">
+            {archetype}
+            {archetypeNote && (
+              <span className="text-xs text-gray-400 font-normal ml-2">
+                （{archetypeNote}）
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+        {birthLabel && <Field label="出生" value={birthLabel} />}
+        {sunSign && <Field label="☀ 太陽" value={signLabel(sunSign)} />}
+        {moonSign && <Field label="🌙 月亮" value={signLabel(moonSign)} />}
+        {risingSign && (
+          <Field label="↗ 上升" value={signLabel(risingSign)} />
+        )}
+        {mbti && <Field label="MBTI" value={mbti} />}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-0.5">
+        {label}
+      </div>
+      <div className="text-sm font-semibold text-gray-100">{value}</div>
+    </div>
+  );
+}
+
+function formatBirth(
+  epochSec: number,
+  tz: string,
+  showTime: boolean,
+): string {
+  try {
+    const opts: Intl.DateTimeFormatOptions = {
+      timeZone: tz,
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    };
+    if (showTime) {
+      opts.hour = '2-digit';
+      opts.minute = '2-digit';
+      opts.hour12 = false;
+    }
+    return new Intl.DateTimeFormat('zh-TW', opts).format(
+      new Date(epochSec * 1000),
+    );
+  } catch {
+    return '';
+  }
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

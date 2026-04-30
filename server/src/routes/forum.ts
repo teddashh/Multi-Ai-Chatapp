@@ -26,6 +26,7 @@ import {
 } from '../lib/db.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
+import { AI_PROFILE_DATA } from '../shared/aiProfiles.js';
 
 interface UsageRollup {
   totalTokens: number;
@@ -540,11 +541,22 @@ forumRoute.get('/ai/:provider', (c) => {
     provider,
   ) as UsageRollupRow[];
   const usage = rollupUsage(usageRows);
+  const profile = AI_PROFILE_DATA[provider as keyof typeof AI_PROFILE_DATA];
   return c.json({
     provider,
     // Per spec: admin and AIs share the "Admin" badge — AIs are first-
     // class members on the platform, not gated by tier.
     tier: 'admin',
+    // AI birth + astrology + MBTI — always public (their identity is
+    // part of the brand). Visibility flags don't apply to AIs.
+    birthAt: profile?.birthAt ?? null,
+    birthTz: profile?.birthTz ?? null,
+    sunSign: profile?.sunSign ?? null,
+    moonSign: profile?.moonSign ?? null,
+    risingSign: profile?.risingSign ?? null,
+    mbti: profile?.mbti ?? null,
+    archetype: profile?.archetype ?? null,
+    archetypeNote: profile?.archetypeNote ?? null,
     stats: {
       totalComments: stats.total_comments,
       totalLikes: stats.total_likes,
@@ -625,6 +637,17 @@ forumRoute.get('/user/:username', (c) => {
   ) as UsageRollupRow[];
   const userUsage = rollupUsage(userUsageRows);
 
+  // Visibility-gated public fields. The DB always carries the data;
+  // these flags decide whether to surface them on the public profile.
+  // The user's own /me endpoint (auth) shows everything regardless.
+  // Per spec: 3 toggles — birthday / birth time / MBTI. Sun + moon +
+  // rising stay public whenever filled (signs are coarse-grained
+  // enough that users expect them to show once they bother to set
+  // them; if they want them hidden they can clear the field).
+  const showBirthday = !!user.show_birthday;
+  const showBirthTime = !!user.show_birth_time;
+  const showMbti = !!user.show_mbti;
+
   return c.json({
     username: user.username,
     nickname: user.nickname,
@@ -632,6 +655,18 @@ forumRoute.get('/user/:username', (c) => {
     memberSince: user.created_at * 1000,
     tier: user.tier,
     bio: user.bio ?? '',
+    // Birth fields — date and time are gated separately. When
+    // showBirthday is on but showBirthTime is off the client renders
+    // year/month/day only. We still send the full epoch + tz so the
+    // client picks the date in the user's preferred local time;
+    // gating happens visually with the showBirthTime flag.
+    birthAt: showBirthday ? user.birth_at ?? null : null,
+    birthTz: showBirthday ? user.birth_tz ?? null : null,
+    showBirthTime,
+    sunSign: user.sun_sign ?? null,
+    moonSign: user.moon_sign ?? null,
+    risingSign: user.rising_sign ?? null,
+    mbti: showMbti ? user.mbti ?? null : null,
     stats: {
       totalPosts: postRow.total_posts,
       totalComments: commentRow.total_comments,

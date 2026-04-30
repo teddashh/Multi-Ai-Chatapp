@@ -11,6 +11,14 @@ import {
 } from '../api';
 import { useI18n } from '../i18n';
 import type { Dict, Lang } from '../i18n';
+import {
+  COMMON_TIMEZONES,
+  MBTI_TYPES,
+  SIGN_KEYS,
+  SIGN_ZH,
+  SIGN_GLYPH,
+  sunSignFromMonthDay,
+} from '../shared/constants';
 
 interface Props {
   isOpen: boolean;
@@ -19,8 +27,131 @@ interface Props {
   onUpdate: (user: User) => void;
 }
 
+// Convert UTC unix seconds + IANA tz → "YYYY-MM-DD" + "HH:mm" in that tz.
+// Used to populate the date/time inputs from the stored birthAt.
+function utcEpochToLocalParts(
+  epochSec: number,
+  tz: string,
+): { date: string; time: string } {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date(epochSec * 1000));
+    const got: Record<string, string> = {};
+    for (const p of parts) got[p.type] = p.value;
+    const hh = got.hour === '24' ? '00' : got.hour ?? '00';
+    return {
+      date: `${got.year ?? '2000'}-${got.month ?? '01'}-${got.day ?? '01'}`,
+      time: `${hh}:${got.minute ?? '00'}`,
+    };
+  } catch {
+    return { date: '', time: '' };
+  }
+}
+
+// Convert local "YYYY-MM-DD" + "HH:mm" interpreted in tz → UTC seconds.
+// Trick: format the provisional UTC instant in the target tz, then
+// subtract the difference to get the actual UTC moment.
+function localPartsToUtcEpoch(
+  date: string,
+  time: string,
+  tz: string,
+): number | null {
+  const [y, mo, d] = date.split('-').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  if (!y || !mo || !d) return null;
+  const provisional = Date.UTC(y, mo - 1, d, hh || 0, mm || 0);
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = fmt.formatToParts(new Date(provisional));
+    const got: Record<string, number> = {};
+    for (const p of parts) {
+      if (
+        p.type === 'year' ||
+        p.type === 'month' ||
+        p.type === 'day' ||
+        p.type === 'hour' ||
+        p.type === 'minute'
+      ) {
+        got[p.type] = parseInt(p.value === '24' ? '00' : p.value, 10);
+      }
+    }
+    const tzAsUtc = Date.UTC(
+      got.year,
+      got.month - 1,
+      got.day,
+      got.hour,
+      got.minute,
+    );
+    const offsetMs = tzAsUtc - provisional;
+    return Math.floor((provisional - offsetMs) / 1000);
+  } catch {
+    return Math.floor(provisional / 1000);
+  }
+}
+
 const MAX_AVATAR_MB = 4;
 const SUPPORTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+
+// Star-sign dropdown — empty value clears the field.
+function SignSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs"
+    >
+      <option value="">— 不設定 —</option>
+      {SIGN_KEYS.map((k) => (
+        <option key={k} value={k}>
+          {SIGN_GLYPH[k]} {SIGN_ZH[k]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {label}
+    </label>
+  );
+}
 
 const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
   { id: 'winter', swatch: '#1e3a8a', nameKey: 'themeWinter' },
@@ -38,6 +169,24 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   const [password, setPassword] = useState('');
   const [lang, setLocalLang] = useState<Lang>(user.lang);
   const [theme, setTheme] = useState<ThemeId>(user.theme);
+  // Birth + astrology + MBTI. birth date/time are local strings in the
+  // chosen tz; we convert to UTC epoch on save and back on load.
+  const guessTz = (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Taipei';
+    } catch {
+      return 'Asia/Taipei';
+    }
+  })();
+  const [birthDate, setBirthDate] = useState('');
+  const [birthTime, setBirthTime] = useState('');
+  const [birthTz, setBirthTz] = useState<string>(user.birthTz || guessTz);
+  const [moonSign, setMoonSign] = useState<string>(user.moonSign || '');
+  const [risingSign, setRisingSign] = useState<string>(user.risingSign || '');
+  const [mbti, setMbti] = useState<string>(user.mbti || '');
+  const [showBirthday, setShowBirthday] = useState<boolean>(user.showBirthday);
+  const [showBirthTime, setShowBirthTime] = useState<boolean>(user.showBirthTime);
+  const [showMbti, setShowMbti] = useState<boolean>(user.showMbti);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -58,8 +207,25 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setAvatarBust(Date.now());
       setUsageOpen(true);
       setUsage(null);
+      // Hydrate birth fields from the stored UTC epoch + tz.
+      const tz = user.birthTz || guessTz;
+      setBirthTz(tz);
+      if (user.birthAt) {
+        const { date, time } = utcEpochToLocalParts(user.birthAt, tz);
+        setBirthDate(date);
+        setBirthTime(time);
+      } else {
+        setBirthDate('');
+        setBirthTime('');
+      }
+      setMoonSign(user.moonSign || '');
+      setRisingSign(user.risingSign || '');
+      setMbti(user.mbti || '');
+      setShowBirthday(user.showBirthday);
+      setShowBirthTime(user.showBirthTime);
+      setShowMbti(user.showMbti);
     }
-  }, [isOpen, user]);
+  }, [isOpen, user, guessTz]);
 
   // Lazy-load usage on first expand — most opens of the modal are for
   // editing settings, no point hitting the endpoint preemptively.
@@ -83,12 +249,33 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
     }
     setBusy(true);
     try {
+      // Compute UTC epoch from local birth date/time + tz. Empty
+      // date → null (clears the birth_at column).
+      let birthAt: number | null = null;
+      if (birthDate) {
+        birthAt = localPartsToUtcEpoch(birthDate, birthTime || '00:00', birthTz);
+      }
+      // Auto-derive sun sign from birth date if filled, otherwise null.
+      let sunSign: string | null = null;
+      if (birthDate) {
+        const [, mStr, dStr] = birthDate.split('-');
+        sunSign = sunSignFromMonthDay(parseInt(mStr, 10), parseInt(dStr, 10));
+      }
       const updated = await updateProfile({
         nickname: nickname.trim() || null,
         bio: bio.slice(0, 500),
         password: password || null,
         lang,
         theme,
+        birthAt,
+        birthTz: birthDate ? birthTz : null,
+        sunSign,
+        moonSign: moonSign || null,
+        risingSign: risingSign || null,
+        mbti: mbti || null,
+        showBirthday,
+        showBirthTime,
+        showMbti,
       });
       onUpdate(updated);
       setLang(lang);
@@ -252,6 +439,123 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           rows={3}
           className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500 resize-y"
         />
+
+        {/* Birth + astrology + MBTI section. Filled values are saved
+            regardless; the show* toggles below decide whether the
+            public /forum/user/<username> page exposes them. */}
+        <div className="mb-3 p-3 rounded border border-gray-800 bg-gray-900/40 space-y-2">
+          <div className="text-xs text-gray-400 font-semibold mb-1">
+            出生資訊與占星
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">
+                出生日期
+              </label>
+              <input
+                type="date"
+                value={birthDate}
+                onChange={(e) => setBirthDate(e.target.value)}
+                className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">
+                出生時間
+              </label>
+              <input
+                type="time"
+                value={birthTime}
+                onChange={(e) => setBirthTime(e.target.value)}
+                className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs focus:outline-none focus:border-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 mb-0.5">
+              出生時區
+            </label>
+            <select
+              value={birthTz}
+              onChange={(e) => setBirthTz(e.target.value)}
+              className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs"
+            >
+              {COMMON_TIMEZONES.map((tz) => (
+                <option key={tz} value={tz}>
+                  {tz}
+                </option>
+              ))}
+            </select>
+          </div>
+          {birthDate && (
+            <div className="text-[10px] text-gray-500">
+              太陽星座：
+              <span className="text-amber-300 ml-1">
+                {(() => {
+                  const [, m, d] = birthDate.split('-');
+                  if (!m || !d) return '';
+                  const k = sunSignFromMonthDay(
+                    parseInt(m, 10),
+                    parseInt(d, 10),
+                  );
+                  return `${SIGN_GLYPH[k]} ${SIGN_ZH[k]}`;
+                })()}
+              </span>
+              <span className="ml-1">（依生日自動推算）</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">
+                月亮星座
+              </label>
+              <SignSelect value={moonSign} onChange={setMoonSign} />
+            </div>
+            <div>
+              <label className="block text-[10px] text-gray-500 mb-0.5">
+                上升星座
+              </label>
+              <SignSelect value={risingSign} onChange={setRisingSign} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-gray-500 mb-0.5">
+              MBTI
+            </label>
+            <select
+              value={mbti}
+              onChange={(e) => setMbti(e.target.value)}
+              className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs"
+            >
+              <option value="">— 不設定 —</option>
+              {MBTI_TYPES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1 pt-1 border-t border-gray-800">
+            <div className="text-[10px] text-gray-500 mb-1">
+              公開設定（預設皆為私人，星座不在此控制 — 填了就會公開）
+            </div>
+            <ToggleRow
+              label="公開出生年月日"
+              checked={showBirthday}
+              onChange={setShowBirthday}
+            />
+            <ToggleRow
+              label="公開出生時辰"
+              checked={showBirthTime}
+              onChange={setShowBirthTime}
+            />
+            <ToggleRow
+              label="公開 MBTI"
+              checked={showMbti}
+              onChange={setShowMbti}
+            />
+          </div>
+        </div>
 
         {/* Password */}
         <label className="block text-xs text-gray-300 mb-1">

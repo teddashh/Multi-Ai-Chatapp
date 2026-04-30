@@ -13,6 +13,7 @@ import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
 import { logAudit } from '../lib/audit.js';
 import { IMAGE_MODELS, TIER_MODELS } from '../shared/models.js';
 import { formatPriceLabel } from '../shared/prices.js';
+import { SIGN_KEY_SET, sunSignFromEpoch } from '../shared/astrology.js';
 import type { Tier } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { sendResetEmail, sendVerifyEmail } from '../lib/mail.js';
@@ -69,6 +70,20 @@ function buildUserDTO(user: UserRow) {
     // before picking. Empty string when we don't have a quote.
     priceLabels: priceLabelsForTier(user.tier),
     bio: user.bio ?? '',
+    // Birth + astrology + MBTI. Always included on /me (the user
+    // viewing themselves sees their own data). Public exposure is
+    // gated separately on the /forum/user/:username endpoint based
+    // on the show_* flags below.
+    birthAt: user.birth_at ?? null,
+    birthTz: user.birth_tz ?? null,
+    sunSign: user.sun_sign ?? null,
+    moonSign: user.moon_sign ?? null,
+    risingSign: user.rising_sign ?? null,
+    mbti: user.mbti ?? null,
+    showBirthday: !!user.show_birthday,
+    showBirthTime: !!user.show_birth_time,
+    showMbti: !!user.show_mbti,
+    showSigns: !!user.show_signs,
   };
 }
 
@@ -421,6 +436,15 @@ authRoute.post('/forgot-password', async (c) => {
 // === Profile (self) ===
 // User-side edit: only nickname, password, lang, theme, avatar are mutable.
 // Identity fields (username, email, real_name) are admin-only.
+// Standard 16 MBTI types. Server-side allowlist so the column never
+// holds garbage even if the client UI breaks.
+const VALID_MBTI = new Set([
+  'INTJ', 'INTP', 'ENTJ', 'ENTP',
+  'INFJ', 'INFP', 'ENFJ', 'ENFP',
+  'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ',
+  'ISTP', 'ISFP', 'ESTP', 'ESFP',
+]);
+
 authRoute.patch('/profile', requireAuth, async (c) => {
   const session = c.get('user');
   const body = (await c.req.json().catch(() => null)) as
@@ -430,6 +454,18 @@ authRoute.patch('/profile', requireAuth, async (c) => {
         password?: string | null;
         theme?: string;
         bio?: string;
+        // Birth + astrology + MBTI (all optional; null = clear).
+        birthAt?: number | null;
+        birthTz?: string | null;
+        sunSign?: string | null;
+        moonSign?: string | null;
+        risingSign?: string | null;
+        mbti?: string | null;
+        // Per-field visibility flags.
+        showBirthday?: boolean;
+        showBirthTime?: boolean;
+        showMbti?: boolean;
+        showSigns?: boolean;
       }
     | null;
   if (!body) return c.json({ error: 'invalid body' }, 400);
@@ -459,6 +495,101 @@ authRoute.patch('/profile', requireAuth, async (c) => {
     const trimmed = (body.bio ?? '').slice(0, 500).trim();
     userStmts.updateBio.run(trimmed || null, user.id);
     if ((trimmed || null) !== ((user.bio ?? null))) changed.push('bio');
+  }
+  // Birth / astrology batch — accepts any subset; missing fields
+  // preserve their current values. Sun sign is auto-derived when the
+  // user provides a birth date (overridable via explicit sunSign in
+  // the body). Moon, rising, and MBTI are user-typed always.
+  if (
+    body.birthAt !== undefined ||
+    body.birthTz !== undefined ||
+    body.moonSign !== undefined ||
+    body.risingSign !== undefined ||
+    body.sunSign !== undefined ||
+    body.mbti !== undefined
+  ) {
+    const birthAt =
+      body.birthAt === null
+        ? null
+        : typeof body.birthAt === 'number'
+          ? body.birthAt
+          : (user.birth_at ?? null);
+    const birthTz =
+      body.birthTz === null
+        ? null
+        : typeof body.birthTz === 'string' && body.birthTz.length > 0
+          ? body.birthTz
+          : (user.birth_tz ?? null);
+    let sunSign: string | null;
+    if (body.sunSign !== undefined) {
+      sunSign =
+        body.sunSign === null
+          ? null
+          : SIGN_KEY_SET.has(body.sunSign)
+            ? body.sunSign
+            : (user.sun_sign ?? null);
+    } else if (birthAt && birthTz) {
+      sunSign = sunSignFromEpoch(birthAt, birthTz);
+    } else {
+      sunSign = user.sun_sign ?? null;
+    }
+    const moonSign =
+      body.moonSign === undefined
+        ? (user.moon_sign ?? null)
+        : body.moonSign === null
+          ? null
+          : SIGN_KEY_SET.has(body.moonSign)
+            ? body.moonSign
+            : (user.moon_sign ?? null);
+    const risingSign =
+      body.risingSign === undefined
+        ? (user.rising_sign ?? null)
+        : body.risingSign === null
+          ? null
+          : SIGN_KEY_SET.has(body.risingSign)
+            ? body.risingSign
+            : (user.rising_sign ?? null);
+    const mbti =
+      body.mbti === undefined
+        ? (user.mbti ?? null)
+        : body.mbti === null
+          ? null
+          : VALID_MBTI.has(body.mbti.toUpperCase())
+            ? body.mbti.toUpperCase()
+            : (user.mbti ?? null);
+    userStmts.updateBirthAndSigns.run(
+      birthAt,
+      birthTz,
+      sunSign,
+      moonSign,
+      risingSign,
+      mbti,
+      user.id,
+    );
+    changed.push('birth');
+  }
+  if (
+    body.showBirthday !== undefined ||
+    body.showBirthTime !== undefined ||
+    body.showMbti !== undefined ||
+    body.showSigns !== undefined
+  ) {
+    userStmts.updateProfileVisibility.run(
+      body.showBirthday === undefined
+        ? user.show_birthday
+        : body.showBirthday
+          ? 1
+          : 0,
+      body.showBirthTime === undefined
+        ? user.show_birth_time
+        : body.showBirthTime
+          ? 1
+          : 0,
+      body.showMbti === undefined ? user.show_mbti : body.showMbti ? 1 : 0,
+      body.showSigns === undefined ? user.show_signs : body.showSigns ? 1 : 0,
+      user.id,
+    );
+    changed.push('visibility');
   }
   if (body.password) {
     if (body.password.length < 6) {

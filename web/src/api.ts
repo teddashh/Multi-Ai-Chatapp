@@ -38,6 +38,19 @@ export interface User {
   // Self-edited public bio shown on the user's forum profile page.
   // Empty string when not set.
   bio: string;
+  // Birth + astrology + MBTI. /me always includes the raw values so
+  // the user can see their own data; the show* flags only gate the
+  // public /forum/user/<username> response.
+  birthAt: number | null;     // UTC unix seconds
+  birthTz: string | null;     // IANA zone
+  sunSign: string | null;
+  moonSign: string | null;
+  risingSign: string | null;
+  mbti: string | null;
+  showBirthday: boolean;
+  showBirthTime: boolean;
+  showMbti: boolean;
+  showSigns: boolean;
 }
 
 export async function verifyEmail(token: string): Promise<User> {
@@ -72,6 +85,16 @@ export async function updateProfile(patch: {
   password?: string | null;
   theme?: ThemeId;
   bio?: string;
+  birthAt?: number | null;
+  birthTz?: string | null;
+  sunSign?: string | null;
+  moonSign?: string | null;
+  risingSign?: string | null;
+  mbti?: string | null;
+  showBirthday?: boolean;
+  showBirthTime?: boolean;
+  showMbti?: boolean;
+  showSigns?: boolean;
 }): Promise<User> {
   const res = await fetch('/api/auth/profile', {
     method: 'PATCH',
@@ -646,6 +669,16 @@ export interface AIProfileResponse {
   provider: AIProvider;
   // Tier badge — AIs are 'admin' tier per spec.
   tier: 'admin';
+  // Hardcoded astrology / MBTI / archetype — same shape as user
+  // profile but always public (no visibility flag for AIs).
+  birthAt: number | null;
+  birthTz: string | null;
+  sunSign: string | null;
+  moonSign: string | null;
+  risingSign: string | null;
+  mbti: string | null;
+  archetype: string | null;
+  archetypeNote: string | null;
   stats: {
     totalComments: number;
     totalLikes: number;
@@ -681,6 +714,17 @@ export interface UserProfileResponse {
   memberSince: number;
   tier: Tier;
   bio: string;
+  // Visibility-gated fields — null when the user has hidden them.
+  // The `showBirthTime` flag is included separately so the UI can
+  // render "1990/01/15" vs "1990/01/15 14:30" based on whether the
+  // user opted to expose the time.
+  birthAt: number | null;
+  birthTz: string | null;
+  showBirthTime: boolean;
+  sunSign: string | null;
+  moonSign: string | null;
+  risingSign: string | null;
+  mbti: string | null;
   stats: {
     totalPosts: number;
     totalComments: number;

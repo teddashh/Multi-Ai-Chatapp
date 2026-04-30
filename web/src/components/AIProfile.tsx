@@ -11,6 +11,7 @@ import {
 } from '../api';
 import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
 import ProviderAvatar from './ProviderAvatar';
+import { AstroSection } from './UserProfile';
 
 interface Props {
   provider: AIProvider;
@@ -84,6 +85,21 @@ export default function AIProfile({ provider, navigate }: Props) {
           <p className="text-sm text-gray-300 leading-relaxed">{bio.bio}</p>
         </div>
       </div>
+
+      {/* Astro / MBTI / archetype — always public for AIs. */}
+      {data && (
+        <AstroSection
+          birthAt={data.birthAt}
+          birthTz={data.birthTz}
+          showBirthTime={true}
+          sunSign={data.sunSign}
+          moonSign={data.moonSign}
+          risingSign={data.risingSign}
+          mbti={data.mbti}
+          archetype={data.archetype}
+          archetypeNote={data.archetypeNote}
+        />
+      )}
 
       {/* Stats — five-metric grid, mirrors UserProfile. */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">

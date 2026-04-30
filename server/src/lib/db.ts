@@ -138,6 +138,27 @@ addColumnIfMissing('users', 'real_name', 'TEXT');
 // Self-edited public bio shown on the user's forum profile page. Plain
 // text, capped server-side. Empty by default.
 addColumnIfMissing('users', 'bio', 'TEXT');
+// Birth date/time stored as UTC unix seconds; the IANA timezone the
+// user originally chose stays alongside it so we can render the value
+// back in their preferred local time. Nullable while users haven't
+// filled them in.
+addColumnIfMissing('users', 'birth_at', 'INTEGER');
+addColumnIfMissing('users', 'birth_tz', 'TEXT');
+// Astrology fields. sun_sign is auto-derived from birth_at when the
+// date is set; moon/rising require accurate time + location so we let
+// users fill them manually. Stored as English keys ("leo", "pisces"
+// etc.) — display labels live on the client.
+addColumnIfMissing('users', 'sun_sign', 'TEXT');
+addColumnIfMissing('users', 'moon_sign', 'TEXT');
+addColumnIfMissing('users', 'rising_sign', 'TEXT');
+addColumnIfMissing('users', 'mbti', 'TEXT');
+// Per-field profile visibility (default OFF). The fields themselves
+// stay in the DB regardless; these flags only gate the public
+// /api/forum/user/:username response.
+addColumnIfMissing('users', 'show_birthday', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'show_birth_time', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Existing users default to verified (1). New /signup flow flips to 0.
 addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'verify_token', 'TEXT');
@@ -389,6 +410,16 @@ export interface UserRow {
   verify_token: string | null;
   verify_expires_at: number | null;
   bio: string | null;
+  birth_at: number | null;
+  birth_tz: string | null;
+  sun_sign: string | null;
+  moon_sign: string | null;
+  rising_sign: string | null;
+  mbti: string | null;
+  show_birthday: number;
+  show_birth_time: number;
+  show_mbti: number;
+  show_signs: number;
 }
 
 export interface PasswordResetRow {
@@ -453,6 +484,34 @@ export const userStmts = {
   ),
   updateBio: db.prepare<[string | null, number]>(
     'UPDATE users SET bio = ? WHERE id = ?',
+  ),
+  // Birth + astrology batch update — all fields nullable. Sun sign
+  // is computed in the route from birth_at when the user provides a
+  // date; moon/rising/mbti are user-typed.
+  updateBirthAndSigns: db.prepare<[
+    number | null,
+    string | null,
+    string | null,
+    string | null,
+    string | null,
+    string | null,
+    number,
+  ]>(
+    `UPDATE users
+       SET birth_at = ?, birth_tz = ?, sun_sign = ?, moon_sign = ?,
+           rising_sign = ?, mbti = ?
+     WHERE id = ?`,
+  ),
+  updateProfileVisibility: db.prepare<[
+    number,
+    number,
+    number,
+    number,
+    number,
+  ]>(
+    `UPDATE users
+       SET show_birthday = ?, show_birth_time = ?, show_mbti = ?, show_signs = ?
+     WHERE id = ?`,
   ),
   // First-login username pick (gated to unverified rows by the auth
   // route — the schema-level UNIQUE on username still protects us).
