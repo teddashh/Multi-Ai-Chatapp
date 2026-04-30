@@ -469,32 +469,49 @@ function CommentRow({
     : isAi && provider
       ? capitalize(provider)
       : comment.authorDisplay;
-  // Metadata subline parts (rendered " · "-separated):
-  //   - bare provider name when persona is shown (so AI identity stays
-  //     visible for like-stat aggregation per the spec)
+  // Subline parts (rendered " · "-separated):
+  //   - "Grok 扮演" verb phrase when persona is shown (preserves AI
+  //     identity for like-stat aggregation; reads naturally as roleplay)
   //   - "來自原對話" badge for messages imported from the source chat
   //   - relative time
   const metaParts: string[] = [];
-  if (personaActive && provider) metaParts.push(capitalize(provider));
+  if (personaActive && provider) metaParts.push(`${capitalize(provider)} 扮演`);
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
+  const hoverTitle = personaActive && provider
+    ? `${aiPersona}（由 ${capitalize(provider)} 扮演）`
+    : undefined;
 
   return (
     <div
       className={`flex gap-3 bg-gray-900 border rounded-lg p-3 ${
-        isAi ? 'border-gray-700' : 'border-gray-800'
+        personaActive
+          ? 'border-amber-700/40'
+          : isAi
+            ? 'border-gray-700'
+            : 'border-gray-800'
       }`}
+      title={hoverTitle}
     >
-      <CommentAvatar comment={comment} size={36} />
+      <CommentAvatar comment={comment} size={personaActive ? 44 : 36} />
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-baseline gap-1.5 mb-1">
-          <span
-            className={`text-sm ${
-              isAi ? 'text-gray-100 font-semibold' : 'text-gray-200 font-medium'
-            }`}
-          >
-            {primaryName}
-          </span>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1">
+          {personaActive ? (
+            <span
+              className="text-base font-bold text-amber-200 tracking-wide"
+              title={hoverTitle}
+            >
+              {primaryName}
+            </span>
+          ) : (
+            <span
+              className={`text-sm ${
+                isAi ? 'text-gray-100 font-semibold' : 'text-gray-200 font-medium'
+              }`}
+            >
+              {primaryName}
+            </span>
+          )}
           <span className="text-[11px] text-gray-500">
             {metaParts.join(' · ')}
           </span>
