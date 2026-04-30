@@ -344,34 +344,52 @@ function ForumPostView({
     <div className="max-w-3xl mx-auto p-4 space-y-4">
       {/* Post header */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-        <div className="flex items-center gap-2 text-xs mb-2">
-          <button
-            onClick={() => navigate(`/forum/cat/${encodeURIComponent(post.category)}`)}
-            className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
-          >
-            {post.category}
-          </button>
-          {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
-          <span className="text-gray-500">·</span>
-          <span className="text-gray-400">{post.authorDisplay}</span>
-          <span className="text-gray-500">·</span>
-          <span className="text-gray-500">{relativeTime(post.createdAt)}</span>
-        </div>
-        <h1 className="text-xl font-bold text-gray-100 mb-3">{post.title}</h1>
-        <div className="text-gray-200 whitespace-pre-wrap leading-relaxed">
-          {post.body}
-        </div>
-        <div className="mt-3 flex items-center gap-3">
-          <LikeButton
-            liked={post.liked}
-            count={post.thumbsCount}
-            onToggle={togglePostLike}
-            onShowLikers={() => setLikersTarget({ type: 'post', id: post.id })}
-            disabled={!user}
-          />
-          <span className="text-xs text-gray-500">
-            {post.commentCount} 則回應
-          </span>
+        <div className="flex gap-3">
+          <PostAvatar post={post} size={40} />
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
+              <button
+                onClick={() =>
+                  navigate(`/forum/cat/${encodeURIComponent(post.category)}`)
+                }
+                className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+              >
+                {post.category}
+              </button>
+              {post.sourceMode && (
+                <ModePill
+                  mode={post.sourceMode as ChatMode}
+                  persona={post.aiPersona}
+                />
+              )}
+              <span className="text-gray-500">·</span>
+              <span className="text-gray-400">{post.authorDisplay}</span>
+              <span className="text-gray-500">·</span>
+              <span className="text-gray-500">
+                {relativeTime(post.createdAt)}
+              </span>
+            </div>
+            <h1 className="text-xl font-bold text-gray-100 mb-3">
+              {post.title}
+            </h1>
+            <div className="text-gray-200 whitespace-pre-wrap leading-relaxed">
+              {post.body}
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <LikeButton
+                liked={post.liked}
+                count={post.thumbsCount}
+                onToggle={togglePostLike}
+                onShowLikers={() =>
+                  setLikersTarget({ type: 'post', id: post.id })
+                }
+                disabled={!user}
+              />
+              <span className="text-xs text-gray-500">
+                {post.commentCount} 則回應
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -463,55 +481,45 @@ function CommentRow({
 }) {
   const isAi = comment.authorType === 'ai';
   const provider = comment.authorAiProvider;
-  const personaActive = isAi && !!aiPersona;
-  const primaryName = personaActive
-    ? aiPersona!
-    : isAi && provider
-      ? capitalize(provider)
-      : comment.authorDisplay;
-  // Subline parts (rendered " · "-separated):
-  //   - "Grok 扮演" verb phrase when persona is shown (preserves AI
-  //     identity for like-stat aggregation; reads naturally as roleplay)
-  //   - "來自原對話" badge for messages imported from the source chat
-  //   - relative time
+  // Grok / Claude / etc. is always the primary name — that's the AI
+  // identity we want to brand. The post-level 職業 (e.g. 按摩師) is a
+  // discussion topic shown on the post header, not per-comment, so we
+  // don't repeat it here.
+  const primaryName = isAi && provider
+    ? capitalize(provider)
+    : comment.authorDisplay;
   const metaParts: string[] = [];
-  if (personaActive && provider) metaParts.push(`${capitalize(provider)} 扮演`);
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
-  const hoverTitle = personaActive && provider
-    ? `${aiPersona}（由 ${capitalize(provider)} 扮演）`
-    : undefined;
+  // AI name + avatar hint at a clickable profile (each AI gets its own
+  // page in a later phase). For now: pointer cursor + hover brightness
+  // as a visual affordance, no nav target yet.
+  const aiHover = isAi && provider ? `${capitalize(provider)} · profile coming soon` : undefined;
 
   return (
     <div
       className={`flex gap-3 bg-gray-900 border rounded-lg p-3 ${
-        personaActive
-          ? 'border-amber-700/40'
-          : isAi
-            ? 'border-gray-700'
-            : 'border-gray-800'
+        isAi ? 'border-gray-700' : 'border-gray-800'
       }`}
-      title={hoverTitle}
     >
-      <CommentAvatar comment={comment} size={personaActive ? 44 : 36} />
+      <div
+        className={isAi ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}
+        title={aiHover}
+      >
+        <CommentAvatar comment={comment} size={36} />
+      </div>
       <div className="flex-1 min-w-0">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 mb-1">
-          {personaActive ? (
-            <span
-              className="text-base font-bold text-amber-200 tracking-wide"
-              title={hoverTitle}
-            >
-              {primaryName}
-            </span>
-          ) : (
-            <span
-              className={`text-sm ${
-                isAi ? 'text-gray-100 font-semibold' : 'text-gray-200 font-medium'
-              }`}
-            >
-              {primaryName}
-            </span>
-          )}
+          <span
+            className={`text-sm ${
+              isAi
+                ? 'text-gray-100 font-semibold cursor-pointer hover:text-white'
+                : 'text-gray-200 font-medium'
+            }`}
+            title={aiHover}
+          >
+            {primaryName}
+          </span>
           <span className="text-[11px] text-gray-500">
             {metaParts.join(' · ')}
           </span>
@@ -556,14 +564,29 @@ function CommentAvatar({
   return <InitialAvatar name={comment.authorDisplay} size={size} />;
 }
 
+// Generic anonymous user silhouette — head + shoulders SVG. Looks more
+// like a real avatar than a text glyph and reads identically across
+// languages.
 function AnonAvatar({ size }: { size: number }) {
   return (
     <div
-      className="rounded-full bg-gray-700 flex items-center justify-center text-gray-300 font-bold flex-none border border-gray-600"
-      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      className="rounded-full bg-gray-700 flex items-center justify-center flex-none border border-gray-600 overflow-hidden"
+      style={{ width: size, height: size }}
       title="匿名"
     >
-      匿
+      <svg
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        className="text-gray-400"
+      >
+        <circle cx="12" cy="9" r="3.6" fill="currentColor" />
+        <path
+          d="M4.5 22c0-4.1 3.4-7.5 7.5-7.5s7.5 3.4 7.5 7.5"
+          fill="currentColor"
+        />
+      </svg>
     </div>
   );
 }
@@ -766,13 +789,41 @@ const MODE_LABEL: Record<ChatMode, string> = {
   reasoning: '深度思考',
   image: '出圖',
 };
-function ModePill({ mode }: { mode: ChatMode }) {
+// In `profession` mode the persona (e.g. 按摩師) becomes the discussion
+// topic — show it inline with the mode label as "指定職業：按摩師" so
+// readers see both context (this came from a profession session) and
+// topic (which profession). Provider stays branded on individual
+// comments; this pill is about the post-level subject.
+function ModePill({
+  mode,
+  persona,
+}: {
+  mode: ChatMode;
+  persona?: string | null;
+}) {
   const label = MODE_LABEL[mode] ?? mode;
+  const text = mode === 'profession' && persona ? `${label}：${persona}` : label;
   return (
     <span className="px-1.5 py-0.5 rounded border border-gray-700 text-gray-400 text-[10px]">
-      {label}
+      {text}
     </span>
   );
+}
+
+// Avatar dispatcher for posts — same logic as CommentAvatar but only
+// for user-authored posts (no AI authors at the post level).
+function PostAvatar({
+  post,
+  size,
+}: {
+  post: ForumPostDetail | ForumPostSummary;
+  size: number;
+}) {
+  if (post.isAnonymous) return <AnonAvatar size={size} />;
+  if (post.authorUsername) {
+    return <UserAvatar username={post.authorUsername} size={size} />;
+  }
+  return <InitialAvatar name={post.authorDisplay} size={size} />;
 }
 
 function relativeTime(ms: number): string {

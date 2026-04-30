@@ -596,6 +596,9 @@ export interface ForumPostSummary {
   sourceMode: string | null;
   title: string;
   bodyPreview: string;
+  // Username for fetching the OP's avatar at /api/auth/avatar/:username.
+  // Null when the post is anonymous (avatar falls back to AnonAvatar).
+  authorUsername: string | null;
   authorDisplay: string;
   isAnonymous: boolean;
   thumbsCount: number;
