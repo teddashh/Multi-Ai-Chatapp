@@ -107,8 +107,6 @@ export default function UserProfile({ username, navigate }: Props) {
       <AstroSection
         birthAt={data.birthAt}
         birthTz={data.birthTz}
-        showBirthTime={data.showBirthTime}
-        showBirthYear={data.showBirthYear}
         sunSign={data.sunSign}
         moonSign={data.moonSign}
         risingSign={data.risingSign}
@@ -215,8 +213,6 @@ export default function UserProfile({ username, navigate }: Props) {
 export function AstroSection({
   birthAt,
   birthTz,
-  showBirthTime,
-  showBirthYear,
   sunSign,
   moonSign,
   risingSign,
@@ -226,8 +222,6 @@ export function AstroSection({
 }: {
   birthAt: number | null;
   birthTz: string | null;
-  showBirthTime: boolean;
-  showBirthYear: boolean;
   sunSign: string | null;
   moonSign: string | null;
   risingSign: string | null;
@@ -239,9 +233,9 @@ export function AstroSection({
   const hasSigns = !!(sunSign || moonSign || risingSign);
   if (!hasBirth && !hasSigns && !mbti && !archetype) return null;
 
-  const birthLabel = hasBirth
-    ? formatBirth(birthAt!, birthTz!, showBirthTime, showBirthYear)
-    : null;
+  // Year and time are intentionally never displayed publicly. Birthday
+  // is rendered as month + day only.
+  const birthLabel = hasBirth ? formatBirth(birthAt!, birthTz!) : null;
   const days = hasBirth ? daysUntilBirthday(birthAt, birthTz) : null;
   const banner =
     days === 0
@@ -299,27 +293,15 @@ function Field({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatBirth(
-  epochSec: number,
-  tz: string,
-  showTime: boolean,
-  showYear: boolean,
-): string {
+// Birthday display is intentionally month + day only — year and time
+// are private regardless of any flag the API may still expose.
+function formatBirth(epochSec: number, tz: string): string {
   try {
-    const opts: Intl.DateTimeFormatOptions = {
+    return new Intl.DateTimeFormat('zh-TW', {
       timeZone: tz,
       month: 'long',
       day: 'numeric',
-    };
-    if (showYear) opts.year = 'numeric';
-    if (showTime) {
-      opts.hour = '2-digit';
-      opts.minute = '2-digit';
-      opts.hour12 = false;
-    }
-    return new Intl.DateTimeFormat('zh-TW', opts).format(
-      new Date(epochSec * 1000),
-    );
+    }).format(new Date(epochSec * 1000));
   } catch {
     return '';
   }

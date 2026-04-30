@@ -86,14 +86,13 @@ export default function AIProfile({ provider, navigate }: Props) {
         </div>
       </div>
 
-      {/* Astro / MBTI / archetype — always public for AIs except for
-          the year (per spec: "包含 AI 的也是" hide the year). */}
+      {/* Astro / MBTI / archetype. Display always shows month/day
+          only — birth year and birth time are private for everyone
+          including AIs ("沒人想被知道出生年, 包含 AI 的也是"). */}
       {data && (
         <AstroSection
           birthAt={data.birthAt}
           birthTz={data.birthTz}
-          showBirthTime={true}
-          showBirthYear={false}
           sunSign={data.sunSign}
           moonSign={data.moonSign}
           risingSign={data.risingSign}

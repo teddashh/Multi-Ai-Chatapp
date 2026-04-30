@@ -185,8 +185,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   const [risingSign, setRisingSign] = useState<string>(user.risingSign || '');
   const [mbti, setMbti] = useState<string>(user.mbti || '');
   const [showBirthday, setShowBirthday] = useState<boolean>(user.showBirthday);
-  const [showBirthTime, setShowBirthTime] = useState<boolean>(user.showBirthTime);
-  const [showBirthYear, setShowBirthYear] = useState<boolean>(user.showBirthYear);
   const [showMbti, setShowMbti] = useState<boolean>(user.showMbti);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -223,8 +221,6 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setRisingSign(user.risingSign || '');
       setMbti(user.mbti || '');
       setShowBirthday(user.showBirthday);
-      setShowBirthTime(user.showBirthTime);
-      setShowBirthYear(user.showBirthYear);
       setShowMbti(user.showMbti);
     }
   }, [isOpen, user, guessTz]);
@@ -276,8 +272,12 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
         risingSign: risingSign || null,
         mbti: mbti || null,
         showBirthday,
-        showBirthTime,
-        showBirthYear,
+        // Year + birth time are intentionally never public — no
+        // toggle in the UI. Pin both flags to false on every save so
+        // the DB stays consistent even if the row was set true in
+        // an earlier build.
+        showBirthTime: false,
+        showBirthYear: false,
         showMbti,
       });
       onUpdate(updated);
@@ -540,22 +540,12 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           </div>
           <div className="space-y-1 pt-1 border-t border-gray-800">
             <div className="text-[10px] text-gray-500 mb-1">
-              公開設定（預設皆為私人，星座不在此控制 — 填了就會公開）
+              公開設定（出生年份與時辰永遠私人，星座填了就公開）
             </div>
             <ToggleRow
               label="公開生日（月/日）"
               checked={showBirthday}
               onChange={setShowBirthday}
-            />
-            <ToggleRow
-              label="公開出生年份"
-              checked={showBirthYear}
-              onChange={setShowBirthYear}
-            />
-            <ToggleRow
-              label="公開出生時辰"
-              checked={showBirthTime}
-              onChange={setShowBirthTime}
             />
             <ToggleRow
               label="公開 MBTI"
