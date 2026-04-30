@@ -90,15 +90,24 @@ function parseForumPath(p: string): ForumRoute {
     const id = parseInt(p.slice('/forum/post/'.length), 10);
     if (Number.isFinite(id) && id > 0) return { kind: 'post', postId: id };
   }
+  // Unified user-style URL: AIs reuse this scheme so they read like
+  // first-class members (/forum/user/grok, /forum/user/claude, …).
+  // Provider names are reserved server-side via RESERVED_USERNAMES so
+  // a human can never grab "grok" and shadow Grok's profile.
+  if (p.startsWith('/forum/user/')) {
+    const handle = decodeURIComponent(p.slice('/forum/user/'.length));
+    if (AI_PROVIDERS_SET.has(handle)) {
+      return { kind: 'ai', provider: handle as AIProvider };
+    }
+    if (handle) return { kind: 'user', username: handle };
+  }
+  // Legacy alias from the AI-only days. Keep functional so any earlier
+  // links / bookmarks still resolve.
   if (p.startsWith('/forum/ai/')) {
     const prov = p.slice('/forum/ai/'.length);
     if (AI_PROVIDERS_SET.has(prov)) {
       return { kind: 'ai', provider: prov as AIProvider };
     }
-  }
-  if (p.startsWith('/forum/user/')) {
-    const username = decodeURIComponent(p.slice('/forum/user/'.length));
-    if (username) return { kind: 'user', username };
   }
   return { kind: 'index' };
 }
@@ -351,6 +360,7 @@ function ForumPostView({
                     )
                   }
                   className="text-gray-400 hover:text-white hover:underline"
+                  title={`查看 @${post.authorUsername} 的個人檔案`}
                 >
                   {post.authorDisplay}
                 </button>
@@ -498,11 +508,12 @@ function CommentRow({
   metaParts.push(relativeTime(comment.createdAt));
   // Clicking the avatar / name jumps to the author's profile page.
   // Anonymous users have no profile (server returns 404 for them) so
-  // we don't wire a click handler at all in that case.
+  // we don't wire a click handler at all in that case. Both AI and
+  // user navigate through the unified /forum/user/<handle> URL.
   const userClickable =
     !isAi && !comment.isAnonymous && !!comment.authorUsername;
   const goToAuthor = () => {
-    if (isAi && provider) navigate(`/forum/ai/${provider}`);
+    if (isAi && provider) navigate(`/forum/user/${provider}`);
     else if (userClickable && comment.authorUsername) {
       navigate(`/forum/user/${encodeURIComponent(comment.authorUsername)}`);
     }
@@ -543,9 +554,10 @@ function CommentRow({
               avatarSlot={<ProviderAvatar provider={provider} size={40} />}
               primaryName={AI_PROVIDERS[provider].name}
               tier="admin"
-              subline={AI_BIOS[provider].tagline}
+              level={aiLevel(stat.totalComments, stat.totalLikes)}
+              subline={`@${provider} · ${AI_BIOS[provider].tagline}`}
               bio={AI_BIOS[provider].bio}
-              comments={stat.totalComments}
+              posts={stat.totalComments}
               likes={stat.totalLikes}
               tokens={stat.totalTokens}
               calls={stat.totalCalls}
@@ -566,8 +578,16 @@ function CommentRow({
                   userStats[comment.authorUsername].username
                 }
                 tier={userStats[comment.authorUsername].tier}
+                level={aiLevel(
+                  userStats[comment.authorUsername].totalPosts +
+                    userStats[comment.authorUsername].totalComments,
+                  userStats[comment.authorUsername].totalLikes,
+                )}
                 subline={`@${userStats[comment.authorUsername].username} · ${memberSinceShort(userStats[comment.authorUsername].memberSince)}`}
-                comments={userStats[comment.authorUsername].totalComments}
+                posts={
+                  userStats[comment.authorUsername].totalPosts +
+                  userStats[comment.authorUsername].totalComments
+                }
                 likes={userStats[comment.authorUsername].totalLikes}
                 tokens={userStats[comment.authorUsername].totalTokens}
                 calls={userStats[comment.authorUsername].totalCalls}
@@ -674,6 +694,19 @@ function TierBadge({ tier }: { tier: string }) {
   );
 }
 
+// Forum activity level — separate from tier. AIs and users alike earn
+// it from posts + likes via aiLevel().
+function LvBadge({ level, accent }: { level: number; accent?: string }) {
+  return (
+    <span
+      className="px-1.5 py-0.5 rounded text-[9px] font-bold text-white whitespace-nowrap flex-none"
+      style={{ backgroundColor: accent ?? '#475569' }}
+    >
+      Lv {level}
+    </span>
+  );
+}
+
 function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}K`;
@@ -691,13 +724,19 @@ interface HoverCardProps {
   avatarSlot: React.ReactNode;
   primaryName: string;
   tier: string;
-  // Tagline for AI ("xAI · 直率、實用主義") or "@username · 加入 N 天"
-  // for user.
+  // Forum activity level — same formula for both AI and users
+  // (aiLevel from shared/constants). Rendered as a small pill next to
+  // the tier badge.
+  level: number;
+  // Tagline for AI ("@grok · xAI · 直率、實用主義") or
+  // "@username · 加入 N 天" for user.
   subline: string;
   // Optional 2-line bio. AIs always have one (hardcoded in AI_BIOS),
   // users only when they've filled in their public bio.
   bio?: string;
-  comments: number;
+  // Combined post-count: AI = totalComments, user = totalPosts + totalComments.
+  // Per spec: "都是 post 啊", so we collapse the two columns.
+  posts: number;
   likes: number;
   tokens: number;
   calls: number;
@@ -710,9 +749,10 @@ function HoverCard({
   avatarSlot,
   primaryName,
   tier,
+  level,
   subline,
   bio,
-  comments,
+  posts,
   likes,
   tokens,
   calls,
@@ -738,11 +778,12 @@ function HoverCard({
       <div className="flex items-start gap-2 mb-2">
         {avatarSlot}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 flex-wrap">
             <span className="text-sm font-bold text-gray-100 truncate">
               {primaryName}
             </span>
             <TierBadge tier={tier} />
+            <LvBadge level={level} accent={accent} />
           </div>
           <div className="text-[10px] text-gray-500 truncate">{subline}</div>
         </div>
@@ -753,7 +794,7 @@ function HoverCard({
         </p>
       )}
       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-gray-300 mb-2">
-        <span title="留言數">💬 {comments}</span>
+        <span title="累計發文（含留言）">💬 {posts}</span>
         <span title="收到讚">❤ {likes}</span>
         <span title="累計 tokens">🔢 {formatTokens(tokens)}</span>
         <span title="呼叫次數">📞 {calls}</span>

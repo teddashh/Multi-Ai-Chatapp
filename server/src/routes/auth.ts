@@ -215,6 +215,20 @@ authRoute.post('/logout', (c) => {
   return c.json({ ok: true });
 });
 
+// AI personas use these usernames as their @-handle on the forum
+// (/forum/user/grok, etc.). Block humans from grabbing them so the
+// route stays unambiguous.
+const RESERVED_USERNAMES = new Set([
+  'grok',
+  'gemini',
+  'chatgpt',
+  'claude',
+  'admin',
+  'system',
+  'bot',
+  'ai',
+]);
+
 // Public sign-up — anyone can create a free-tier account and start using
 // the cheapest models with a daily quota. Admin can later upgrade them.
 authRoute.post('/signup', async (c) => {
@@ -259,6 +273,12 @@ authRoute.post('/signup', async (c) => {
     if (!/^[a-z0-9_.-]{3,40}$/.test(requestedUsername)) {
       return c.json(
         { error: '帳號名只能用英數字加 . _ -，長度 3–40' },
+        400,
+      );
+    }
+    if (RESERVED_USERNAMES.has(requestedUsername)) {
+      return c.json(
+        { error: '這個帳號名是保留字，請挑別的' },
         400,
       );
     }

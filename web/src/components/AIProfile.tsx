@@ -78,21 +78,22 @@ export default function AIProfile({ provider, navigate }: Props) {
               </span>
             )}
           </div>
-          <div className="text-xs text-gray-500 mb-3">{bio.tagline}</div>
+          <div className="text-xs text-gray-500 mb-3">
+            @{provider} · {bio.tagline}
+          </div>
           <p className="text-sm text-gray-300 leading-relaxed">{bio.bio}</p>
         </div>
       </div>
 
-      {/* Stats — five-metric grid, mirrors UserProfile so both pages
-          share visual rhythm. */}
+      {/* Stats — five-metric grid, mirrors UserProfile. */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         <Stat
-          label="累計留言"
+          label="累計發文"
           value={data ? String(data.stats.totalComments) : null}
           accent={meta.color}
         />
         <Stat
-          label="累計收到讚"
+          label="收到讚"
           value={data ? String(data.stats.totalLikes) : null}
           accent={meta.color}
         />

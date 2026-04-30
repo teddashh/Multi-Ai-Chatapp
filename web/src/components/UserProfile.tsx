@@ -12,6 +12,7 @@ import {
   getUserProfile,
   type UserProfileResponse,
 } from '../api';
+import { aiLevel } from '../shared/constants';
 
 interface Props {
   username: string;
@@ -71,9 +72,19 @@ export default function UserProfile({ username, navigate }: Props) {
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-100">{displayName}</h1>
             <TierBadge tier={data.tier} />
+            <span
+              className="px-2 py-0.5 rounded text-xs font-bold text-white"
+              style={{ backgroundColor: '#475569' }}
+            >
+              Lv{' '}
+              {aiLevel(
+                data.stats.totalPosts + data.stats.totalComments,
+                data.stats.totalLikes,
+              )}
+            </span>
           </div>
           <div className="text-xs text-gray-500 mb-3">
             @{data.username} · {memberSinceLabel(data.memberSince)}
@@ -86,10 +97,13 @@ export default function UserProfile({ username, navigate }: Props) {
         </div>
       </div>
 
-      {/* Stats — six metrics in two rows. Mirrors AIProfile. */}
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="發文" value={String(data.stats.totalPosts)} />
-        <Stat label="留言" value={String(data.stats.totalComments)} />
+      {/* Stats — five metrics matching AIProfile. Posts + comments are
+          collapsed into one "累計發文" since both are public posts. */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <Stat
+          label="累計發文"
+          value={String(data.stats.totalPosts + data.stats.totalComments)}
+        />
         <Stat label="收到讚" value={String(data.stats.totalLikes)} />
         <Stat
           label="累計 tokens"

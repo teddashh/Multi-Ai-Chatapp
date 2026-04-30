@@ -950,16 +950,22 @@ export const forumStmts = {
   ),
   // User-side counterparts — user profile page calls these. Stats are
   // computed live (no denormalised counters) since the forum is small.
+  // Anonymous contributions are excluded from the public totals — if
+  // we counted likes on someone's anonymous post toward their profile,
+  // an observer could correlate "user N has 17 likes total but only 12
+  // visible" → the missing 5 must be from an anonymous post.
   userPostStats: db.prepare<[number]>(
     `SELECT COUNT(*) AS total_posts,
             COALESCE(SUM(thumbs_count), 0) AS post_likes
-     FROM forum_posts WHERE author_user_id = ?`,
+     FROM forum_posts WHERE author_user_id = ? AND is_anonymous = 0`,
   ),
   userCommentStats: db.prepare<[number]>(
     `SELECT COUNT(*) AS total_comments,
             COALESCE(SUM(thumbs_count), 0) AS comment_likes
      FROM forum_comments
-     WHERE author_user_id = ? AND author_type = 'user'`,
+     WHERE author_user_id = ?
+       AND author_type = 'user'
+       AND is_anonymous = 0`,
   ),
   userRecentPosts: db.prepare<[number, number]>(
     `SELECT id, title, category, body, thumbs_count, comment_count,
@@ -1004,12 +1010,14 @@ export const forumStmts = {
      LEFT JOIN (
        SELECT author_user_id, COUNT(*) AS cnt,
               COALESCE(SUM(thumbs_count), 0) AS likes
-       FROM forum_posts GROUP BY author_user_id
+       FROM forum_posts WHERE is_anonymous = 0
+       GROUP BY author_user_id
      ) p ON p.author_user_id = u.id
      LEFT JOIN (
        SELECT author_user_id, COUNT(*) AS cnt,
               COALESCE(SUM(thumbs_count), 0) AS likes
-       FROM forum_comments WHERE author_type = 'user'
+       FROM forum_comments
+       WHERE author_type = 'user' AND is_anonymous = 0
        GROUP BY author_user_id
      ) c ON c.author_user_id = u.id`,
   ),
