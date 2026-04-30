@@ -2,7 +2,34 @@ export type AIProvider = 'chatgpt' | 'claude' | 'gemini' | 'grok';
 
 export type Tier = 'free' | 'standard' | 'pro' | 'super' | 'admin';
 
-export type ChatMode = 'free' | 'debate' | 'consult' | 'coding' | 'roundtable';
+// Multi-AI modes (existing): free / debate / consult / coding / roundtable
+//   — orchestrator runs all 4 personas (parallel for free, sequential for the rest)
+// Single-AI modes (Agent group):
+//   personal    — free chat with one chosen AI
+//   profession  — assigned-profession persona (TBD)
+//   reasoning   — single AI on a deep-thinking model (TBD)
+//   image       — image generation (TBD)
+export type ChatMode =
+  | 'free'
+  | 'debate'
+  | 'consult'
+  | 'coding'
+  | 'roundtable'
+  | 'personal'
+  | 'profession'
+  | 'reasoning'
+  | 'image';
+
+// Top-level grouping for the mode selector. Shown as the outer tab
+// row; each group has its own set of modes underneath.
+export type ModeGroup = 'multi' | 'agent';
+
+export const MULTI_MODES: ChatMode[] = ['free', 'debate', 'consult', 'coding', 'roundtable'];
+export const AGENT_MODES: ChatMode[] = ['personal', 'profession', 'reasoning', 'image'];
+
+export function modeGroupOf(mode: ChatMode): ModeGroup {
+  return AGENT_MODES.includes(mode) ? 'agent' : 'multi';
+}
 
 export interface DebateRoles {
   pro: AIProvider;

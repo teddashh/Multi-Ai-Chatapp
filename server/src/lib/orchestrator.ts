@@ -94,6 +94,10 @@ export interface OrchestratorParams {
   text: string;
   mode: ChatMode;
   roles?: ModeRoles;
+  // Agent / single-AI modes carry a single provider choice instead of
+  // a roles record. Required for personal / profession / reasoning;
+  // ignored for the multi-AI modes.
+  singleProvider?: AIProvider;
   tier: Tier;
   lang: Lang;
   userId: number;
@@ -814,12 +818,33 @@ export async function runMode(p: OrchestratorParams): Promise<void> {
     await runFree(p);
     return;
   }
+  if (p.mode === 'personal') {
+    await runPersonal(p);
+    return;
+  }
+  if (p.mode === 'profession' || p.mode === 'reasoning' || p.mode === 'image') {
+    throw new Error(`mode '${p.mode}' is not yet implemented`);
+  }
   const roles = p.roles ?? defaultRolesFor(p.mode);
   if (!roles) {
     throw new Error(`unknown mode ${p.mode}`);
   }
   const steps = buildStepList(p.mode, roles, p.lang);
   await runSequential(p, steps);
+}
+
+// Single-AI free chat. The caller picked one of the four personas
+// and only that provider replies — no parallel fan-out, no role
+// pipeline. Fallback chain still kicks in per stage as usual.
+async function runPersonal(p: OrchestratorParams): Promise<void> {
+  const provider = p.singleProvider;
+  if (!provider) {
+    throw new Error('personal mode requires a singleProvider');
+  }
+  await runOne(p, provider, p.text).catch(() => {
+    // runOne already emits a soft-failure 'done' on the user side and
+    // re-throws for upstream awareness. Nothing else to do here.
+  });
 }
 
 async function runFree(p: OrchestratorParams): Promise<void> {

@@ -583,6 +583,9 @@ export async function streamChat(
     text: string;
     mode: ChatMode;
     roles?: ModeRoles;
+    // Single-AI Agent modes (personal / profession / reasoning) carry
+    // exactly one provider here instead of a roles map.
+    singleProvider?: AIProvider;
     modelOverrides?: Partial<Record<AIProvider, string>>;
     sessionId?: string;
     attachmentIds?: string[];

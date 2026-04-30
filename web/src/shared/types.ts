@@ -1,6 +1,28 @@
 export type AIProvider = 'chatgpt' | 'claude' | 'gemini' | 'grok';
 export type Tier = 'free' | 'standard' | 'pro' | 'super' | 'admin';
-export type ChatMode = 'free' | 'debate' | 'consult' | 'coding' | 'roundtable';
+export type ChatMode =
+  | 'free'
+  | 'debate'
+  | 'consult'
+  | 'coding'
+  | 'roundtable'
+  | 'personal'
+  | 'profession'
+  | 'reasoning'
+  | 'image';
+
+export type ModeGroup = 'multi' | 'agent';
+
+export const MULTI_MODES: ChatMode[] = ['free', 'debate', 'consult', 'coding', 'roundtable'];
+export const AGENT_MODES: ChatMode[] = ['personal', 'profession', 'reasoning', 'image'];
+
+export function modeGroupOf(mode: ChatMode): ModeGroup {
+  return AGENT_MODES.includes(mode) ? 'agent' : 'multi';
+}
+
+// Modes that are visible in the dropdown but not yet implemented on
+// the backend — clicking them shows "Coming soon".
+export const COMING_SOON_MODES: ChatMode[] = ['profession', 'reasoning', 'image'];
 
 export interface DebateRoles {
   pro: AIProvider;

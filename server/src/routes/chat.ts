@@ -94,6 +94,9 @@ chatRoute.post('/send', requireAuth, async (c) => {
         text?: string;
         mode?: ChatMode;
         roles?: ModeRoles;
+        // Single-AI modes (personal / profession / reasoning) carry one
+        // provider instead of a roles record.
+        singleProvider?: AIProvider;
         modelOverrides?: Partial<Record<AIProvider, string>>;
         sessionId?: string;
         attachmentIds?: string[];
@@ -107,6 +110,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const text = body.text;
   const mode = body.mode;
   const roles = body.roles;
+  const singleProvider = body.singleProvider;
   const modelOverrides = body.modelOverrides;
   const attachmentIds = (body.attachmentIds || []).slice(0, MAX_FILES_PER_MESSAGE);
   const attachments = loadAttachments(attachmentIds, user.id);
@@ -333,6 +337,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         text,
         mode,
         roles,
+        singleProvider,
         modelOverrides,
         attachments: reloadedAttachments,
         tier: user.tier,

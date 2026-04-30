@@ -99,6 +99,18 @@ export interface Dict {
   modeCodingDesc: string;
   modeRoundtableName: string;
   modeRoundtableDesc: string;
+  modePersonalName: string;
+  modePersonalDesc: string;
+  modeProfessionName: string;
+  modeProfessionDesc: string;
+  modeReasoningName: string;
+  modeReasoningDesc: string;
+  modeImageName: string;
+  modeImageDesc: string;
+  modeGroupAgent: string;
+  modeGroupMulti: string;
+  agentTalkTo: string;
+  comingSoon: string;
 
   modeFreeHowto1: string;
   modeFreeHowto2: string;
@@ -301,6 +313,18 @@ const ZH: Dict = {
   modeCodingDesc: '規劃 → 審查 → 實作 → 測試（8 步）',
   modeRoundtableName: '道理辯證',
   modeRoundtableDesc: '5 輪辯證螺旋 × 4 人',
+  modePersonalName: '個性化聊天',
+  modePersonalDesc: '只跟一位 AI 自由聊天',
+  modeProfessionName: '指定職業',
+  modeProfessionDesc: '指派一個職業角色給 AI 扮演',
+  modeReasoningName: '深度思考',
+  modeReasoningDesc: '單一 AI 走推理模型，慢但深',
+  modeImageName: '出圖模式',
+  modeImageDesc: 'AI 生圖（DALL-E / SD）',
+  modeGroupAgent: '單人模式',
+  modeGroupMulti: '多人模式',
+  agentTalkTo: '對象',
+  comingSoon: '尚未開放',
 
   modeFreeHowto1: '一個問題，4 家 AI 同時回答，並排比對。',
   modeFreeHowto2: '適合快速比較不同模型對同一問題的角度與口吻。',
@@ -504,6 +528,18 @@ const EN: Dict = {
   modeCodingDesc: 'Plan → review → implement → test (8 steps)',
   modeRoundtableName: 'Roundtable',
   modeRoundtableDesc: '5-round dialectic spiral × 4 speakers',
+  modePersonalName: 'Personal',
+  modePersonalDesc: 'Free chat with one chosen AI',
+  modeProfessionName: 'Profession',
+  modeProfessionDesc: 'Assign the AI a profession to role-play',
+  modeReasoningName: 'Deep Thought',
+  modeReasoningDesc: 'Single AI on a reasoning model — slow but deep',
+  modeImageName: 'Image',
+  modeImageDesc: 'AI image generation (DALL-E / SD)',
+  modeGroupAgent: 'Agent Mode',
+  modeGroupMulti: 'Multi Mode',
+  agentTalkTo: 'Talk to',
+  comingSoon: 'Coming soon',
 
   modeFreeHowto1: 'One question, 4 AIs answer side by side.',
   modeFreeHowto2: 'Best for quickly comparing how different models frame an answer.',
@@ -665,6 +701,10 @@ export function modeName(t: Dict, mode: ChatMode): string {
     case 'consult': return t.modeConsultName;
     case 'coding': return t.modeCodingName;
     case 'roundtable': return t.modeRoundtableName;
+    case 'personal': return t.modePersonalName;
+    case 'profession': return t.modeProfessionName;
+    case 'reasoning': return t.modeReasoningName;
+    case 'image': return t.modeImageName;
   }
 }
 
@@ -675,6 +715,10 @@ export function modeDesc(t: Dict, mode: ChatMode): string {
     case 'consult': return t.modeConsultDesc;
     case 'coding': return t.modeCodingDesc;
     case 'roundtable': return t.modeRoundtableDesc;
+    case 'personal': return t.modePersonalDesc;
+    case 'profession': return t.modeProfessionDesc;
+    case 'reasoning': return t.modeReasoningDesc;
+    case 'image': return t.modeImageDesc;
   }
 }
 
@@ -690,5 +734,11 @@ export function modeHowto(t: Dict, mode: ChatMode): string[] {
         t.modeRoundtableHowto2,
         t.modeRoundtableHowto3,
       ];
+    // Agent modes don't have a multi-step howto guide. Return desc as
+    // the single instructional line.
+    case 'personal': return [t.modePersonalDesc];
+    case 'profession': return [t.modeProfessionDesc];
+    case 'reasoning': return [t.modeReasoningDesc];
+    case 'image': return [t.modeImageDesc];
   }
 }

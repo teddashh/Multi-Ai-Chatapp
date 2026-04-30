@@ -22,6 +22,10 @@ export const MODE_ICONS: Record<ChatMode, string> = {
   consult: '🔍',
   coding: '💻',
   roundtable: '🔄',
+  personal: '👤',
+  profession: '🎭',
+  reasoning: '🧠',
+  image: '🎨',
 };
 
 export const DEFAULT_DEBATE_ROLES: DebateRoles = {

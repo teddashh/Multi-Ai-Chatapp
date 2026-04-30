@@ -7,6 +7,7 @@ import type {
   ModeRoles,
   SSEEvent,
 } from './shared/types';
+import { modeGroupOf } from './shared/types';
 import {
   DEFAULT_CODING_ROLES,
   DEFAULT_CONSULT_ROLES,
@@ -172,6 +173,26 @@ export default function App() {
       }
     },
   );
+  // Active AI for Agent (single-AI) modes. Persisted across reloads
+  // so the user's last pick sticks. Default Claude for the first run.
+  const [singleProvider, setSingleProvider] = useState<AIProvider>(() => {
+    try {
+      const raw = localStorage.getItem('singleProvider');
+      if (raw === 'claude' || raw === 'chatgpt' || raw === 'gemini' || raw === 'grok') {
+        return raw;
+      }
+    } catch {
+      // ignore
+    }
+    return 'claude';
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('singleProvider', singleProvider);
+    } catch {
+      // ignore (private browsing, full quota)
+    }
+  }, [singleProvider]);
 
   // Pulled out so the SSE-drop recovery can use it. Reloads the active
   // session from DB so any messages the server persisted while we were
@@ -490,11 +511,13 @@ export default function App() {
       abortRef.current = ctrl;
 
       try {
+        const isAgentMode = mode === 'personal' || mode === 'profession' || mode === 'reasoning' || mode === 'image';
         await streamChat(
           {
             text,
             mode,
-            roles: mode !== 'free' ? roles : undefined,
+            roles: !isAgentMode && mode !== 'free' ? roles : undefined,
+            singleProvider: isAgentMode ? singleProvider : undefined,
             modelOverrides,
             sessionId: activeSessionId ?? undefined,
             attachmentIds: attachments.map((a) => a.id),
@@ -517,7 +540,7 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [mode, roles, isProcessing, modelOverrides, activeSessionId, handleEvent, reloadActiveSession],
+    [mode, roles, singleProvider, isProcessing, modelOverrides, activeSessionId, handleEvent, reloadActiveSession],
   );
 
   const handleCancel = useCallback(() => {
@@ -697,16 +720,27 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <ProvidersBar
-              models={user.models}
-              selected={modelOverrides}
-              onSelect={handleModelSelect}
-            />
+            {modeGroupOf(mode) === 'multi' ? (
+              <ProvidersBar
+                models={user.models}
+                selected={modelOverrides}
+                onSelect={handleModelSelect}
+              />
+            ) : (
+              <SingleProviderPicker
+                models={user.models}
+                provider={singleProvider}
+                onChange={setSingleProvider}
+                modelOverride={modelOverrides[singleProvider]}
+                onModelChange={(model) => handleModelSelect(singleProvider, model)}
+                label={t.agentTalkTo}
+              />
+            )}
           </div>
 
           <div className="flex-none border-b border-gray-800 p-2">
             <ModeSelector mode={mode} onModeChange={setMode} />
-            {mode !== 'free' && (
+            {mode !== 'free' && modeGroupOf(mode) === 'multi' && (
               <button
                 onClick={() => setShowRoleConfig((s) => !s)}
                 className="text-xs text-gray-400 hover:text-white mt-1 ml-1"
@@ -714,7 +748,7 @@ export default function App() {
                 {showRoleConfig ? t.roleConfigHide : t.roleConfigShow}
               </button>
             )}
-            {showRoleConfig && mode !== 'free' && (
+            {showRoleConfig && mode !== 'free' && modeGroupOf(mode) === 'multi' && (
               <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
             )}
           </div>
@@ -799,5 +833,84 @@ export default function App() {
 
   return (
     <I18nContext.Provider value={i18nValue}>{content}</I18nContext.Provider>
+  );
+}
+
+// =====================================================================
+// SingleProviderPicker — used in Agent (single-AI) modes. Replaces the
+// 4-column ProvidersBar with one "對象" pill that lets the user pick
+// which AI to talk to + a model dropdown for that AI. The pill borrows
+// the same provider colors from ProviderAvatar so it feels consistent
+// with the multi-mode bar.
+// =====================================================================
+
+const PROVIDER_COLOR: Record<AIProvider, string> = {
+  claude: '#d97706',
+  chatgpt: '#10a37f',
+  gemini: '#4285f4',
+  grok: '#e11d48',
+};
+const PROVIDER_NAME: Record<AIProvider, string> = {
+  claude: 'Claude',
+  chatgpt: 'ChatGPT',
+  gemini: 'Gemini',
+  grok: 'Grok',
+};
+const PROVIDER_ORDER: AIProvider[] = ['chatgpt', 'claude', 'gemini', 'grok'];
+
+interface SingleProviderPickerProps {
+  models: Record<AIProvider, { default: string; options: string[] }>;
+  provider: AIProvider;
+  onChange: (p: AIProvider) => void;
+  modelOverride: string | undefined;
+  onModelChange: (model: string) => void;
+  label: string;
+}
+
+function SingleProviderPicker({
+  models,
+  provider,
+  onChange,
+  modelOverride,
+  onModelChange,
+  label,
+}: SingleProviderPickerProps) {
+  const currentModel = modelOverride ?? models[provider].default;
+  const options = models[provider].options;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-gray-500 mr-1">{label}:</span>
+      <div className="flex gap-1">
+        {PROVIDER_ORDER.map((p) => {
+          const active = p === provider;
+          return (
+            <button
+              key={p}
+              onClick={() => onChange(p)}
+              className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
+                active
+                  ? 'text-white'
+                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+              }`}
+              style={active ? { backgroundColor: PROVIDER_COLOR[p] } : undefined}
+            >
+              {PROVIDER_NAME[p]}
+            </button>
+          );
+        })}
+      </div>
+      <select
+        value={currentModel}
+        onChange={(e) => onModelChange(e.target.value)}
+        className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 max-w-full"
+        style={{ minWidth: '12em' }}
+      >
+        {options.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
