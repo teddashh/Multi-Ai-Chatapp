@@ -116,13 +116,51 @@ const SUPER: Record<AIProvider, ModelChoices> = {
 
 // Admin tier === Super tier model-wise (admin is purely a permission flag,
 // not a separate model bracket).
-export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> = {
+const TIER_MODELS_BASE: Record<Tier, Record<AIProvider, ModelChoices>> = {
   free: FREE,
   standard: STANDARD,
   pro: PRO,
   super: SUPER,
   admin: SUPER,
 };
+
+// Dev (PROVIDER_MODE=cli) routes ChatGPT through Codex CLI, which a
+// ChatGPT-account login restricts to gpt-5.4 / gpt-5.4-mini / gpt-5.5.
+// -pro / o-series / codex SKUs live on /v1/responses (api mode only)
+// and the CLI returns "model not supported" mid-stream — bad UX. We
+// strip those from the runtime tier map on cli mode so the dropdown
+// only shows what'll work on this instance. resolveModel() also
+// inherits the filtered options, so a stale client sending an old
+// override falls back to the tier default instead of erroring.
+const PROVIDER_MODE_RUNTIME =
+  (process.env.PROVIDER_MODE ?? 'cli') === 'api' ? 'api' : 'cli';
+
+function chatGPTNeedsResponsesAPI(model: string): boolean {
+  if (model.includes('-pro')) return true;
+  if (model.includes('codex')) return true;
+  if (/^o\d/.test(model)) return true;
+  return false;
+}
+
+function filterChatGPTForCli(choices: ModelChoices): ModelChoices {
+  const options = choices.options.filter((m) => !chatGPTNeedsResponsesAPI(m));
+  const def = options.includes(choices.default)
+    ? choices.default
+    : options[0] ?? choices.default;
+  return { default: def, options };
+}
+
+export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> =
+  PROVIDER_MODE_RUNTIME === 'api'
+    ? TIER_MODELS_BASE
+    : (() => {
+        const out = {} as Record<Tier, Record<AIProvider, ModelChoices>>;
+        (Object.keys(TIER_MODELS_BASE) as Tier[]).forEach((t) => {
+          const p = TIER_MODELS_BASE[t];
+          out[t] = { ...p, chatgpt: filterChatGPTForCli(p.chatgpt) };
+        });
+        return out;
+      })();
 
 // Per-mode daily quota for free tier. Counts user messages started in
 // each mode within the current local day.
