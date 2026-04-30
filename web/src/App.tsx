@@ -459,11 +459,16 @@ export default function App() {
         // (timestamp etc) reconciles, and as belt-and-suspenders if the
         // local prev didn't have the row yet (race on first message of
         // a brand new session).
-        setSessions((prev) =>
-          prev.map((s) =>
+        // eslint-disable-next-line no-console
+        console.log('[session_title]', ev.sessionId, '→', ev.title);
+        setSessions((prev) => {
+          const matched = prev.some((s) => s.id === ev.sessionId);
+          // eslint-disable-next-line no-console
+          console.log('[session_title] matched in sidebar:', matched);
+          return prev.map((s) =>
             s.id === ev.sessionId ? { ...s, title: ev.title } : s,
-          ),
-        );
+          );
+        });
         refreshSessions();
         break;
       case 'finish':
