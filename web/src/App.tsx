@@ -7,7 +7,7 @@ import type {
   ModeRoles,
   SSEEvent,
 } from './shared/types';
-import { modeGroupOf } from './shared/types';
+import { modeGroupOf, modelAvailableInMode } from './shared/types';
 import {
   DEFAULT_CODING_ROLES,
   DEFAULT_CONSULT_ROLES,
@@ -782,6 +782,7 @@ export default function App() {
                 models={user.models}
                 selected={modelOverrides}
                 onSelect={handleModelSelect}
+                mode={mode}
               />
             ) : (
               <SingleProviderPicker
@@ -792,6 +793,7 @@ export default function App() {
                 onModelChange={(model) => handleModelSelect(singleProvider, model)}
                 label={t.agentTalkTo}
                 lockedModelLabel={mode === 'reasoning' ? REASONING_MODEL_HINT[singleProvider] : undefined}
+                mode={mode}
               />
             )}
             {mode === 'profession' && (
@@ -933,6 +935,22 @@ const REASONING_MODEL_HINT: Record<AIProvider, string> = {
   grok: 'grok-4.20-0309-reasoning',
 };
 
+// Mirror of server-side IMAGE_MODELS. Each AI persona gets its own
+// vendor's image stack, with SDXL as the universal cheap fallback.
+// Keep in sync with server/src/shared/models.ts.
+const IMAGE_MODELS: Record<AIProvider, string[]> = {
+  chatgpt: ['gpt-image-1-high', 'gpt-image-1-medium', 'gpt-image-1-low', 'sdxl'],
+  claude: ['flux-1.1-pro-ultra', 'flux-1.1-pro', 'sdxl'],
+  gemini: ['imagen-4-ultra', 'imagen-4', 'gemini-2.5-flash-image', 'sdxl'],
+  grok: ['grok-2-image', 'sdxl'],
+};
+const IMAGE_DEFAULT: Record<AIProvider, string> = {
+  chatgpt: 'gpt-image-1-medium',
+  claude: 'flux-1.1-pro',
+  gemini: 'imagen-4',
+  grok: 'grok-2-image',
+};
+
 interface SingleProviderPickerProps {
   models: Record<AIProvider, { default: string; options: string[] }>;
   provider: AIProvider;
@@ -944,6 +962,9 @@ interface SingleProviderPickerProps {
   // (used by 深度思考 mode where the model is server-locked to each
   // family's reasoning variant).
   lockedModelLabel?: string;
+  // Filters the model dropdown to models valid in this mode (e.g.
+  // hides codex outside Coding, hides o3/o4 outside Reasoning).
+  mode: ChatMode;
 }
 
 function SingleProviderPicker({
@@ -954,9 +975,23 @@ function SingleProviderPicker({
   onModelChange,
   label,
   lockedModelLabel,
+  mode,
 }: SingleProviderPickerProps) {
-  const currentModel = modelOverride ?? models[provider].default;
-  const options = models[provider].options;
+  // Image mode swaps the chat-model dropdown for the per-family image
+  // catalog (gpt-image-1 quality variants, Flux, Imagen, etc.). All
+  // other modes stay on tier-allowed chat models with mode filtering.
+  const isImageMode = mode === 'image';
+  const baseOptions = isImageMode
+    ? IMAGE_MODELS[provider]
+    : models[provider].options.filter((m) => modelAvailableInMode(m, mode));
+  const baseDefault = isImageMode ? IMAGE_DEFAULT[provider] : models[provider].default;
+  const currentModel =
+    modelOverride && baseOptions.includes(modelOverride)
+      ? modelOverride
+      : baseOptions.includes(baseDefault)
+        ? baseDefault
+        : (baseOptions[0] ?? baseDefault);
+  const options = baseOptions;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-gray-500 mr-1">{label}:</span>

@@ -1,5 +1,6 @@
 import React from 'react';
-import type { AIProvider } from '../shared/types';
+import type { AIProvider, ChatMode } from '../shared/types';
+import { modelAvailableInMode } from '../shared/types';
 import { AI_PROVIDERS } from '../shared/constants';
 import type { ModelChoices } from '../api';
 
@@ -9,15 +10,28 @@ interface Props {
   models: Record<AIProvider, ModelChoices>;
   selected: Partial<Record<AIProvider, string>>;
   onSelect: (provider: AIProvider, model: string) => void;
+  // Mode-aware filter: hides codex outside coding, hides o3/o4 outside
+  // reasoning. The dropdown only ever offers options that make sense
+  // for the active mode.
+  mode: ChatMode;
 }
 
-export default function ProvidersBar({ models, selected, onSelect }: Props) {
+export default function ProvidersBar({ models, selected, onSelect, mode }: Props) {
   return (
     <div className="grid grid-cols-4 gap-1 sm:gap-2">
       {PROVIDERS.map((p) => {
         const info = AI_PROVIDERS[p];
         const choices = models[p];
-        const current = selected[p] ?? choices.default;
+        const filteredOptions = choices.options.filter((m) =>
+          modelAvailableInMode(m, mode),
+        );
+        const sel = selected[p];
+        const current =
+          sel && filteredOptions.includes(sel)
+            ? sel
+            : filteredOptions.includes(choices.default)
+              ? choices.default
+              : (filteredOptions[0] ?? choices.default);
         return (
           <div
             key={p}
@@ -39,7 +53,7 @@ export default function ProvidersBar({ models, selected, onSelect }: Props) {
               onChange={(e) => onSelect(p, e.target.value)}
               className="bg-transparent text-[10px] sm:text-[11px] text-gray-300 border-none focus:outline-none truncate min-w-0 flex-1 cursor-pointer hover:text-white"
             >
-              {choices.options.map((m) => (
+              {filteredOptions.map((m) => (
                 <option key={m} value={m} className="bg-gray-900 text-gray-200">
                   {m}
                 </option>

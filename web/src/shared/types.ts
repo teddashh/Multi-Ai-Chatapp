@@ -22,7 +22,20 @@ export function modeGroupOf(mode: ChatMode): ModeGroup {
 
 // Modes that are visible in the dropdown but not yet implemented on
 // the backend — clicking them shows "Coming soon".
-export const COMING_SOON_MODES: ChatMode[] = ['image'];
+// (Phase A of image is live for OpenAI gpt-image-1; other vendors
+// throw friendly "not yet" errors at request time.)
+export const COMING_SOON_MODES: ChatMode[] = [];
+
+// Models that only show up in specific modes — keeps the chat-mode
+// dropdown free of reasoning/codex SKUs that don't belong there.
+const CODING_ONLY_MODELS = new Set<string>(['gpt-5-codex']);
+const REASONING_ONLY_MODELS = new Set<string>(['o3', 'o4-mini']);
+
+export function modelAvailableInMode(model: string, mode: ChatMode): boolean {
+  if (CODING_ONLY_MODELS.has(model) && mode !== 'coding') return false;
+  if (REASONING_ONLY_MODELS.has(model) && mode !== 'reasoning') return false;
+  return true;
+}
 
 export interface DebateRoles {
   pro: AIProvider;

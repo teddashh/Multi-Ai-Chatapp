@@ -1,4 +1,4 @@
-import type { AIProvider, Tier } from './types.js';
+import type { AIProvider, ChatMode, Tier } from './types.js';
 
 // Each tier has, per provider, a default model + the list of models the user
 // is allowed to switch to via the dropdown. Higher tiers strictly include
@@ -124,6 +124,50 @@ export const TIER_MODELS: Record<Tier, Record<AIProvider, ModelChoices>> = {
 // Per-mode daily quota for free tier. Counts user messages started in
 // each mode within the current local day.
 export const FREE_DAILY_QUOTA_PER_MODE = 1;
+
+// Models that should only appear in specific modes — filtering at the
+// dropdown level keeps users from accidentally sending an o-series
+// reasoning request inside a casual free-mode chat (slow + expensive)
+// or codex outside the Coding pipeline. Server still resolves whatever
+// the client sends; this is UX, not security.
+const CODING_ONLY_MODELS = new Set<string>(['gpt-5-codex']);
+const REASONING_ONLY_MODELS = new Set<string>(['o3', 'o4-mini']);
+
+export function modelAvailableInMode(model: string, mode: ChatMode): boolean {
+  if (CODING_ONLY_MODELS.has(model) && mode !== 'coding') return false;
+  if (REASONING_ONLY_MODELS.has(model) && mode !== 'reasoning') return false;
+  return true;
+}
+
+// The list of models the UI should offer for a given (tier, provider, mode).
+// Always a subset of TIER_MODELS[tier][provider].options.
+export function availableModelsForMode(
+  tier: Tier,
+  provider: AIProvider,
+  mode: ChatMode,
+): string[] {
+  return TIER_MODELS[tier][provider].options.filter((m) =>
+    modelAvailableInMode(m, mode),
+  );
+}
+
+// Image-mode model dropdown — separate catalogue from chat models since
+// each vendor's image gen API is unrelated. SDXL is everyone's universal
+// fallback (Phase C — runImage tries native first, on error retries SDXL
+// with a "我換種方式畫" notice).
+export const IMAGE_MODELS: Record<AIProvider, string[]> = {
+  chatgpt: ['gpt-image-1-high', 'gpt-image-1-medium', 'gpt-image-1-low', 'sdxl'],
+  claude: ['flux-1.1-pro-ultra', 'flux-1.1-pro', 'sdxl'],
+  gemini: ['imagen-4-ultra', 'imagen-4', 'gemini-2.5-flash-image', 'sdxl'],
+  grok: ['grok-2-image', 'sdxl'],
+};
+
+export const IMAGE_MODEL_DEFAULTS: Record<AIProvider, string> = {
+  chatgpt: 'gpt-image-1-medium',
+  claude: 'flux-1.1-pro',
+  gemini: 'imagen-4',
+  grok: 'grok-2-image',
+};
 
 export function defaultModel(tier: Tier, provider: AIProvider): string {
   return TIER_MODELS[tier][provider].default;

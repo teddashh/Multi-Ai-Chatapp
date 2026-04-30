@@ -115,6 +115,9 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const singleProvider = body.singleProvider;
   const profession = body.profession;
   const modelOverrides = body.modelOverrides;
+  // reasoningEffort isn't yet a client-driven knob — it's set
+  // server-side in runReasoning when mode==='reasoning'. Stub here
+  // for forward-compat with a future "effort" UI knob.
   const attachmentIds = (body.attachmentIds || []).slice(0, MAX_FILES_PER_MESSAGE);
   const attachments = loadAttachments(attachmentIds, user.id);
 
@@ -249,6 +252,13 @@ chatRoute.post('/send', requireAuth, async (c) => {
       if (event.type === 'done') {
         const role = pendingRoles[event.provider];
         if (role) delete pendingRoles[event.provider];
+        // Image mode (and any future flow that writes its own message
+        // before emitting 'done') sets messageId up front so we skip
+        // the insert here. Just forward the event as-is.
+        if (event.messageId !== undefined) {
+          send(event);
+          return;
+        }
         const ts = Math.floor(Date.now() / 1000);
         try {
           const ins = messageStmts.insert.run(

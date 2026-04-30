@@ -227,6 +227,11 @@ export async function runOpenAIResponses(opts: CLIRunOptions): Promise<OpenAIRes
     if (sysPrompt) body.instructions = sysPrompt;
     if (!isLast) body.tools = [FUNCTION_TOOL];
     if (prevResponseId) body.previous_response_id = prevResponseId;
+    // 深度思考 mode passes 'high' so o-series and -pro variants do
+    // their deepest reasoning per turn. Cheaper modes leave it.
+    if (opts.reasoningEffort) {
+      body.reasoning = { effort: opts.reasoningEffort };
+    }
 
     const round = await streamResponsesRound(apiKey, body, opts);
     if (round.promptTokens !== null) {

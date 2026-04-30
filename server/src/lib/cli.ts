@@ -194,6 +194,10 @@ export interface CLIRunOptions {
   // path ignores this — Claude Code / Codex / Gemini CLIs already handle
   // language detection on their own.
   lang?: 'zh-TW' | 'en';
+  // 深度思考 mode passes 'high' so each vendor cranks its reasoning
+  // knob to max — OpenAI Responses uses reasoning.effort, Anthropic
+  // gets thinking.budget_tokens, etc. Other modes leave undefined.
+  reasoningEffort?: 'low' | 'medium' | 'high';
 }
 
 export interface CLIRunResult {

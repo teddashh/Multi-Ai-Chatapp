@@ -4,7 +4,9 @@ import { runAnthropic } from './providers/anthropic.js';
 import { runOpenAI } from './providers/openai.js';
 import { runGemini } from './providers/gemini.js';
 import { runNvidia } from './providers/nvidia.js';
-import { auditStmts, usageStmts } from './db.js';
+import { isOpenAIImageModel, runOpenAIImage } from './providers/openai-image.js';
+import { saveUpload } from './uploads.js';
+import { attachmentStmts, auditStmts, messageStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
 import type { MessageRow } from './db.js';
@@ -101,6 +103,9 @@ export interface OrchestratorParams {
   // Profession persona for the `profession` mode (e.g. "醫生").
   // Prepended as a role-play instruction on every turn's prompt.
   profession?: string;
+  // Per-turn reasoning knob — set by 深度思考 mode to 'high' so each
+  // family's reasoning model cranks effort to max. Other modes leave it.
+  reasoningEffort?: 'low' | 'medium' | 'high';
   tier: Tier;
   lang: Lang;
   userId: number;
@@ -473,6 +478,7 @@ export async function runOne(
     mode: p.mode,
     history: p.history?.[provider],
     lang: p.lang,
+    reasoningEffort: p.reasoningEffort,
   };
 
   const stages = buildStages(baseOpts, provider, model);
@@ -834,7 +840,8 @@ export async function runMode(p: OrchestratorParams): Promise<void> {
     return;
   }
   if (p.mode === 'image') {
-    throw new Error(`mode 'image' is not yet implemented`);
+    await runImage(p);
+    return;
   }
   const roles = p.roles ?? defaultRolesFor(p.mode);
   if (!roles) {
@@ -893,10 +900,94 @@ async function runReasoning(p: OrchestratorParams): Promise<void> {
         ...(p.modelOverrides ?? {}),
         [provider]: reasoningModel,
       },
+      // Crank the reasoning knob for vendors that take one. OpenAI
+      // Responses → reasoning.effort='high'; vendors that ignore the
+      // hint just don't see it.
+      reasoningEffort: 'high',
     },
     provider,
     p.text,
   ).catch(() => {});
+}
+
+// 出圖模式 — single AI generates one image. The result is delivered as
+// a chat message with a markdown image link pointing at the saved
+// attachment, so react-markdown renders it inline. We persist the
+// message + attachment ourselves and short-circuit the usual
+// recordingSend insert path by setting messageId on the 'done' event.
+async function runImage(p: OrchestratorParams): Promise<void> {
+  const provider = p.singleProvider;
+  if (!provider) {
+    throw new Error('image mode requires a singleProvider');
+  }
+  const model = p.modelOverrides?.[provider];
+  if (!model) {
+    throw new Error('image mode requires a model override');
+  }
+  if (!p.sessionId) {
+    throw new Error('image mode requires a session');
+  }
+
+  let result: { bytes: Buffer; mimeType: string; modelUsed: string };
+  try {
+    if (isOpenAIImageModel(model)) {
+      result = await runOpenAIImage({ prompt: p.text, model, signal: p.signal });
+    } else {
+      // Phase B / C will fill in xAI / Google / Flux / SDXL fallback.
+      // For now any non-OpenAI image model surfaces a friendly error.
+      throw new Error(
+        `Image generation for model '${model}' is not yet implemented. Pick a gpt-image-1-* option.`,
+      );
+    }
+  } catch (err) {
+    const msg = (err as Error).message;
+    console.error(`[image] ${provider}/${model} failed:`, msg);
+    p.emit({ type: 'error', provider, message: msg });
+    p.emit({
+      type: 'done',
+      provider,
+      text: failureText(p.lang),
+    });
+    return;
+  }
+
+  // Persist the image as a chat_attachments row owned by the user, then
+  // insert the AI message directly with a markdown link, then attach.
+  const filename = `generated-${Date.now()}.png`;
+  const saved = await saveUpload(p.userId, filename, result.mimeType, result.bytes);
+  const ts = Math.floor(Date.now() / 1000);
+  const markdown = `![generated](/api/sessions/attachments/${saved.id})`;
+  const ins = messageStmts.insert.run(p.sessionId, 'ai', provider, null, markdown, ts);
+  const msgId = Number(ins.lastInsertRowid);
+  try {
+    attachmentStmts.attachToMessage.run(msgId, saved.id, p.userId);
+  } catch (err) {
+    console.error('[image] attach failed', (err as Error).message);
+  }
+  // Stamp provenance (admin-only badge) so the image bubble shows
+  // which model produced it.
+  try {
+    messageStmts.setAnswered.run(
+      'openai_image_api',
+      result.modelUsed,
+      model,
+      msgId,
+    );
+  } catch {
+    // ignore — non-fatal
+  }
+
+  // recordingSend skips its message insert when 'done' arrives with a
+  // messageId already set, so this won't double-insert.
+  p.emit({
+    type: 'done',
+    provider,
+    text: markdown,
+    messageId: msgId,
+    answeredStage: 'openai_image_api',
+    answeredModel: result.modelUsed,
+    requestedModel: model,
+  });
 }
 
 async function runProfession(p: OrchestratorParams): Promise<void> {
