@@ -159,6 +159,10 @@ addColumnIfMissing('users', 'show_birthday', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_birth_time', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
+// Birth year is the most personal field — split off from show_birthday
+// so users can show "1月15日" without revealing the year. Defaults
+// off; AIs ignore this entirely (their year never displays per spec).
+addColumnIfMissing('users', 'show_birth_year', 'INTEGER NOT NULL DEFAULT 0');
 // Existing users default to verified (1). New /signup flow flips to 0.
 addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'verify_token', 'TEXT');
@@ -420,6 +424,7 @@ export interface UserRow {
   show_birth_time: number;
   show_mbti: number;
   show_signs: number;
+  show_birth_year: number;
 }
 
 export interface PasswordResetRow {
@@ -508,9 +513,11 @@ export const userStmts = {
     number,
     number,
     number,
+    number,
   ]>(
     `UPDATE users
-       SET show_birthday = ?, show_birth_time = ?, show_mbti = ?, show_signs = ?
+       SET show_birthday = ?, show_birth_time = ?, show_mbti = ?,
+           show_signs = ?, show_birth_year = ?
      WHERE id = ?`,
   ),
   // First-login username pick (gated to unverified rows by the auth

@@ -84,6 +84,7 @@ function buildUserDTO(user: UserRow) {
     showBirthTime: !!user.show_birth_time,
     showMbti: !!user.show_mbti,
     showSigns: !!user.show_signs,
+    showBirthYear: !!user.show_birth_year,
   };
 }
 
@@ -466,6 +467,7 @@ authRoute.patch('/profile', requireAuth, async (c) => {
         showBirthTime?: boolean;
         showMbti?: boolean;
         showSigns?: boolean;
+        showBirthYear?: boolean;
       }
     | null;
   if (!body) return c.json({ error: 'invalid body' }, 400);
@@ -572,7 +574,8 @@ authRoute.patch('/profile', requireAuth, async (c) => {
     body.showBirthday !== undefined ||
     body.showBirthTime !== undefined ||
     body.showMbti !== undefined ||
-    body.showSigns !== undefined
+    body.showSigns !== undefined ||
+    body.showBirthYear !== undefined
   ) {
     userStmts.updateProfileVisibility.run(
       body.showBirthday === undefined
@@ -587,6 +590,11 @@ authRoute.patch('/profile', requireAuth, async (c) => {
           : 0,
       body.showMbti === undefined ? user.show_mbti : body.showMbti ? 1 : 0,
       body.showSigns === undefined ? user.show_signs : body.showSigns ? 1 : 0,
+      body.showBirthYear === undefined
+        ? user.show_birth_year
+        : body.showBirthYear
+          ? 1
+          : 0,
       user.id,
     );
     changed.push('visibility');

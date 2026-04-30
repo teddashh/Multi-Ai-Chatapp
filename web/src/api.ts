@@ -51,6 +51,7 @@ export interface User {
   showBirthTime: boolean;
   showMbti: boolean;
   showSigns: boolean;
+  showBirthYear: boolean;
 }
 
 export async function verifyEmail(token: string): Promise<User> {
@@ -95,6 +96,7 @@ export async function updateProfile(patch: {
   showBirthTime?: boolean;
   showMbti?: boolean;
   showSigns?: boolean;
+  showBirthYear?: boolean;
 }): Promise<User> {
   const res = await fetch('/api/auth/profile', {
     method: 'PATCH',
@@ -673,6 +675,8 @@ export interface AIProfileResponse {
   // profile but always public (no visibility flag for AIs).
   birthAt: number | null;
   birthTz: string | null;
+  showBirthTime: boolean;
+  showBirthYear: boolean;
   sunSign: string | null;
   moonSign: string | null;
   risingSign: string | null;
@@ -721,6 +725,7 @@ export interface UserProfileResponse {
   birthAt: number | null;
   birthTz: string | null;
   showBirthTime: boolean;
+  showBirthYear: boolean;
   sunSign: string | null;
   moonSign: string | null;
   risingSign: string | null;

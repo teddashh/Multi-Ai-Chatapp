@@ -557,9 +557,13 @@ function aiProfileResponse(
     // class members on the platform, not gated by tier.
     tier: 'admin',
     // AI birth + astrology + MBTI — always public (their identity is
-    // part of the brand). Visibility flags don't apply to AIs.
+    // part of the brand). Visibility flags don't apply to AIs except
+    // for showBirthYear which mirrors the human default ("沒人想被知
+    // 道出生年" — including AIs per spec).
     birthAt: profile?.birthAt ?? null,
     birthTz: profile?.birthTz ?? null,
+    showBirthTime: true,
+    showBirthYear: false,
     sunSign: profile?.sunSign ?? null,
     moonSign: profile?.moonSign ?? null,
     risingSign: profile?.risingSign ?? null,
@@ -655,13 +659,13 @@ forumRoute.get('/user/:username', (c) => {
   // Visibility-gated public fields. The DB always carries the data;
   // these flags decide whether to surface them on the public profile.
   // The user's own /me endpoint (auth) shows everything regardless.
-  // Per spec: 3 toggles — birthday / birth time / MBTI. Sun + moon +
-  // rising stay public whenever filled (signs are coarse-grained
-  // enough that users expect them to show once they bother to set
-  // them; if they want them hidden they can clear the field).
+  // Per spec: 4 toggles now — birthday / birth time / MBTI /
+  // birthday-year (default OFF for all). Sun + moon + rising stay
+  // public whenever filled.
   const showBirthday = !!user.show_birthday;
   const showBirthTime = !!user.show_birth_time;
   const showMbti = !!user.show_mbti;
+  const showBirthYear = !!user.show_birth_year;
 
   return c.json({
     username: user.username,
@@ -678,6 +682,7 @@ forumRoute.get('/user/:username', (c) => {
     birthAt: showBirthday ? user.birth_at ?? null : null,
     birthTz: showBirthday ? user.birth_tz ?? null : null,
     showBirthTime,
+    showBirthYear,
     sunSign: user.sun_sign ?? null,
     moonSign: user.moon_sign ?? null,
     risingSign: user.rising_sign ?? null,

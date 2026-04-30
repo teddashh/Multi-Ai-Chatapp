@@ -186,6 +186,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
   const [mbti, setMbti] = useState<string>(user.mbti || '');
   const [showBirthday, setShowBirthday] = useState<boolean>(user.showBirthday);
   const [showBirthTime, setShowBirthTime] = useState<boolean>(user.showBirthTime);
+  const [showBirthYear, setShowBirthYear] = useState<boolean>(user.showBirthYear);
   const [showMbti, setShowMbti] = useState<boolean>(user.showMbti);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -223,6 +224,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
       setMbti(user.mbti || '');
       setShowBirthday(user.showBirthday);
       setShowBirthTime(user.showBirthTime);
+      setShowBirthYear(user.showBirthYear);
       setShowMbti(user.showMbti);
     }
   }, [isOpen, user, guessTz]);
@@ -275,6 +277,7 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
         mbti: mbti || null,
         showBirthday,
         showBirthTime,
+        showBirthYear,
         showMbti,
       });
       onUpdate(updated);
@@ -540,9 +543,14 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
               公開設定（預設皆為私人，星座不在此控制 — 填了就會公開）
             </div>
             <ToggleRow
-              label="公開出生年月日"
+              label="公開生日（月/日）"
               checked={showBirthday}
               onChange={setShowBirthday}
+            />
+            <ToggleRow
+              label="公開出生年份"
+              checked={showBirthYear}
+              onChange={setShowBirthYear}
             />
             <ToggleRow
               label="公開出生時辰"

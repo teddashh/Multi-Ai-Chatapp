@@ -334,7 +334,58 @@ function ForumPostView({
       {/* Post header */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
         <div className="flex gap-3">
-          <PostAvatar post={post} size={40} />
+          {/* OP avatar gets the same hover-card treatment as comment
+              avatars when the OP is a non-anonymous user with stats
+              loaded. Wraps in the same group/aiav scope so the hover
+              CSS rule fires. */}
+          {post.authorUsername &&
+          !post.isAnonymous &&
+          data.userStats[post.authorUsername] ? (
+            <div
+              className="relative cursor-pointer group/aiav flex-none"
+              title={`查看 @${post.authorUsername} 的個人檔案`}
+              onClick={() =>
+                navigate(
+                  `/forum/user/${encodeURIComponent(post.authorUsername!)}`,
+                )
+              }
+            >
+              <PostAvatar post={post} size={40} />
+              <HoverCard
+                avatarSlot={
+                  <UserHoverAvatar
+                    stats={data.userStats[post.authorUsername]}
+                  />
+                }
+                primaryName={
+                  data.userStats[post.authorUsername].nickname ||
+                  data.userStats[post.authorUsername].username
+                }
+                tier={data.userStats[post.authorUsername].tier}
+                level={aiLevel(
+                  data.userStats[post.authorUsername].totalPosts +
+                    data.userStats[post.authorUsername].totalComments,
+                  data.userStats[post.authorUsername].totalLikes,
+                )}
+                subline={`@${data.userStats[post.authorUsername].username} · ${memberSinceShort(data.userStats[post.authorUsername].memberSince)}`}
+                posts={
+                  data.userStats[post.authorUsername].totalPosts +
+                  data.userStats[post.authorUsername].totalComments
+                }
+                likes={data.userStats[post.authorUsername].totalLikes}
+                tokens={data.userStats[post.authorUsername].totalTokens}
+                calls={data.userStats[post.authorUsername].totalCalls}
+                cost={data.userStats[post.authorUsername].totalCost}
+                onGoToProfile={() =>
+                  navigate(
+                    `/forum/user/${encodeURIComponent(post.authorUsername!)}`,
+                  )
+                }
+              />
+            </div>
+          ) : (
+            <PostAvatar post={post} size={40} />
+          )}
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-xs mb-2">
               <button

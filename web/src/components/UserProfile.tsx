@@ -108,6 +108,7 @@ export default function UserProfile({ username, navigate }: Props) {
         birthAt={data.birthAt}
         birthTz={data.birthTz}
         showBirthTime={data.showBirthTime}
+        showBirthYear={data.showBirthYear}
         sunSign={data.sunSign}
         moonSign={data.moonSign}
         risingSign={data.risingSign}
@@ -215,6 +216,7 @@ export function AstroSection({
   birthAt,
   birthTz,
   showBirthTime,
+  showBirthYear,
   sunSign,
   moonSign,
   risingSign,
@@ -225,6 +227,7 @@ export function AstroSection({
   birthAt: number | null;
   birthTz: string | null;
   showBirthTime: boolean;
+  showBirthYear: boolean;
   sunSign: string | null;
   moonSign: string | null;
   risingSign: string | null;
@@ -237,7 +240,7 @@ export function AstroSection({
   if (!hasBirth && !hasSigns && !mbti && !archetype) return null;
 
   const birthLabel = hasBirth
-    ? formatBirth(birthAt!, birthTz!, showBirthTime)
+    ? formatBirth(birthAt!, birthTz!, showBirthTime, showBirthYear)
     : null;
   const days = hasBirth ? daysUntilBirthday(birthAt, birthTz) : null;
   const banner =
@@ -269,7 +272,10 @@ export function AstroSection({
           </div>
         </div>
       )}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+      {/* MBTI sits in the same row as birth + signs to keep the
+          section to one line on desktop (5 columns). On narrow
+          screens it wraps gracefully via auto-flow. */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
         {birthLabel && <Field label="出生" value={birthLabel} />}
         {sunSign && <Field label="☀ 太陽" value={signLabel(sunSign)} />}
         {moonSign && <Field label="🌙 月亮" value={signLabel(moonSign)} />}
@@ -297,14 +303,15 @@ function formatBirth(
   epochSec: number,
   tz: string,
   showTime: boolean,
+  showYear: boolean,
 ): string {
   try {
     const opts: Intl.DateTimeFormatOptions = {
       timeZone: tz,
-      year: 'numeric',
       month: 'long',
       day: 'numeric',
     };
+    if (showYear) opts.year = 'numeric';
     if (showTime) {
       opts.hour = '2-digit';
       opts.minute = '2-digit';
