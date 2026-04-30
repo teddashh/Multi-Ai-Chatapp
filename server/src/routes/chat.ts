@@ -289,6 +289,37 @@ chatRoute.post('/send', requireAuth, async (c) => {
       .filter((m) => m.id < userMsgId);
     const perProviderHistory = buildPerProviderHistory(priorMsgs);
 
+    // Kick off auto-title in PARALLEL with runMode. Earlier we awaited
+    // it after runMode finished, but the resulting 1-2s of dead air
+    // before 'finish' was apparently long enough for Caddy / the
+    // browser to buffer the session_title SSE event so it never
+    // arrived at the client. Running concurrently means title lands
+    // in the middle of the chunk stream while the connection is hot.
+    let titlePromise: Promise<string | null> = Promise.resolve(null);
+    if (isNew) {
+      console.log('[auto-title] starting for session', sessionId);
+      titlePromise = generateSessionTitle(text, user.lang).catch((err) => {
+        console.error('[auto-title] failed for', sessionId, (err as Error).message);
+        return null;
+      });
+      // Send the title as soon as it's ready, regardless of where
+      // runMode is. SSE is hot during streaming so the event
+      // definitely flushes.
+      void titlePromise.then((title) => {
+        if (title) {
+          try {
+            sessionStmts.rename.run(title, sessionId, user.id);
+            send({ type: 'session_title', sessionId, title });
+            console.log('[auto-title] sent session_title event for', sessionId);
+          } catch (err) {
+            console.error('[auto-title] rename/send failed', (err as Error).message);
+          }
+        } else {
+          console.log('[auto-title] generator returned null; keeping heuristic');
+        }
+      });
+    }
+
     try {
       await runMode({
         text,
@@ -306,26 +337,10 @@ chatRoute.post('/send', requireAuth, async (c) => {
       });
       sessionStmts.touch.run(sessionId);
 
-      // First successful turn of a fresh session — generate a real title
-      // via NVIDIA so the sidebar entry stops reading like the user's raw
-      // first sentence. Awaited so the new title lands before 'finish'
-      // fires (~1-2s extra latency on the first turn only). Failures are
-      // swallowed — the heuristic placeholder from deriveTitle stays.
-      if (isNew) {
-        console.log('[auto-title] starting for session', sessionId);
-        try {
-          const title = await generateSessionTitle(text, user.lang);
-          if (title) {
-            sessionStmts.rename.run(title, sessionId, user.id);
-            send({ type: 'session_title', sessionId, title });
-            console.log('[auto-title] sent session_title event for', sessionId);
-          } else {
-            console.log('[auto-title] generator returned null; keeping heuristic title');
-          }
-        } catch (err) {
-          console.error('[auto-title] failed for', sessionId, (err as Error).message);
-        }
-      }
+      // Make sure the title task has at least settled before we send
+      // 'finish' (which closes the client's reader). If runMode took
+      // longer than the title call this is a no-op.
+      if (isNew) await titlePromise.catch(() => null);
 
       send({ type: 'finish' });
     } catch (err) {

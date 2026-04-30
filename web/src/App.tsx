@@ -323,6 +323,8 @@ export default function App() {
   }, []);
 
   const handleEvent = useCallback((ev: SSEEvent) => {
+    // eslint-disable-next-line no-console
+    console.log('[sse]', ev.type, 'sessionId' in ev ? ev.sessionId : '');
     switch (ev.type) {
       case 'session':
         setActiveSessionId(ev.sessionId);
