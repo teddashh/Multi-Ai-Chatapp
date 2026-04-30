@@ -213,6 +213,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage_log(provider, timestamp DESC);
 `);
 addColumnIfMissing('chat_sessions', 'roles_json', 'TEXT');
+// Persona snapshot at share time — for `profession` mode this is the
+// profession the user typed in (e.g. "按摩師"). Forum UI shows this in
+// place of the bare provider name so the AI's role is preserved even
+// after the source session is deleted.
+addColumnIfMissing('forum_posts', 'ai_persona', 'TEXT');
 
 // Tier rename migration (test/standard/super → standard/pro/super).
 // Idempotent: gated on PRAGMA user_version to run exactly once.
@@ -792,6 +797,7 @@ export interface ForumPostRow {
   trending_score: number;
   created_at: number;
   updated_at: number;
+  ai_persona: string | null;
 }
 
 export interface ForumCommentRow {
@@ -817,10 +823,19 @@ export const forumStmts = {
   findPostBySession: db.prepare<[string]>(
     `SELECT * FROM forum_posts WHERE source_session_id = ?`,
   ),
-  insertPost: db.prepare<[string, string, string, string, string, number, number]>(
+  insertPost: db.prepare<[
+    string,
+    string,
+    string,
+    string,
+    string,
+    number,
+    number,
+    string | null,
+  ]>(
     `INSERT INTO forum_posts
-       (category, source_session_id, source_mode, title, body, author_user_id, is_anonymous)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (category, source_session_id, source_mode, title, body, author_user_id, is_anonymous, ai_persona)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ),
   setCommentCount: db.prepare<[number, number]>(
     `UPDATE forum_posts SET comment_count = ?, updated_at = strftime('%s','now') WHERE id = ?`,
@@ -904,6 +919,17 @@ export const forumStmts = {
   ),
   decCommentThumbs: db.prepare<[number]>(
     `UPDATE forum_comments SET thumbs_count = MAX(0, thumbs_count - 1) WHERE id = ?`,
+  ),
+  // Public list of who liked a target — backs the "點 thumbs 看誰按過"
+  // popover. Anonymity at like-time is not yet supported (Phase 2 if
+  // wanted); for now usernames are always visible.
+  listLikers: db.prepare<[string, number]>(
+    `SELECT u.username, u.nickname, u.avatar_path AS avatar_path,
+            l.created_at
+     FROM forum_likes l
+     JOIN users u ON u.id = l.user_id
+     WHERE l.target_type = ? AND l.target_id = ?
+     ORDER BY l.created_at DESC`,
   ),
   // Liked-by-user lookups — hydrate the `liked` flag on detail view.
   likedPostByUser: db.prepare<[number, number]>(

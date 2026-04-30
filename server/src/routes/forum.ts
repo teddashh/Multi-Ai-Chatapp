@@ -62,6 +62,7 @@ function formatPostSummary(r: PostListRow) {
     sourceMode: r.source_mode,
     title: r.title,
     bodyPreview: previewOf(r.body),
+    authorUsername: r.is_anonymous ? null : r.author_username,
     authorDisplay: userDisplay(r.author_username, r.author_nickname, !!r.is_anonymous),
     isAnonymous: !!r.is_anonymous,
     thumbsCount: r.thumbs_count,
@@ -75,13 +76,16 @@ function formatPostDetail(r: PostListRow, liked: boolean) {
   return {
     ...formatPostSummary(r),
     body: r.body,
+    aiPersona: r.ai_persona ?? null,
     liked,
   };
 }
 
 function formatComment(r: CommentListRow, liked: boolean) {
   // AI comments must always be named (per spec — needed for per-AI like
-  // stats). User comments respect is_anonymous.
+  // stats). User comments respect is_anonymous. The model SKU
+  // (grok-4-1-fast-reasoning etc.) is intentionally not exposed publicly
+  // — only the provider family is shown.
   let display: string;
   if (r.author_type === 'ai') {
     display = r.author_ai_provider ?? 'AI';
@@ -92,10 +96,11 @@ function formatComment(r: CommentListRow, liked: boolean) {
     id: r.id,
     authorType: r.author_type,
     authorDisplay: display,
+    authorUsername:
+      r.author_type === 'user' && !r.is_anonymous ? r.author_username : null,
     authorAvatarPath:
       r.author_type === 'user' && !r.is_anonymous ? r.author_avatar : null,
     authorAiProvider: r.author_ai_provider ?? undefined,
-    authorAiModel: r.author_ai_model ?? undefined,
     body: r.body,
     isAnonymous: !!r.is_anonymous,
     isImported: !!r.is_imported,
@@ -286,6 +291,21 @@ forumRoute.post('/share', requireAuth, async (c) => {
   const titleRaw = body.title?.trim() || firstUser.content.slice(0, 60).trim();
   const title = titleRaw || '(untitled)';
 
+  // Snapshot the profession persona so the forum view survives source
+  // session deletion. Only meaningful for `profession` mode; null
+  // otherwise.
+  let aiPersona: string | null = null;
+  if (session.mode === 'profession' && session.roles_json) {
+    try {
+      const meta = JSON.parse(session.roles_json) as { profession?: unknown };
+      if (typeof meta.profession === 'string' && meta.profession.trim()) {
+        aiPersona = meta.profession.trim();
+      }
+    } catch {
+      // ignore — fall through with null
+    }
+  }
+
   let postId = 0;
   const tx = db.transaction(() => {
     const result = forumStmts.insertPost.run(
@@ -296,6 +316,7 @@ forumRoute.post('/share', requireAuth, async (c) => {
       firstUser.content,
       user.id,
       isAnonymous,
+      aiPersona,
     );
     postId = Number(result.lastInsertRowid);
     for (const m of rest) {
@@ -359,6 +380,35 @@ forumRoute.post('/:postId/comments', requireAuth, async (c) => {
   tx();
 
   return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/forum/likers/:targetType/:targetId — public list of who liked.
+// Anonymous like is not (yet) a thing, so usernames are always visible.
+// ---------------------------------------------------------------------------
+forumRoute.get('/likers/:targetType/:targetId', (c) => {
+  const targetType = c.req.param('targetType');
+  if (targetType !== 'post' && targetType !== 'comment') {
+    return c.json({ error: 'invalid targetType' }, 400);
+  }
+  const targetId = parseInt(c.req.param('targetId') ?? '', 10);
+  if (!Number.isFinite(targetId) || targetId <= 0) {
+    return c.json({ error: 'invalid targetId' }, 400);
+  }
+  const rows = forumStmts.listLikers.all(targetType, targetId) as Array<{
+    username: string;
+    nickname: string | null;
+    avatar_path: string | null;
+    created_at: number;
+  }>;
+  return c.json({
+    likers: rows.map((r) => ({
+      username: r.username,
+      nickname: r.nickname,
+      hasAvatar: !!r.avatar_path,
+      createdAt: r.created_at * 1000,
+    })),
+  });
 });
 
 // ---------------------------------------------------------------------------

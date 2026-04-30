@@ -506,9 +506,10 @@ authRoute.delete('/avatar', requireAuth, (c) => {
   return c.json({ user: buildUserDTO(fresh) });
 });
 
-// Anyone logged in can fetch any user's avatar (used to show family avatars
-// in the UI eventually). Avatars are not secret.
-authRoute.get('/avatar/:username', requireAuth, (c) => {
+// Public — avatars are not secret (a username is already public when it
+// shows up on a forum post or comment, so the matching avatar should be
+// reachable by anonymous viewers too). See forum routes which need this.
+authRoute.get('/avatar/:username', (c) => {
   const username = c.req.param('username') ?? '';
   if (!username) return c.json({ error: 'username required' }, 400);
   const target = userStmts.findByUsername.get(username) as UserRow | undefined;

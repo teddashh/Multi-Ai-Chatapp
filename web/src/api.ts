@@ -606,6 +606,10 @@ export interface ForumPostSummary {
 
 export interface ForumPostDetail extends ForumPostSummary {
   body: string;
+  // Snapshot of the profession persona at share time (e.g. "按摩師"
+  // for a 指定職業 session). UI uses this in place of the bare AI
+  // provider name on AI comments. Null when not applicable.
+  aiPersona: string | null;
   liked: boolean;
 }
 
@@ -613,15 +617,37 @@ export interface ForumComment {
   id: number;
   authorType: 'user' | 'ai';
   authorDisplay: string;
+  // For named user comments only — used to fetch their avatar at
+  // /api/auth/avatar/:username. Null when anonymous or AI.
+  authorUsername: string | null;
   authorAvatarPath: string | null;
   authorAiProvider?: AIProvider;
-  authorAiModel?: string;
   body: string;
   isAnonymous: boolean;
   isImported: boolean;
   thumbsCount: number;
   createdAt: number;
   liked: boolean;
+}
+
+export interface ForumLiker {
+  username: string;
+  nickname: string | null;
+  hasAvatar: boolean;
+  createdAt: number;
+}
+
+export async function listForumLikers(
+  targetType: 'post' | 'comment',
+  targetId: number,
+): Promise<ForumLiker[]> {
+  const res = await fetch(
+    `/api/forum/likers/${targetType}/${targetId}`,
+    { credentials: 'include' },
+  );
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = (await res.json()) as { likers: ForumLiker[] };
+  return data.likers;
 }
 
 export interface ForumCategoryCount {

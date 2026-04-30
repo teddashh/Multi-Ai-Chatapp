@@ -15,15 +15,18 @@ import {
   avatarUrl,
   getForumPost,
   listForumCategories,
+  listForumLikers,
   listForumPosts,
   postForumComment,
   toggleForumLike,
   type ForumCategoryCount,
   type ForumComment,
+  type ForumLiker,
   type ForumPostDetail,
   type ForumPostSummary,
   type User,
 } from '../api';
+import ProviderAvatar from './ProviderAvatar';
 
 interface Props {
   pathname: string;
@@ -262,6 +265,9 @@ function ForumPostView({
   } | null>(null);
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
+  const [likersTarget, setLikersTarget] = useState<
+    { type: 'post' | 'comment'; id: number } | null
+  >(null);
 
   const reload = useCallback(() => {
     setErr('');
@@ -360,6 +366,7 @@ function ForumPostView({
             liked={post.liked}
             count={post.thumbsCount}
             onToggle={togglePostLike}
+            onShowLikers={() => setLikersTarget({ type: 'post', id: post.id })}
             disabled={!user}
           />
           <span className="text-xs text-gray-500">
@@ -374,7 +381,9 @@ function ForumPostView({
           <CommentRow
             key={c.id}
             comment={c}
+            aiPersona={post.aiPersona}
             onToggleLike={() => toggleCommentLike(c.id)}
+            onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
             canLike={!!user}
           />
         ))}
@@ -387,6 +396,13 @@ function ForumPostView({
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm text-gray-400">
           登入後即可留言。
         </div>
+      )}
+
+      {likersTarget && (
+        <LikersModal
+          target={likersTarget}
+          onClose={() => setLikersTarget(null)}
+        />
       )}
     </div>
   );
@@ -429,70 +445,139 @@ function PostCard({
   );
 }
 
-const PROVIDER_BG: Record<AIProvider, string> = {
-  claude: '#d97706',
-  chatgpt: '#10a37f',
-  gemini: '#4285f4',
-  grok: '#e11d48',
-};
-
 function CommentRow({
   comment,
+  aiPersona,
   onToggleLike,
+  onShowLikers,
   canLike,
 }: {
   comment: ForumComment;
+  // From the parent post's profession snapshot. When set and comment is
+  // AI, the persona ("按摩師") becomes the prominent display name and
+  // the bare provider ("Grok") moves to the metadata subline.
+  aiPersona: string | null;
   onToggleLike: () => void;
+  onShowLikers: () => void;
   canLike: boolean;
 }) {
   const isAi = comment.authorType === 'ai';
   const provider = comment.authorAiProvider;
+  const personaActive = isAi && !!aiPersona;
+  const primaryName = personaActive
+    ? aiPersona!
+    : isAi && provider
+      ? capitalize(provider)
+      : comment.authorDisplay;
+  // Metadata subline parts (rendered " · "-separated):
+  //   - bare provider name when persona is shown (so AI identity stays
+  //     visible for like-stat aggregation per the spec)
+  //   - "來自原對話" badge for messages imported from the source chat
+  //   - relative time
+  const metaParts: string[] = [];
+  if (personaActive && provider) metaParts.push(capitalize(provider));
+  if (comment.isImported) metaParts.push('來自原對話');
+  metaParts.push(relativeTime(comment.createdAt));
+
   return (
     <div
-      className={`bg-gray-900 border rounded-lg p-3 ${
+      className={`flex gap-3 bg-gray-900 border rounded-lg p-3 ${
         isAi ? 'border-gray-700' : 'border-gray-800'
       }`}
     >
-      <div className="flex items-center gap-2 text-xs mb-1.5">
-        {isAi && provider ? (
+      <CommentAvatar comment={comment} size={36} />
+      <div className="flex-1 min-w-0">
+        <div className="flex flex-wrap items-baseline gap-1.5 mb-1">
           <span
-            className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-            style={{ backgroundColor: PROVIDER_BG[provider] }}
+            className={`text-sm ${
+              isAi ? 'text-gray-100 font-semibold' : 'text-gray-200 font-medium'
+            }`}
           >
-            {provider.slice(0, 1).toUpperCase()}
+            {primaryName}
           </span>
-        ) : (
-          <span className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold">
-            {comment.authorDisplay.slice(0, 1).toUpperCase()}
+          <span className="text-[11px] text-gray-500">
+            {metaParts.join(' · ')}
           </span>
-        )}
-        <span className={isAi ? 'text-gray-200 font-semibold' : 'text-gray-300'}>
-          {isAi && provider ? capitalize(provider) : comment.authorDisplay}
-        </span>
-        {isAi && comment.authorAiModel && (
-          <span className="text-[10px] text-gray-600 font-mono">
-            {comment.authorAiModel}
-          </span>
-        )}
-        {comment.isImported && (
-          <span className="px-1 rounded bg-gray-800 text-[10px] text-gray-500">
-            來自原對話
-          </span>
-        )}
-        <span className="text-gray-600">·</span>
-        <span className="text-gray-500">{relativeTime(comment.createdAt)}</span>
+        </div>
+        <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+          {comment.body}
+        </div>
+        <div className="mt-2 flex items-center gap-2">
+          <LikeButton
+            liked={comment.liked}
+            count={comment.thumbsCount}
+            onToggle={onToggleLike}
+            onShowLikers={onShowLikers}
+            disabled={!canLike}
+          />
+        </div>
       </div>
-      <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
-        {comment.body}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <LikeButton
-          liked={comment.liked}
-          count={comment.thumbsCount}
-          onToggle={onToggleLike}
-          disabled={!canLike}
-        />
-      </div>
+    </div>
+  );
+}
+
+// Avatar dispatcher — provider PNG for AI, user upload for named users,
+// 匿 bubble for anonymous, initial for users who haven't uploaded one.
+function CommentAvatar({
+  comment,
+  size,
+}: {
+  comment: ForumComment;
+  size: number;
+}) {
+  if (comment.authorType === 'ai' && comment.authorAiProvider) {
+    return <ProviderAvatar provider={comment.authorAiProvider} size={size} />;
+  }
+  if (comment.isAnonymous) {
+    return <AnonAvatar size={size} />;
+  }
+  if (comment.authorUsername && comment.authorAvatarPath) {
+    return (
+      <UserAvatar username={comment.authorUsername} size={size} />
+    );
+  }
+  return <InitialAvatar name={comment.authorDisplay} size={size} />;
+}
+
+function AnonAvatar({ size }: { size: number }) {
+  return (
+    <div
+      className="rounded-full bg-gray-700 flex items-center justify-center text-gray-300 font-bold flex-none border border-gray-600"
+      style={{ width: size, height: size, fontSize: size * 0.42 }}
+      title="匿名"
+    >
+      匿
+    </div>
+  );
+}
+
+function UserAvatar({
+  username,
+  size,
+}: {
+  username: string;
+  size: number;
+}) {
+  const [errored, setErrored] = useState(false);
+  if (errored) return <InitialAvatar name={username} size={size} />;
+  return (
+    <img
+      src={avatarUrl(username, 0)}
+      alt={username}
+      onError={() => setErrored(true)}
+      className="rounded-full flex-none object-cover border border-gray-700"
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+function InitialAvatar({ name, size }: { name: string; size: number }) {
+  return (
+    <div
+      className="rounded-full bg-gray-700 flex items-center justify-center text-gray-300 font-bold flex-none"
+      style={{ width: size, height: size, fontSize: size * 0.4 }}
+    >
+      {name.slice(0, 1).toUpperCase()}
     </div>
   );
 }
@@ -539,30 +624,117 @@ function CommentComposer({
   );
 }
 
+// Two clickable zones: heart toggles like (auth-only), count opens a
+// popup of who liked (anyone). Showing the count is suppressed when 0
+// since there's nothing to see.
 function LikeButton({
   liked,
   count,
   onToggle,
+  onShowLikers,
   disabled,
 }: {
   liked: boolean;
   count: number;
   onToggle: () => void;
+  onShowLikers: () => void;
   disabled?: boolean;
 }) {
   return (
-    <button
-      onClick={onToggle}
-      disabled={disabled}
-      title={disabled ? '登入後可按讚' : liked ? '取消讚' : '按讚'}
-      className={`px-2 py-1 rounded text-xs transition-colors ${
-        liked
-          ? 'bg-pink-700/40 text-pink-200'
-          : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-      } disabled:opacity-40`}
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={onToggle}
+        disabled={disabled}
+        title={disabled ? '登入後可按讚' : liked ? '取消讚' : '按讚'}
+        className={`px-2 py-1 rounded text-xs transition-colors ${
+          liked
+            ? 'bg-pink-700/40 text-pink-200'
+            : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+        } disabled:opacity-40`}
+      >
+        {liked ? '❤' : '🤍'}
+      </button>
+      {count > 0 && (
+        <button
+          onClick={onShowLikers}
+          className="text-xs text-gray-500 hover:text-gray-300 underline-offset-2 hover:underline"
+          title="看誰按過讚"
+        >
+          {count}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Modal listing everyone who liked a target. Fetches lazily on open.
+function LikersModal({
+  target,
+  onClose,
+}: {
+  target: { type: 'post' | 'comment'; id: number };
+  onClose: () => void;
+}) {
+  const [likers, setLikers] = useState<ForumLiker[] | null>(null);
+  const [err, setErr] = useState<string>('');
+  useEffect(() => {
+    let alive = true;
+    listForumLikers(target.type, target.id)
+      .then((rows) => {
+        if (alive) setLikers(rows);
+      })
+      .catch((e: Error) => {
+        if (alive) setErr(e.message);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [target.type, target.id]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
     >
-      {liked ? '❤' : '🤍'} {count}
-    </button>
+      <div
+        className="bg-gray-900 border border-gray-800 rounded-lg w-full max-w-sm p-4 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-100">按讚名單</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white text-sm"
+          >
+            ✕
+          </button>
+        </div>
+        {err && <div className="text-red-400 text-xs">{err}</div>}
+        {!likers ? (
+          <div className="text-gray-500 text-sm">載入中…</div>
+        ) : likers.length === 0 ? (
+          <div className="text-gray-500 text-sm">還沒有人按讚。</div>
+        ) : (
+          <div className="space-y-1.5 max-h-80 overflow-y-auto">
+            {likers.map((l) => (
+              <div key={l.username} className="flex items-center gap-2">
+                {l.hasAvatar ? (
+                  <UserAvatar username={l.username} size={28} />
+                ) : (
+                  <InitialAvatar name={l.nickname || l.username} size={28} />
+                )}
+                <span className="text-sm text-gray-200">
+                  {l.nickname || l.username}
+                </span>
+                <span className="text-[10px] text-gray-500 ml-auto">
+                  {relativeTime(l.createdAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
