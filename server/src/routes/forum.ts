@@ -5,7 +5,7 @@
 // of creating a duplicate post (UNIQUE constraint on source_session_id
 // enforces one-post-per-session).
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import {
   optionalAuth,
   requireAuth,
@@ -521,6 +521,15 @@ forumRoute.get('/ai/:provider', (c) => {
   if (!VALID_PROVIDERS.has(provider)) {
     return c.json({ error: 'invalid provider' }, 400);
   }
+  return aiProfileResponse(c, provider);
+});
+
+// Shared AI profile renderer — used by both /ai/:provider (legacy URL)
+// and /user/:username when the username matches a reserved AI handle.
+function aiProfileResponse(
+  c: Context<{ Variables: AppVariables }>,
+  provider: string,
+) {
   const stats = forumStmts.aiCommentStats.get(provider) as {
     total_comments: number;
     total_likes: number;
@@ -575,7 +584,7 @@ forumRoute.get('/ai/:provider', (c) => {
       postCategory: r.post_category,
     })),
   });
-});
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/forum/user/:username — public user profile.
@@ -589,6 +598,12 @@ forumRoute.get('/ai/:provider', (c) => {
 forumRoute.get('/user/:username', (c) => {
   const username = c.req.param('username') ?? '';
   if (!username) return c.json({ error: 'username required' }, 400);
+  // AIs are first-class members under the same URL scheme — if the
+  // username matches one of the four reserved provider names, redirect
+  // through the AI handler so /forum/user/grok renders Grok's profile.
+  if (VALID_PROVIDERS.has(username)) {
+    return aiProfileResponse(c, username);
+  }
   const user = userStmts.findByUsername.get(username) as UserRow | undefined;
   if (!user) return c.json({ error: 'not found' }, 404);
 
