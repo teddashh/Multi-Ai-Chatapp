@@ -17,6 +17,7 @@ import {
   daysUntilBirthday,
   signLabel,
 } from '../shared/constants';
+import { composePersona } from '../shared/personaMatrix';
 
 interface Props {
   username: string;
@@ -101,9 +102,10 @@ export default function UserProfile({ username, navigate }: Props) {
         </div>
       </div>
 
-      {/* Astro / MBTI section — only renders the rows the user has
-          chosen to expose. Birthday banner appears when within 7 days
-          and the user has the date public. */}
+      {/* Astro / MBTI section. Archetype is composed deterministically
+          from whatever sun/moon/rising/MBTI the user has exposed —
+          all four missing → "未知的神秘人物". Birthday banner appears
+          when within 7 days and the user has the date public. */}
       <AstroSection
         birthAt={data.birthAt}
         birthTz={data.birthTz}
@@ -111,6 +113,12 @@ export default function UserProfile({ username, navigate }: Props) {
         moonSign={data.moonSign}
         risingSign={data.risingSign}
         mbti={data.mbti}
+        {...composePersona({
+          sun: data.sunSign,
+          moon: data.moonSign,
+          rising: data.risingSign,
+          mbti: data.mbti,
+        })}
       />
 
       {/* Stats — five metrics matching AIProfile. Posts + comments are
