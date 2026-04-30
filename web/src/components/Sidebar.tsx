@@ -36,6 +36,7 @@ interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
   onRefresh: () => void;
+  onShare: (sessionId: string, defaultTitle: string) => void;
   isOpen: boolean;
   onClose: () => void;
 }
@@ -55,6 +56,7 @@ export default function Sidebar({
   onSelect,
   onNew,
   onRefresh,
+  onShare,
   isOpen,
   onClose,
 }: Props) {
@@ -223,6 +225,16 @@ export default function Sidebar({
                         className="text-gray-500 hover:text-white"
                       >
                         {t.sidebarExport}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onShare(s.id, s.title);
+                        }}
+                        className="text-gray-500 hover:text-blue-300"
+                        title="把這段對話分享到論壇"
+                      >
+                        分享
                       </button>
                       <button
                         onClick={(e) => handleStartRename(s, e)}

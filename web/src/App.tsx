@@ -156,7 +156,12 @@ export default function App() {
   const [workflowStatus, setWorkflowStatus] = useState('');
   const [showRoleConfig, setShowRoleConfig] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
-  const [showShareModal, setShowShareModal] = useState(false);
+  // Sidebar's per-session 分享 button populates this; ShareToForumModal
+  // reads sessionId/defaultTitle from here. null = closed.
+  const [shareTarget, setShareTarget] = useState<{
+    sessionId: string;
+    defaultTitle: string;
+  } | null>(null);
   const [pathname, setPathname] = useState(window.location.pathname);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -743,6 +748,9 @@ export default function App() {
           onSelect={handleSelectSession}
           onNew={handleNewChat}
           onRefresh={refreshSessions}
+          onShare={(sessionId, defaultTitle) =>
+            setShareTarget({ sessionId, defaultTitle })
+          }
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
         />
@@ -765,16 +773,6 @@ export default function App() {
                 >
                   論壇
                 </button>
-                {activeSessionId &&
-                  messages.some((m) => m.role === 'user') && (
-                    <button
-                      onClick={() => setShowShareModal(true)}
-                      className="px-2 py-0.5 rounded bg-blue-700/40 hover:bg-blue-700/60 text-xs text-blue-100"
-                      title="把這段對話分享到論壇"
-                    >
-                      分享
-                    </button>
-                  )}
               </div>
               <div className="flex items-center gap-2 text-xs">
                 <LangToggle lang={lang} onChange={handleLangToggle} />
@@ -944,14 +942,12 @@ export default function App() {
           />
 
           <ShareToForumModal
-            isOpen={showShareModal}
-            sessionId={activeSessionId}
-            defaultTitle={
-              messages.find((m) => m.role === 'user')?.content.slice(0, 60).trim() ?? ''
-            }
-            onClose={() => setShowShareModal(false)}
+            isOpen={shareTarget !== null}
+            sessionId={shareTarget?.sessionId ?? null}
+            defaultTitle={shareTarget?.defaultTitle ?? ''}
+            onClose={() => setShareTarget(null)}
             onShared={(postId, isNew, appended) => {
-              setShowShareModal(false);
+              setShareTarget(null);
               if (!isNew && appended === 0) {
                 alert('沒有新的訊息可追加到原貼文。');
                 navigate(`/forum/post/${postId}`);
