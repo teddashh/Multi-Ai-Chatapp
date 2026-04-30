@@ -11,7 +11,9 @@ import {
 } from '../lib/auth.js';
 import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
 import { logAudit } from '../lib/audit.js';
-import { TIER_MODELS } from '../shared/models.js';
+import { IMAGE_MODELS, TIER_MODELS } from '../shared/models.js';
+import { formatPriceLabel } from '../shared/prices.js';
+import type { Tier } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { sendResetEmail, sendVerifyEmail } from '../lib/mail.js';
 import {
@@ -62,8 +64,29 @@ function buildUserDTO(user: UserRow) {
     theme: user.theme,
     emailVerified: !!user.email_verified,
     models: TIER_MODELS[user.tier],
+    // Per-model compact price label ("$5/$30 /M" or "$0.07/img").
+    // Used by chat + image dropdowns so the user can compare cost
+    // before picking. Empty string when we don't have a quote.
+    priceLabels: priceLabelsForTier(user.tier),
     bio: user.bio ?? '',
   };
+}
+
+// Build the model-name → price-label map shown in dropdowns. Covers
+// every chat model the tier exposes plus every image model in the
+// global catalog (image mode is not tier-gated today).
+function priceLabelsForTier(tier: Tier): Record<string, string> {
+  const out: Record<string, string> = {};
+  const tm = TIER_MODELS[tier];
+  for (const provider of ['chatgpt', 'claude', 'gemini', 'grok'] as const) {
+    for (const m of tm[provider].options) {
+      out[m] = formatPriceLabel(provider, m);
+    }
+    for (const m of IMAGE_MODELS[provider]) {
+      out[m] = formatPriceLabel(provider, m);
+    }
+  }
+  return out;
 }
 
 async function issueVerifyTokenAndEmail(user: UserRow): Promise<void> {

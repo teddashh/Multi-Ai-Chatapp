@@ -1054,6 +1054,31 @@ async function runImage(p: OrchestratorParams): Promise<void> {
     // ignore — non-fatal
   }
 
+  // Bill the image. Image gen wasn't logged before, so admin/user cost
+  // dashboards under-counted by every gen. Encode the image as
+  // tokens_out=1 (one image generated) and route via the same
+  // `<stage>:<model>` model-column convention text logging uses, so
+  // the byBillingChannel rollup can recognise it. estimateCost reads
+  // the model's `perImage` field and multiplies by tokens_out.
+  try {
+    usageStmts.insert.run(
+      p.userId,
+      provider,
+      `${stageName}:${result.modelUsed}`,
+      'image',
+      p.text.length,
+      0,
+      0,
+      1,
+      1, // is_estimated — cost is per-image, not per-token
+      1, // success
+      null, // error_code
+      model, // requested model
+    );
+  } catch (e) {
+    console.error('[image] usage_log insert failed', (e as Error).message);
+  }
+
   // recordingSend skips its message insert when 'done' arrives with a
   // messageId already set, so this won't double-insert.
   p.emit({

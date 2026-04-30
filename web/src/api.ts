@@ -30,6 +30,11 @@ export interface User {
   theme: ThemeId;
   emailVerified: boolean;
   models: Record<AIProvider, ModelChoices>;
+  // Compact price label per model SKU — "$5/$30 /M" for text models,
+  // "$0.07/img" for image models. Server-built from prices.ts so the
+  // client doesn't drift from the source of truth. Empty string when
+  // we have no quote for that SKU.
+  priceLabels: Record<string, string>;
   // Self-edited public bio shown on the user's forum profile page.
   // Empty string when not set.
   bio: string;

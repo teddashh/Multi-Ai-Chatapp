@@ -196,7 +196,18 @@ export function availableModelsForMode(
 // each vendor's image gen API is unrelated. SDXL is everyone's universal
 // fallback (Phase C). Verified-against-live-catalog SKU names below.
 export const IMAGE_MODELS: Record<AIProvider, string[]> = {
-  chatgpt: ['gpt-image-1-high', 'gpt-image-1-medium', 'gpt-image-1-low', 'sdxl'],
+  chatgpt: [
+    'gpt-image-2-high',
+    'gpt-image-2-medium',
+    'gpt-image-2-low',
+    'gpt-image-1.5-high',
+    'gpt-image-1.5-medium',
+    'gpt-image-1-high',
+    'gpt-image-1-medium',
+    'gpt-image-1-low',
+    'gpt-image-1-mini',
+    'sdxl',
+  ],
   claude: ['flux-1.1-pro-ultra', 'flux-1.1-pro', 'sdxl'],
   gemini: [
     'imagen-4.0-ultra-generate-001',

@@ -10,13 +10,17 @@ interface Props {
   models: Record<AIProvider, ModelChoices>;
   selected: Partial<Record<AIProvider, string>>;
   onSelect: (provider: AIProvider, model: string) => void;
+  // Per-model compact cost label rendered after the model name in the
+  // dropdown — "$5/$30 /M" for text, "$0.07/img" for image. Server-
+  // built (User.priceLabels). Pass empty {} to suppress.
+  priceLabels: Record<string, string>;
   // Mode-aware filter: hides codex outside coding, hides o3/o4 outside
   // reasoning. The dropdown only ever offers options that make sense
   // for the active mode.
   mode: ChatMode;
 }
 
-export default function ProvidersBar({ models, selected, onSelect, mode }: Props) {
+export default function ProvidersBar({ models, selected, onSelect, priceLabels, mode }: Props) {
   return (
     <div className="grid grid-cols-4 gap-1 sm:gap-2">
       {PROVIDERS.map((p) => {
@@ -53,11 +57,14 @@ export default function ProvidersBar({ models, selected, onSelect, mode }: Props
               onChange={(e) => onSelect(p, e.target.value)}
               className="bg-transparent text-[10px] sm:text-[11px] text-gray-300 border-none focus:outline-none truncate min-w-0 flex-1 cursor-pointer hover:text-white"
             >
-              {filteredOptions.map((m) => (
-                <option key={m} value={m} className="bg-gray-900 text-gray-200">
-                  {m}
-                </option>
-              ))}
+              {filteredOptions.map((m) => {
+                const price = priceLabels[m];
+                return (
+                  <option key={m} value={m} className="bg-gray-900 text-gray-200">
+                    {price ? `${m}  ${price}` : m}
+                  </option>
+                );
+              })}
             </select>
           </div>
         );

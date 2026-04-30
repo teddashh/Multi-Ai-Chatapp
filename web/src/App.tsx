@@ -802,6 +802,7 @@ export default function App() {
                 models={user.models}
                 selected={modelOverrides}
                 onSelect={handleModelSelect}
+                priceLabels={user.priceLabels}
                 mode={mode}
               />
             ) : (
@@ -811,6 +812,7 @@ export default function App() {
                 onChange={setSingleProvider}
                 modelOverride={modelOverrides[singleProvider]}
                 onModelChange={(model) => handleModelSelect(singleProvider, model)}
+                priceLabels={user.priceLabels}
                 label={t.agentTalkTo}
                 lockedModelLabel={mode === 'reasoning' ? REASONING_MODEL_HINT[singleProvider] : undefined}
                 mode={mode}
@@ -1005,6 +1007,8 @@ interface SingleProviderPickerProps {
   onChange: (p: AIProvider) => void;
   modelOverride: string | undefined;
   onModelChange: (model: string) => void;
+  // Per-model price labels for the dropdown ("$5/$30 /M" / "$0.07/img").
+  priceLabels: Record<string, string>;
   label: string;
   // When set, hide the model dropdown and instead display this string
   // (used by 深度思考 mode where the model is server-locked to each
@@ -1021,6 +1025,7 @@ function SingleProviderPicker({
   onChange,
   modelOverride,
   onModelChange,
+  priceLabels,
   label,
   lockedModelLabel,
   mode,
@@ -1073,11 +1078,14 @@ function SingleProviderPicker({
           className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 max-w-full"
           style={{ minWidth: '12em' }}
         >
-          {options.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
+          {options.map((m) => {
+            const price = priceLabels[m];
+            return (
+              <option key={m} value={m}>
+                {price ? `${m}  ${price}` : m}
+              </option>
+            );
+          })}
         </select>
       )}
     </div>

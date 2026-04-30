@@ -22,15 +22,25 @@ export interface ImageGenResult {
 }
 
 interface ParsedModel {
-  baseModel: 'gpt-image-1';
-  quality: 'low' | 'medium' | 'high';
+  // The OpenAI API model id (gpt-image-1 / gpt-image-1-mini / gpt-image-1.5
+  // / gpt-image-2). Quality knob is sent as a separate request field when
+  // present.
+  baseModel: string;
+  quality?: 'low' | 'medium' | 'high';
 }
 
+// Recognise: gpt-image-1, gpt-image-1.5, gpt-image-2 (with optional
+// -low/-medium/-high suffix), and gpt-image-1-mini (no quality).
 function parseGptImageModel(name: string): ParsedModel | null {
-  if (name === 'gpt-image-1-low') return { baseModel: 'gpt-image-1', quality: 'low' };
-  if (name === 'gpt-image-1-medium') return { baseModel: 'gpt-image-1', quality: 'medium' };
-  if (name === 'gpt-image-1-high') return { baseModel: 'gpt-image-1', quality: 'high' };
-  return null;
+  if (name === 'gpt-image-1-mini') {
+    return { baseModel: 'gpt-image-1-mini' };
+  }
+  const m = /^(gpt-image-(?:1\.5|1|2))(?:-(low|medium|high))?$/.exec(name);
+  if (!m) return null;
+  return {
+    baseModel: m[1],
+    quality: (m[2] as 'low' | 'medium' | 'high' | undefined) ?? undefined,
+  };
 }
 
 export function isOpenAIImageModel(name: string): boolean {
@@ -49,13 +59,13 @@ export async function runOpenAIImage(args: {
   const parsed = parseGptImageModel(args.model);
   if (!parsed) throw new Error(`unknown OpenAI image model: ${args.model}`);
 
-  const body = {
+  const body: Record<string, unknown> = {
     model: parsed.baseModel,
     prompt: args.prompt,
     size: args.size ?? '1024x1024',
-    quality: parsed.quality,
     n: 1,
   };
+  if (parsed.quality) body.quality = parsed.quality;
 
   const response = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
