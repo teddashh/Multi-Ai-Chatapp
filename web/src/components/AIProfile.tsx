@@ -22,7 +22,9 @@ export default function AIProfile({ provider, navigate }: Props) {
   const [err, setErr] = useState<string>('');
   const bio = AI_BIOS[provider];
   const meta = AI_PROVIDERS[provider];
-  const level = data ? aiLevel(data.stats.totalComments) : null;
+  const level = data
+    ? aiLevel(data.stats.totalComments, data.stats.totalLikes)
+    : null;
 
   useEffect(() => {
     let alive = true;

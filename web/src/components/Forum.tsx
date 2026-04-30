@@ -461,7 +461,7 @@ function CommentRow({
   };
   const aiHover = isAi && provider ? `查看 ${capitalize(provider)} 的個人檔案` : undefined;
   const stat = isAi && provider ? aiStats[provider] : null;
-  const level = stat ? aiLevel(stat.totalComments) : null;
+  const level = stat ? aiLevel(stat.totalComments, stat.totalLikes) : null;
 
   return (
     <div
@@ -469,10 +469,10 @@ function CommentRow({
         isAi ? 'border-gray-700' : 'border-gray-800'
       }`}
     >
-      {/* Avatar column — relative-positioned so the hover card pops out
-          to its right on desktop. group/aiav scopes the hover so only
-          THIS avatar's card shows (not all on the page). */}
-      <div className="flex flex-col items-center gap-1 flex-none">
+      {/* Avatar column — relative + isolate so the hover card creates
+          its own stacking context above the comment body to its right.
+          group/aiav scopes the hover so only THIS avatar's card shows. */}
+      <div className="flex flex-col items-center gap-1 flex-none isolate">
         <div
           className={`relative ${
             isAi ? 'cursor-pointer hover:opacity-80 transition-opacity group/aiav' : ''
@@ -484,7 +484,7 @@ function CommentRow({
           {isAi && provider && stat && (
             <AIHoverCard
               provider={provider}
-              level={aiLevel(stat.totalComments)}
+              level={aiLevel(stat.totalComments, stat.totalLikes)}
               totalComments={stat.totalComments}
               totalLikes={stat.totalLikes}
               onGoToProfile={goToAIProfile}
@@ -555,8 +555,15 @@ function AIHoverCard({
   const accent = AI_PROVIDERS[provider].color;
   return (
     <div
-      className="hidden group-hover/aiav:block absolute z-40 left-full ml-2 top-0 w-64 bg-gray-900 border-2 rounded-lg shadow-xl p-3 cursor-default"
-      style={{ borderColor: `${accent}77` }}
+      className="hidden group-hover/aiav:block absolute z-[60] left-full ml-2 top-0 w-64 border-2 rounded-lg shadow-2xl p-3 cursor-default"
+      style={{
+        // Inline solid background — avoids any theme-injected
+        // transparency on bg-gray-900 that was making the card see-
+        // through against the comment text behind it.
+        backgroundColor: '#0b1220',
+        borderColor: `${accent}aa`,
+        backdropFilter: 'blur(4px)',
+      }}
       onClick={(e) => {
         // Block parent's onClick (which navigates to profile) so users
         // can interact with the card itself. The CTA inside opts in.

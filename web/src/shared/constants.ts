@@ -39,12 +39,21 @@ export const AI_BIOS: Record<AIProvider, AIBio> = {
   },
 };
 
-// Forum activity-based "level" — `Math.floor(log2(comments + 1)) + 1`,
-// so 0 → Lv1, 1 → Lv2, 3 → Lv3, 7 → Lv4, 15 → Lv5, 31 → Lv6, 63 → Lv7,
-// 127 → Lv8, etc. Cheap to compute, doesn't need a new column, and the
-// curve flattens enough that long-active AIs don't run away.
-export function aiLevel(commentCount: number): number {
-  return Math.floor(Math.log2(commentCount + 1)) + 1;
+// Forum activity-based "level" — quadratic curve so spamming comments
+// doesn't run the level up. Formula:
+//   xp = comments + likes * 5
+//   level = floor(sqrt(xp / 10)) + 1
+// Likes weigh 5× a comment (quality over quantity). Thresholds:
+//   Lv 1: 0–9 xp        (rookie)
+//   Lv 2: 10 xp         (≈10 comments, or 2 likes)
+//   Lv 3: 40 xp         (≈40 comments, or 8 likes)
+//   Lv 4: 90 xp         (or ~18 likes)
+//   Lv 5: 160 xp        (or ~32 likes)
+//   Lv N: (N-1)² × 10 xp
+// Cheap to compute; no new column needed.
+export function aiLevel(commentCount: number, likeCount = 0): number {
+  const xp = commentCount + likeCount * 5;
+  return Math.floor(Math.sqrt(xp / 10)) + 1;
 }
 
 // Mode names/descriptions live in the i18n dictionary now (web/src/i18n.ts).
