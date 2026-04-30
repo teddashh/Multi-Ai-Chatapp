@@ -186,6 +186,8 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
   let sawRealTokens = false;
   let finalText = '';
 
+  const useExtendedThinking = opts.reasoningEffort === 'high';
+
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     const isLast = iter === MAX_TOOL_ITERATIONS - 1;
     const body: Record<string, unknown> = { contents };
@@ -196,6 +198,15 @@ export async function runGemini(opts: CLIRunOptions): Promise<GeminiResult> {
     }
     if (sysPrompt) {
       body.systemInstruction = { parts: [{ text: sysPrompt }] };
+    }
+    // 深度思考 → request dynamic thinking budget. -1 lets the model size
+    // its own budget per turn; Gemini 3.x already auto-thinks but we set
+    // this explicitly so the intent survives a future model swap.
+    if (useExtendedThinking) {
+      body.generationConfig = {
+        ...((body.generationConfig as Record<string, unknown>) ?? {}),
+        thinkingConfig: { thinkingBudget: -1 },
+      };
     }
 
     const round = await streamGeminiRound(apiKey, opts.model, body, opts);

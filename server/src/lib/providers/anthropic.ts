@@ -25,6 +25,12 @@ import {
 
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MAX_TOKENS = 4096;
+// Extended thinking ("深度思考"). max_tokens must exceed budget_tokens.
+// Tools stay off in this mode — threading thinking blocks back through
+// a tool-use round is fiddly and reasoning mode is single-shot anyway.
+// https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking
+const REASONING_MAX_TOKENS = 32000;
+const REASONING_BUDGET_TOKENS = 16000;
 
 interface AnthropicResult extends CLIRunResult {
   promptTokens: number | null;
@@ -213,17 +219,23 @@ export async function runAnthropic(opts: CLIRunOptions): Promise<AnthropicResult
   let sawRealTokens = false;
   let finalText = '';
 
+  const useExtendedThinking = opts.reasoningEffort === 'high';
+
   for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
     const isLast = iter === MAX_TOOL_ITERATIONS - 1;
     const body: Record<string, unknown> = {
       model: opts.model,
       messages,
-      max_tokens: DEFAULT_MAX_TOKENS,
+      max_tokens: useExtendedThinking ? REASONING_MAX_TOKENS : DEFAULT_MAX_TOKENS,
       stream: true,
     };
     // Last iteration drops the tool list so the model is forced to
     // commit to a text answer instead of asking for yet another search.
-    if (!isLast) body.tools = [WEB_SEARCH_TOOL_ANTHROPIC];
+    // Extended thinking also drops tools (see REASONING_* constants above).
+    if (!isLast && !useExtendedThinking) body.tools = [WEB_SEARCH_TOOL_ANTHROPIC];
+    if (useExtendedThinking) {
+      body.thinking = { type: 'enabled', budget_tokens: REASONING_BUDGET_TOKENS };
+    }
     if (sysPrompt) body.system = sysPrompt;
 
     const round = await streamAnthropicRound(apiKey, body, opts);
