@@ -163,6 +163,11 @@ addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // so users can show "1月15日" without revealing the year. Defaults
 // off; AIs ignore this entirely (their year never displays per spec).
 addColumnIfMissing('users', 'show_birth_year', 'INTEGER NOT NULL DEFAULT 0');
+// Persona dice — encodes which of the 5 variants is picked for each of
+// the 5 cells in the persona matrix (sun/moon/rising/mbtiNoun/mbtiAction).
+// One integer in [0, 3124]; client decodes via base-5 modulo. NULL means
+// the user hasn't rolled yet — UserProfile shows no archetype line.
+addColumnIfMissing('users', 'persona_seed', 'INTEGER');
 // Existing users default to verified (1). New /signup flow flips to 0.
 addColumnIfMissing('users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1');
 addColumnIfMissing('users', 'verify_token', 'TEXT');
@@ -425,6 +430,7 @@ export interface UserRow {
   show_mbti: number;
   show_signs: number;
   show_birth_year: number;
+  persona_seed: number | null;
 }
 
 export interface PasswordResetRow {
@@ -519,6 +525,9 @@ export const userStmts = {
        SET show_birthday = ?, show_birth_time = ?, show_mbti = ?,
            show_signs = ?, show_birth_year = ?
      WHERE id = ?`,
+  ),
+  updatePersonaSeed: db.prepare<[number | null, number]>(
+    'UPDATE users SET persona_seed = ? WHERE id = ?',
   ),
   // First-login username pick (gated to unverified rows by the auth
   // route — the schema-level UNIQUE on username still protects us).

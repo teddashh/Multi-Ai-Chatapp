@@ -687,6 +687,9 @@ forumRoute.get('/user/:username', (c) => {
     moonSign: user.moon_sign ?? null,
     risingSign: user.rising_sign ?? null,
     mbti: showMbti ? user.mbti ?? null : null,
+    // Null until the user clicks the dice in ProfileModal. UserProfile
+    // gates the archetype line on this — no roll = no archetype shown.
+    personaSeed: user.persona_seed ?? null,
     stats: {
       totalPosts: postRow.total_posts,
       totalComments: commentRow.total_comments,

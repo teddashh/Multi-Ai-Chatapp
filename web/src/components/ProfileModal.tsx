@@ -3,12 +3,14 @@ import {
   avatarUrl,
   deleteAvatar,
   getMyUsage,
+  rollPersona,
   updateProfile,
   uploadAvatar,
   type MyUsage,
   type ThemeId,
   type User,
 } from '../api';
+import { composePersona } from '../shared/personaMatrix';
 import { useI18n } from '../i18n';
 import type { Dict, Lang } from '../i18n';
 import {
@@ -107,6 +109,91 @@ function localPartsToUtcEpoch(
 
 const MAX_AVATAR_MB = 4;
 const SUPPORTED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif'];
+
+// Persona-dice block — preview of the rolled archetype + a 🎲 button.
+// Sits inside the astrology section after the visibility toggles.
+function PersonaDice({
+  user,
+  onUpdate,
+}: {
+  user: User;
+  onUpdate: (u: User) => void;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  // Server gates rolling on the *saved* state, not the form state, so
+  // the button checks user.* (not the local birthDate / birthTime / etc).
+  // Reading /me returns nullable strings; an empty signs array means
+  // "no roll yet" rather than "ready".
+  const ready =
+    !!user.sunSign && !!user.moonSign && !!user.risingSign && !!user.mbti;
+
+  const persona =
+    user.personaSeed != null
+      ? composePersona({
+          sun: user.sunSign,
+          moon: user.moonSign,
+          rising: user.risingSign,
+          mbti: user.mbti,
+          seed: user.personaSeed,
+        })
+      : null;
+
+  const handleRoll = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      const updated = await rollPersona();
+      onUpdate(updated);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 p-2 rounded bg-gray-800/50 border border-gray-700">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="text-xs text-gray-400 font-semibold">
+          核心靈魂定位
+        </span>
+        <button
+          onClick={handleRoll}
+          disabled={!ready || busy}
+          title={
+            !ready
+              ? '填完你的完整出生資訊，以及 MBTI，將可以按骰子算出你的完整核心靈魂定位'
+              : '骰一次（會記為一次 LLM 呼叫成本）'
+          }
+          className="text-xl leading-none disabled:opacity-25 disabled:cursor-not-allowed hover:scale-110 transition"
+        >
+          🎲
+        </button>
+      </div>
+      {persona ? (
+        <div>
+          <div className="text-sm font-bold text-amber-200">
+            {persona.archetype}
+          </div>
+          <div className="text-[11px] text-gray-400 leading-relaxed">
+            （{persona.archetypeNote}）
+          </div>
+        </div>
+      ) : (
+        <div className="text-[11px] text-gray-500 italic leading-relaxed">
+          {ready
+            ? '按骰子算出你的完整核心靈魂定位'
+            : '填完你的完整出生資訊，以及 MBTI，將可以按骰子算出你的完整核心靈魂定位'}
+        </div>
+      )}
+      {err && (
+        <div className="text-[11px] text-red-300 mt-1">{err}</div>
+      )}
+    </div>
+  );
+}
 
 // Star-sign dropdown — empty value clears the field.
 function SignSelect({
@@ -553,6 +640,12 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
               onChange={setShowMbti}
             />
           </div>
+
+          {/* Persona dice. Rolls the seed that picks a variant per
+              matrix cell. Disabled until the user has SAVED a full
+              astro+MBTI set (server-side gate matches). Each click
+              charges a synthetic $0.001 LLM-call cost. */}
+          <PersonaDice user={user} onUpdate={onUpdate} />
         </div>
 
         {/* Password */}

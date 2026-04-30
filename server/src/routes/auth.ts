@@ -85,6 +85,7 @@ function buildUserDTO(user: UserRow) {
     showMbti: !!user.show_mbti,
     showSigns: !!user.show_signs,
     showBirthYear: !!user.show_birth_year,
+    personaSeed: user.persona_seed ?? null,
   };
 }
 
@@ -616,6 +617,60 @@ authRoute.patch('/profile', requireAuth, async (c) => {
       action: 'user_profile_update',
       metadata: { fields: changed },
     });
+  }
+
+  const fresh = userStmts.findById.get(user.id) as UserRow;
+  return c.json({ user: buildUserDTO(fresh) });
+});
+
+// Persona dice — random-rolls the seed that picks variant indices for
+// each of the 5 matrix cells (sun, moon, rising, MBTI-noun, MBTI-action).
+// Requires the user to have all four astro fields filled (matches the
+// "填完出生資訊以及 MBTI 才能按骰子" spec). Each roll is logged as a
+// tiny synthetic LLM call so the user's $cost ticker reflects the
+// activity even though no real model runs.
+const PERSONA_SEED_RANGE = 5 * 5 * 5 * 5 * 5; // 5^5 = 3125
+
+authRoute.post('/persona/roll', requireAuth, async (c) => {
+  const session = c.get('user');
+  const user = userStmts.findById.get(session.id) as UserRow | undefined;
+  if (!user) return c.json({ error: 'unauthorized' }, 401);
+
+  // Gate on having the full astro set — no point rolling otherwise.
+  const ready =
+    !!user.sun_sign &&
+    !!user.moon_sign &&
+    !!user.rising_sign &&
+    !!user.mbti;
+  if (!ready) {
+    return c.json(
+      { error: '請先填完出生資訊與 MBTI 才能骰' },
+      400,
+    );
+  }
+
+  const seed = Math.floor(Math.random() * PERSONA_SEED_RANGE);
+  userStmts.updatePersonaSeed.run(seed, user.id);
+
+  // Synthetic usage_log row — model 'persona-dice' has a $0.001 per-
+  // image price, tokens_out=1 = one roll, success=1.
+  try {
+    usageStmts.insert.run(
+      user.id,
+      'gemini', // mythic ownership: Gemini designed the matrix
+      'gemini_api:persona-dice',
+      'persona',
+      0,
+      0,
+      0,
+      1,
+      1,
+      1,
+      null,
+      'persona-dice',
+    );
+  } catch (err) {
+    console.error('[persona] usage_log insert failed', (err as Error).message);
   }
 
   const fresh = userStmts.findById.get(user.id) as UserRow;

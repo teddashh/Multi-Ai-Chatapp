@@ -90,6 +90,11 @@ const PRICES: Record<string, ModelPrice> = {
   'flux-1.1-pro-ultra': { perImage: 0.06 },
   // Universal cheap fallback
   'sdxl': { perImage: 0.003 },
+
+  // Synthetic SKU for the persona-dice feature. Each roll is billed
+  // as if it were one tiny LLM call so the user's cost dashboard
+  // shows the dice activity. Real LLM is never invoked.
+  'persona-dice': { perImage: 0.001 },
 };
 
 const PROVIDER_FALLBACK: Record<string, ModelPrice> = {

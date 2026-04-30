@@ -52,6 +52,10 @@ export interface User {
   showMbti: boolean;
   showSigns: boolean;
   showBirthYear: boolean;
+  // Persona dice seed — null until the user has rolled. Decoded
+  // client-side via personaMatrix.ts to pick one of 5 variant
+  // phrasings per matrix cell.
+  personaSeed: number | null;
 }
 
 export async function verifyEmail(token: string): Promise<User> {
@@ -103,6 +107,22 @@ export async function updateProfile(patch: {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const data = (await res.json()) as { user: User };
+  return data.user;
+}
+
+// Roll the persona dice — server picks a fresh seed, charges the user
+// a synthetic LLM-call cost, and returns the updated user. Errors
+// (typically 400 "fill in birth + MBTI first") propagate via .message.
+export async function rollPersona(): Promise<User> {
+  const res = await fetch('/api/auth/persona/roll', {
+    method: 'POST',
+    credentials: 'include',
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -730,6 +750,9 @@ export interface UserProfileResponse {
   moonSign: string | null;
   risingSign: string | null;
   mbti: string | null;
+  // Null when the user hasn't rolled the persona dice yet — the
+  // archetype line is hidden client-side in that case.
+  personaSeed: number | null;
   stats: {
     totalPosts: number;
     totalComments: number;

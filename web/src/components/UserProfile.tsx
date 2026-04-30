@@ -113,12 +113,18 @@ export default function UserProfile({ username, navigate }: Props) {
         moonSign={data.moonSign}
         risingSign={data.risingSign}
         mbti={data.mbti}
-        {...composePersona({
-          sun: data.sunSign,
-          moon: data.moonSign,
-          rising: data.risingSign,
-          mbti: data.mbti,
-        })}
+        // Archetype only renders after the user has rolled the dice
+        // (persona_seed != null). Otherwise the section just shows
+        // birth + signs + MBTI without the yellow headline.
+        {...(data.personaSeed != null
+          ? composePersona({
+              sun: data.sunSign,
+              moon: data.moonSign,
+              rising: data.risingSign,
+              mbti: data.mbti,
+              seed: data.personaSeed,
+            })
+          : { archetype: undefined, archetypeNote: undefined })}
       />
 
       {/* Stats — five metrics matching AIProfile. Posts + comments are
