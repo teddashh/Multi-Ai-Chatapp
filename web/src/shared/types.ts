@@ -22,7 +22,7 @@ export function modeGroupOf(mode: ChatMode): ModeGroup {
 
 // Modes that are visible in the dropdown but not yet implemented on
 // the backend — clicking them shows "Coming soon".
-export const COMING_SOON_MODES: ChatMode[] = ['profession', 'reasoning', 'image'];
+export const COMING_SOON_MODES: ChatMode[] = ['reasoning', 'image'];
 
 export interface DebateRoles {
   pro: AIProvider;

@@ -586,6 +586,8 @@ export async function streamChat(
     // Single-AI Agent modes (personal / profession / reasoning) carry
     // exactly one provider here instead of a roles map.
     singleProvider?: AIProvider;
+    // Profession persona for `profession` mode (e.g. "醫生", "律師").
+    profession?: string;
     modelOverrides?: Partial<Record<AIProvider, string>>;
     sessionId?: string;
     attachmentIds?: string[];

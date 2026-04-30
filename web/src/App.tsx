@@ -41,7 +41,7 @@ import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
 import LangToggle from './components/LangToggle';
 import ProfileModal from './components/ProfileModal';
-import { DICTS, I18nContext, type Lang } from './i18n';
+import { DICTS, I18nContext, useT, type Lang } from './i18n';
 
 const DEFAULT_ROLES: Record<string, ModeRoles> = {
   debate: DEFAULT_DEBATE_ROLES,
@@ -122,11 +122,8 @@ export default function App() {
       // ignore
     }
   }, []);
-  // Push the active theme onto <html> so the CSS attribute selectors apply
-  // to the entire page (including the body::before background painter).
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+  // (Theme application moved below mode/singleProvider state — see
+  // useEffect referencing isAgent further down.)
 
   // Browser back/forward (pushState navigation between / and /admin) needs
   // a popstate listener — pathname state is otherwise stuck at first load.
@@ -175,7 +172,7 @@ export default function App() {
   );
   // Active AI for Agent (single-AI) modes. Persisted across reloads
   // so the user's last pick sticks. Default Claude for the first run.
-  const [singleProvider, setSingleProvider] = useState<AIProvider>(() => {
+  const [singleProviderRaw, setSingleProviderRaw] = useState<AIProvider>(() => {
     try {
       const raw = localStorage.getItem('singleProvider');
       if (raw === 'claude' || raw === 'chatgpt' || raw === 'gemini' || raw === 'grok') {
@@ -186,6 +183,7 @@ export default function App() {
     }
     return 'claude';
   });
+  const singleProvider = singleProviderRaw;
   useEffect(() => {
     try {
       localStorage.setItem('singleProvider', singleProvider);
@@ -193,6 +191,37 @@ export default function App() {
       // ignore (private browsing, full quota)
     }
   }, [singleProvider]);
+
+  // Push the active theme onto <html> so the CSS attribute selectors apply
+  // to the entire page. In Agent mode the theme follows the picked AI
+  // (claude/chatgpt/gemini/grok) — visual cue that you're talking to one
+  // persona — and reverts to the user's saved theme on Multi mode.
+  useEffect(() => {
+    const isAgent =
+      mode === 'personal' ||
+      mode === 'profession' ||
+      mode === 'reasoning' ||
+      mode === 'image';
+    const effective = isAgent ? singleProviderRaw : theme;
+    document.documentElement.setAttribute('data-theme', effective);
+  }, [theme, mode, singleProviderRaw]);
+
+  // Profession persona for `profession` mode. Persisted so users don't
+  // re-type the same role every session (medical advisor, lawyer, ...).
+  const [profession, setProfession] = useState<string>(() => {
+    try {
+      return localStorage.getItem('profession') ?? '';
+    } catch {
+      return '';
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('profession', profession);
+    } catch {
+      // ignore
+    }
+  }, [profession]);
 
   // Pulled out so the SSE-drop recovery can use it. Reloads the active
   // session from DB so any messages the server persisted while we were
@@ -308,6 +337,18 @@ export default function App() {
     setActiveSessionId(null);
     setMessages([]);
   }, []);
+
+  // Picking a different AI in Agent mode means starting a new
+  // conversation — the previous session was a thread with a different
+  // AI persona. Clear active session so the next message creates a
+  // new one. Original session stays in the sidebar for re-entry.
+  const setSingleProvider = useCallback((p: AIProvider) => {
+    if (p === singleProviderRaw) return;
+    setSingleProviderRaw(p);
+    setActiveSessionId(null);
+    setMessages([]);
+    setConnectionLost(false);
+  }, [singleProviderRaw]);
 
   useEffect(() => {
     if (mode !== 'free') {
@@ -512,12 +553,18 @@ export default function App() {
 
       try {
         const isAgentMode = mode === 'personal' || mode === 'profession' || mode === 'reasoning' || mode === 'image';
+        if (mode === 'profession' && !profession.trim()) {
+          window.alert(t.modeProfessionRequired);
+          setIsProcessing(false);
+          return;
+        }
         await streamChat(
           {
             text,
             mode,
             roles: !isAgentMode && mode !== 'free' ? roles : undefined,
             singleProvider: isAgentMode ? singleProvider : undefined,
+            profession: mode === 'profession' ? profession.trim() : undefined,
             modelOverrides,
             sessionId: activeSessionId ?? undefined,
             attachmentIds: attachments.map((a) => a.id),
@@ -540,7 +587,7 @@ export default function App() {
         abortRef.current = null;
       }
     },
-    [mode, roles, singleProvider, isProcessing, modelOverrides, activeSessionId, handleEvent, reloadActiveSession],
+    [mode, roles, singleProvider, profession, isProcessing, modelOverrides, activeSessionId, handleEvent, reloadActiveSession, t],
   );
 
   const handleCancel = useCallback(() => {
@@ -720,6 +767,16 @@ export default function App() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Row order (top-down) so the most-frequently-changed knobs
+              are closest to the chat input:
+                1. mode group + inner mode
+                2. providers / single-AI picker (varies by group)
+                3. role config (collapsed by default, multi sequential modes only)
+            */}
+          <div className="flex-none border-b border-gray-800 p-2 space-y-2">
+            <ModeSelector mode={mode} onModeChange={setMode} />
             {modeGroupOf(mode) === 'multi' ? (
               <ProvidersBar
                 models={user.models}
@@ -736,20 +793,25 @@ export default function App() {
                 label={t.agentTalkTo}
               />
             )}
-          </div>
-
-          <div className="flex-none border-b border-gray-800 p-2">
-            <ModeSelector mode={mode} onModeChange={setMode} />
-            {mode !== 'free' && modeGroupOf(mode) === 'multi' && (
-              <button
-                onClick={() => setShowRoleConfig((s) => !s)}
-                className="text-xs text-gray-400 hover:text-white mt-1 ml-1"
-              >
-                {showRoleConfig ? t.roleConfigHide : t.roleConfigShow}
-              </button>
+            {mode === 'profession' && (
+              <ProfessionInput
+                value={profession}
+                onChange={setProfession}
+                placeholder={t.modeProfessionPlaceholder}
+              />
             )}
-            {showRoleConfig && mode !== 'free' && modeGroupOf(mode) === 'multi' && (
-              <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
+            {mode !== 'free' && modeGroupOf(mode) === 'multi' && (
+              <div>
+                <button
+                  onClick={() => setShowRoleConfig((s) => !s)}
+                  className="text-xs text-gray-400 hover:text-white"
+                >
+                  {showRoleConfig ? t.roleConfigHide : t.roleConfigShow}
+                </button>
+                {showRoleConfig && (
+                  <RoleConfig mode={mode} roles={roles} onRolesChange={setRoles} />
+                )}
+              </div>
             )}
           </div>
 
@@ -911,6 +973,31 @@ function SingleProviderPicker({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+// Inline profession input for the 指定職業 / Profession mode. Persists
+// via the parent component's state; the mode handler injects it as a
+// system instruction prefix on every turn.
+interface ProfessionInputProps {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}
+function ProfessionInput({ value, onChange, placeholder }: ProfessionInputProps) {
+  const t = useT();
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-gray-500">{t.modeProfessionLabel}:</span>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+        maxLength={60}
+      />
     </div>
   );
 }

@@ -111,6 +111,9 @@ export interface Dict {
   modeGroupMulti: string;
   agentTalkTo: string;
   comingSoon: string;
+  modeProfessionLabel: string;
+  modeProfessionPlaceholder: string;
+  modeProfessionRequired: string;
 
   modeFreeHowto1: string;
   modeFreeHowto2: string;
@@ -325,6 +328,9 @@ const ZH: Dict = {
   modeGroupMulti: '多人模式',
   agentTalkTo: '對象',
   comingSoon: '尚未開放',
+  modeProfessionLabel: '扮演',
+  modeProfessionPlaceholder: '例如：醫生、律師、心理師、品酒師...',
+  modeProfessionRequired: '請輸入要扮演的職業',
 
   modeFreeHowto1: '一個問題，4 家 AI 同時回答，並排比對。',
   modeFreeHowto2: '適合快速比較不同模型對同一問題的角度與口吻。',
@@ -540,6 +546,9 @@ const EN: Dict = {
   modeGroupMulti: 'Multi Mode',
   agentTalkTo: 'Talk to',
   comingSoon: 'Coming soon',
+  modeProfessionLabel: 'Role',
+  modeProfessionPlaceholder: 'e.g. Doctor, Lawyer, Therapist, Sommelier...',
+  modeProfessionRequired: 'Enter the profession to play',
 
   modeFreeHowto1: 'One question, 4 AIs answer side by side.',
   modeFreeHowto2: 'Best for quickly comparing how different models frame an answer.',

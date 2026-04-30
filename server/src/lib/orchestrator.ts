@@ -98,6 +98,9 @@ export interface OrchestratorParams {
   // a roles record. Required for personal / profession / reasoning;
   // ignored for the multi-AI modes.
   singleProvider?: AIProvider;
+  // Profession persona for the `profession` mode (e.g. "醫生").
+  // Prepended as a role-play instruction on every turn's prompt.
+  profession?: string;
   tier: Tier;
   lang: Lang;
   userId: number;
@@ -822,7 +825,11 @@ export async function runMode(p: OrchestratorParams): Promise<void> {
     await runPersonal(p);
     return;
   }
-  if (p.mode === 'profession' || p.mode === 'reasoning' || p.mode === 'image') {
+  if (p.mode === 'profession') {
+    await runProfession(p);
+    return;
+  }
+  if (p.mode === 'reasoning' || p.mode === 'image') {
     throw new Error(`mode '${p.mode}' is not yet implemented`);
   }
   const roles = p.roles ?? defaultRolesFor(p.mode);
@@ -845,6 +852,26 @@ async function runPersonal(p: OrchestratorParams): Promise<void> {
     // runOne already emits a soft-failure 'done' on the user side and
     // re-throws for upstream awareness. Nothing else to do here.
   });
+}
+
+// Single-AI with a profession persona prepended. Same fan-out as
+// runPersonal but the prompt the model sees is "Play a {profession}
+// and answer:\n\n{user text}". User's chat_messages row keeps the
+// raw text — the prefix is only injected for the AI call.
+async function runProfession(p: OrchestratorParams): Promise<void> {
+  const provider = p.singleProvider;
+  if (!provider) {
+    throw new Error('profession mode requires a singleProvider');
+  }
+  const role = (p.profession ?? '').trim();
+  if (!role) {
+    throw new Error('profession mode requires a non-empty profession');
+  }
+  const prefix =
+    p.lang === 'zh-TW'
+      ? `請以一位資深「${role}」的身份和語氣回答以下問題，必要時主動補充該領域的常識、專業術語、或實務經驗：\n\n`
+      : `Answer the following from the perspective of a seasoned ${role}, drawing on the field's common knowledge, terminology, and practical experience as relevant:\n\n`;
+  await runOne(p, provider, prefix + p.text).catch(() => {});
 }
 
 async function runFree(p: OrchestratorParams): Promise<void> {

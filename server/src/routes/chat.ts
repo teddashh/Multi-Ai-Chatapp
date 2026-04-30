@@ -97,6 +97,8 @@ chatRoute.post('/send', requireAuth, async (c) => {
         // Single-AI modes (personal / profession / reasoning) carry one
         // provider instead of a roles record.
         singleProvider?: AIProvider;
+        // Profession persona for `profession` mode.
+        profession?: string;
         modelOverrides?: Partial<Record<AIProvider, string>>;
         sessionId?: string;
         attachmentIds?: string[];
@@ -111,6 +113,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
   const mode = body.mode;
   const roles = body.roles;
   const singleProvider = body.singleProvider;
+  const profession = body.profession;
   const modelOverrides = body.modelOverrides;
   const attachmentIds = (body.attachmentIds || []).slice(0, MAX_FILES_PER_MESSAGE);
   const attachments = loadAttachments(attachmentIds, user.id);
@@ -338,6 +341,7 @@ chatRoute.post('/send', requireAuth, async (c) => {
         mode,
         roles,
         singleProvider,
+        profession,
         modelOverrides,
         attachments: reloadedAttachments,
         tier: user.tier,
