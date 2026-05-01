@@ -955,31 +955,11 @@ function ForumPostView({
         </div>
       </div>
 
-      {/* Comments */}
-      <div className="space-y-2">
-        {comments.map((c) => (
-          <CommentRow
-            key={c.id}
-            comment={c}
-            aiPersona={post.aiPersona}
-            aiStats={data.aiStats}
-            userStats={data.userStats}
-            onToggleLike={() => toggleCommentLike(c.id)}
-            onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
-            canLike={!!user}
-            canReply={!!user}
-            onReplyChange={reload}
-            navigate={navigate}
-          />
-        ))}
-      </div>
-
-      {/* Media library — images attached to this post. The thumbnail
+      {/* Media library — images attached to this post. Sits above the
+          comments so authors / admins can find the uploader without
+          scrolling past a long comment thread. The thumbnail
           (is_thumbnail=1) doubles as the og:image for share previews,
-          so the gallery is the social-card source of truth. Post
-          author + admin see an upload form and per-tile delete; other
-          viewers see read-only. Empty + non-uploadable hides the
-          section entirely. */}
+          so the gallery is the social-card source of truth. */}
       {(data.media.length > 0 || canUploadMedia) && (
         <MediaGallery
           media={data.media}
@@ -1008,6 +988,25 @@ function ForumPostView({
           }
         />
       )}
+
+      {/* Comments */}
+      <div className="space-y-2">
+        {comments.map((c) => (
+          <CommentRow
+            key={c.id}
+            comment={c}
+            aiPersona={post.aiPersona}
+            aiStats={data.aiStats}
+            userStats={data.userStats}
+            onToggleLike={() => toggleCommentLike(c.id)}
+            onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
+            canLike={!!user}
+            canReply={!!user}
+            onReplyChange={reload}
+            navigate={navigate}
+          />
+        ))}
+      </div>
 
       {/* Composer — composerRef anchors the 回復 jump button at the
           top of the page so readers can scroll straight here. */}
