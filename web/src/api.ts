@@ -13,8 +13,10 @@ export interface ModelChoices {
 }
 
 export type ThemeId =
-  | 'winter'
+  | 'spring'
   | 'summer'
+  | 'fall'
+  | 'winter'
   | 'claude'
   | 'gemini'
   | 'grok'

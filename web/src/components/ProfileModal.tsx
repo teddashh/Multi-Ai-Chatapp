@@ -303,8 +303,11 @@ function ToggleRow({
 }
 
 const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
-  { id: 'winter', swatch: '#1e3a8a', nameKey: 'themeWinter' },
+  // Seasonal first (chronological), then per-AI accents.
+  { id: 'spring', swatch: '#ec4899', nameKey: 'themeSpring' },
   { id: 'summer', swatch: '#fb923c', nameKey: 'themeSummer' },
+  { id: 'fall', swatch: '#ea580c', nameKey: 'themeFall' },
+  { id: 'winter', swatch: '#1e3a8a', nameKey: 'themeWinter' },
   { id: 'claude', swatch: '#d97706', nameKey: 'themeClaude' },
   { id: 'gemini', swatch: '#4285f4', nameKey: 'themeGemini' },
   { id: 'grok', swatch: '#e11d48', nameKey: 'themeGrok' },

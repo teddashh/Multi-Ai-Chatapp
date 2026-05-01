@@ -47,8 +47,10 @@ const RESEND_RATE_LIMITS = [
 ];
 
 const VALID_THEMES = new Set([
-  'winter',
+  'spring',
   'summer',
+  'fall',
+  'winter',
   'claude',
   'gemini',
   'grok',

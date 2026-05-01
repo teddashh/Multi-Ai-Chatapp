@@ -148,7 +148,7 @@ addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'lang', "TEXT NOT NULL DEFAULT 'zh-TW'");
 addColumnIfMissing('users', 'avatar_path', 'TEXT');
-addColumnIfMissing('users', 'theme', "TEXT NOT NULL DEFAULT 'winter'");
+addColumnIfMissing('users', 'theme', "TEXT NOT NULL DEFAULT 'spring'");
 addColumnIfMissing('users', 'real_name', 'TEXT');
 // Self-edited public bio shown on the user's forum profile page. Plain
 // text, capped server-side. Empty by default.
@@ -496,7 +496,10 @@ export interface PasswordResetRow {
 
 export const userStmts = {
   insert: db.prepare<[string, string, Tier]>(
-    'INSERT INTO users (username, password_hash, tier) VALUES (?, ?, ?)',
+    // Explicitly set theme to 'spring' (warmer/lighter default) so new
+    // signups don't inherit the legacy 'winter' default baked into the
+    // already-deployed schema.
+    "INSERT INTO users (username, password_hash, tier, theme) VALUES (?, ?, ?, 'spring')",
   ),
   findByUsername: db.prepare<[string]>(
     'SELECT * FROM users WHERE username = ?',

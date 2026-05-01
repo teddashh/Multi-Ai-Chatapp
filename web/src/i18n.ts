@@ -211,8 +211,10 @@ export interface Dict {
   profileAvatarTooLarge: (mb: number) => string;
   profileAvatarUnsupported: string;
   profileTheme: string;
-  themeWinter: string;
+  themeSpring: string;
   themeSummer: string;
+  themeFall: string;
+  themeWinter: string;
   themeClaude: string;
   themeGemini: string;
   themeGrok: string;
@@ -429,8 +431,10 @@ const ZH: Dict = {
   profileAvatarTooLarge: (mb) => `頭像太大（最大 ${mb}MB）`,
   profileAvatarUnsupported: '不支援的圖片格式',
   profileTheme: '配色主題',
-  themeWinter: '冬季（預設）',
+  themeSpring: '春季（預設）',
   themeSummer: '夏季',
+  themeFall: '秋季',
+  themeWinter: '冬季',
   themeClaude: 'Claude 小隊',
   themeGemini: 'Gemini 小隊',
   themeGrok: 'Grok 小隊',
@@ -654,8 +658,10 @@ const EN: Dict = {
   profileAvatarTooLarge: (mb) => `Avatar too large (max ${mb}MB)`,
   profileAvatarUnsupported: 'Unsupported image format',
   profileTheme: 'Color theme',
-  themeWinter: 'Winter (default)',
+  themeSpring: 'Spring (default)',
   themeSummer: 'Summer',
+  themeFall: 'Fall',
+  themeWinter: 'Winter',
   themeClaude: 'Team Claude',
   themeGemini: 'Team Gemini',
   themeGrok: 'Team Grok',

@@ -65,8 +65,10 @@ function loadInitialLang(): Lang {
 }
 
 const VALID_THEMES: ThemeId[] = [
-  'winter',
+  'spring',
   'summer',
+  'fall',
+  'winter',
   'claude',
   'gemini',
   'grok',
@@ -80,7 +82,10 @@ function loadInitialTheme(): ThemeId {
   } catch {
     // ignore
   }
-  return 'winter';
+  // Default to 'spring' for fresh visitors — warmer, lighter palette
+  // reads less generic-AI than the all-black look that competitors
+  // default to. Logged-in users keep their saved preference.
+  return 'spring';
 }
 
 export default function App() {

@@ -18,15 +18,32 @@ body,
 
    Two visual families:
      Dark themes (semi-transparent dark surfaces):  winter, grok, gemini
-     Light themes (light pastel surfaces):          summer, claude, chatgpt
+     Light themes (light pastel surfaces):          spring, summer, fall, claude, chatgpt
    ================================================================ */
 
+/* Default (also explicit data-theme='spring') — warmer pink/sakura
+   palette. Lighter than winter; the four-AI character art reads as the
+   warm anti-AI-black brand identity for fresh visitors. */
 :root,
+[data-theme='spring'] {
+  --bg-image: url('/themes/spring.png');
+  --bg-image-op: 0.24;
+  --accent: #ec4899;
+  --accent-hover: #db2777;
+}
+
 [data-theme='winter'] {
   --bg-image: url('/themes/winter.png');
   --bg-image-op: 0.18;
   --accent: #2563eb;
   --accent-hover: #1d4ed8;
+}
+
+[data-theme='fall'] {
+  --bg-image: url('/themes/fall.png');
+  --bg-image-op: 0.22;
+  --accent: #ea580c;
+  --accent-hover: #c2410c;
 }
 
 [data-theme='grok'] {
@@ -106,42 +123,54 @@ body::before {
 /* Accent overrides — non-default themes swap blue-600 for their own accent. */
 [data-theme='grok'] .bg-blue-600,
 [data-theme='gemini'] .bg-blue-600,
+[data-theme='spring'] .bg-blue-600,
 [data-theme='summer'] .bg-blue-600,
+[data-theme='fall'] .bg-blue-600,
 [data-theme='claude'] .bg-blue-600,
 [data-theme='chatgpt'] .bg-blue-600 {
   background-color: var(--accent);
 }
 [data-theme='grok'] .hover\:bg-blue-700:hover,
 [data-theme='gemini'] .hover\:bg-blue-700:hover,
+[data-theme='spring'] .hover\:bg-blue-700:hover,
 [data-theme='summer'] .hover\:bg-blue-700:hover,
+[data-theme='fall'] .hover\:bg-blue-700:hover,
 [data-theme='claude'] .hover\:bg-blue-700:hover,
 [data-theme='chatgpt'] .hover\:bg-blue-700:hover {
   background-color: var(--accent-hover);
 }
 [data-theme='grok'] .text-blue-300,
 [data-theme='gemini'] .text-blue-300,
+[data-theme='spring'] .text-blue-300,
 [data-theme='summer'] .text-blue-300,
+[data-theme='fall'] .text-blue-300,
 [data-theme='claude'] .text-blue-300,
 [data-theme='chatgpt'] .text-blue-300 {
   color: var(--accent);
 }
 [data-theme='grok'] .focus\:border-blue-500:focus,
 [data-theme='gemini'] .focus\:border-blue-500:focus,
+[data-theme='spring'] .focus\:border-blue-500:focus,
 [data-theme='summer'] .focus\:border-blue-500:focus,
+[data-theme='fall'] .focus\:border-blue-500:focus,
 [data-theme='claude'] .focus\:border-blue-500:focus,
 [data-theme='chatgpt'] .focus\:border-blue-500:focus {
   border-color: var(--accent);
 }
 [data-theme='grok'] .bg-blue-600\/20,
 [data-theme='gemini'] .bg-blue-600\/20,
+[data-theme='spring'] .bg-blue-600\/20,
 [data-theme='summer'] .bg-blue-600\/20,
+[data-theme='fall'] .bg-blue-600\/20,
 [data-theme='claude'] .bg-blue-600\/20,
 [data-theme='chatgpt'] .bg-blue-600\/20 {
   background-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 [data-theme='grok'] .border-blue-700\/40,
 [data-theme='gemini'] .border-blue-700\/40,
+[data-theme='spring'] .border-blue-700\/40,
 [data-theme='summer'] .border-blue-700\/40,
+[data-theme='fall'] .border-blue-700\/40,
 [data-theme='claude'] .border-blue-700\/40,
 [data-theme='chatgpt'] .border-blue-700\/40 {
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
@@ -151,39 +180,57 @@ body::before {
    Light themes — flip dark surfaces to pastels, dark text
    ================================================================
    Per-theme tints layered on top of the shared palette below. */
+[data-theme='spring'],
 [data-theme='summer'],
+[data-theme='fall'],
 [data-theme='claude'],
 [data-theme='chatgpt'] {
   color-scheme: light;
 }
+[data-theme='spring'] body,
 [data-theme='summer'] body,
+[data-theme='fall'] body,
 [data-theme='claude'] body,
 [data-theme='chatgpt'] body {
   color: #0f172a;
 }
+[data-theme='spring'] .bg-gray-900,
 [data-theme='summer'] .bg-gray-900,
+[data-theme='fall'] .bg-gray-900,
 [data-theme='claude'] .bg-gray-900,
 [data-theme='chatgpt'] .bg-gray-900,
+[data-theme='spring'] .bg-gray-800,
 [data-theme='summer'] .bg-gray-800,
+[data-theme='fall'] .bg-gray-800,
 [data-theme='claude'] .bg-gray-800,
 [data-theme='chatgpt'] .bg-gray-800 {
   background-color: rgba(255, 255, 255, 0.92);
 }
+[data-theme='spring'] .bg-gray-700,
 [data-theme='summer'] .bg-gray-700,
+[data-theme='fall'] .bg-gray-700,
 [data-theme='claude'] .bg-gray-700,
 [data-theme='chatgpt'] .bg-gray-700 {
   background-color: rgba(229, 231, 235, 0.9);
 }
+[data-theme='spring'] .text-white,
 [data-theme='summer'] .text-white,
+[data-theme='fall'] .text-white,
 [data-theme='claude'] .text-white,
 [data-theme='chatgpt'] .text-white {
   color: #0f172a;
 }
 /* text-gray-100 was missing from this list — forum post titles use it
    and were rendering near-white on the light pastel backgrounds. */
+[data-theme='spring'] .text-gray-100,
 [data-theme='summer'] .text-gray-100,
+[data-theme='fall'] .text-gray-100,
+[data-theme='spring'] .text-gray-200,
 [data-theme='summer'] .text-gray-200,
+[data-theme='fall'] .text-gray-200,
+[data-theme='spring'] .text-gray-300,
 [data-theme='summer'] .text-gray-300,
+[data-theme='fall'] .text-gray-300,
 [data-theme='claude'] .text-gray-100,
 [data-theme='claude'] .text-gray-200,
 [data-theme='claude'] .text-gray-300,
@@ -192,24 +239,36 @@ body::before {
 [data-theme='chatgpt'] .text-gray-300 {
   color: #1e293b;
 }
+[data-theme='spring'] .text-gray-400,
 [data-theme='summer'] .text-gray-400,
+[data-theme='fall'] .text-gray-400,
 [data-theme='claude'] .text-gray-400,
 [data-theme='chatgpt'] .text-gray-400 {
   color: #475569;
 }
+[data-theme='spring'] .text-gray-500,
 [data-theme='summer'] .text-gray-500,
+[data-theme='fall'] .text-gray-500,
 [data-theme='claude'] .text-gray-500,
 [data-theme='chatgpt'] .text-gray-500 {
   color: #64748b;
 }
+[data-theme='spring'] .text-gray-600,
 [data-theme='summer'] .text-gray-600,
+[data-theme='fall'] .text-gray-600,
 [data-theme='claude'] .text-gray-600,
 [data-theme='chatgpt'] .text-gray-600 {
   color: #94a3b8;
 }
+[data-theme='spring'] input,
 [data-theme='summer'] input,
+[data-theme='fall'] input,
+[data-theme='spring'] textarea,
 [data-theme='summer'] textarea,
+[data-theme='fall'] textarea,
+[data-theme='spring'] select,
 [data-theme='summer'] select,
+[data-theme='fall'] select,
 [data-theme='claude'] input,
 [data-theme='claude'] textarea,
 [data-theme='claude'] select,
@@ -218,33 +277,47 @@ body::before {
 [data-theme='chatgpt'] select {
   color: #0f172a;
 }
+[data-theme='spring'] input::placeholder,
 [data-theme='summer'] input::placeholder,
+[data-theme='fall'] input::placeholder,
+[data-theme='spring'] textarea::placeholder,
 [data-theme='summer'] textarea::placeholder,
+[data-theme='fall'] textarea::placeholder,
 [data-theme='claude'] input::placeholder,
 [data-theme='claude'] textarea::placeholder,
 [data-theme='chatgpt'] input::placeholder,
 [data-theme='chatgpt'] textarea::placeholder {
   color: #94a3b8;
 }
+[data-theme='spring'] .hover\:bg-gray-700:hover,
 [data-theme='summer'] .hover\:bg-gray-700:hover,
+[data-theme='fall'] .hover\:bg-gray-700:hover,
+[data-theme='spring'] .hover\:bg-gray-800:hover,
 [data-theme='summer'] .hover\:bg-gray-800:hover,
+[data-theme='fall'] .hover\:bg-gray-800:hover,
 [data-theme='claude'] .hover\:bg-gray-700:hover,
 [data-theme='claude'] .hover\:bg-gray-800:hover,
 [data-theme='chatgpt'] .hover\:bg-gray-700:hover,
 [data-theme='chatgpt'] .hover\:bg-gray-800:hover {
   background-color: rgba(229, 231, 235, 0.9);
 }
+[data-theme='spring'] .hover\:text-white:hover,
 [data-theme='summer'] .hover\:text-white:hover,
+[data-theme='fall'] .hover\:text-white:hover,
 [data-theme='claude'] .hover\:text-white:hover,
 [data-theme='chatgpt'] .hover\:text-white:hover {
   color: #0f172a;
 }
+[data-theme='spring'] .text-yellow-300,
 [data-theme='summer'] .text-yellow-300,
+[data-theme='fall'] .text-yellow-300,
 [data-theme='claude'] .text-yellow-300,
 [data-theme='chatgpt'] .text-yellow-300 {
   color: var(--accent);
 }
+[data-theme='spring'] .bg-red-600,
 [data-theme='summer'] .bg-red-600,
+[data-theme='fall'] .bg-red-600,
 [data-theme='claude'] .bg-red-600,
 [data-theme='chatgpt'] .bg-red-600 {
   background-color: #ef4444;
@@ -252,8 +325,14 @@ body::before {
 
 /* Per-theme background tints for the sidebar / "deep" surface (gray-950).
    Picks a hue tied to the theme's brand color. */
+[data-theme='spring'] .bg-gray-950 {
+  background-color: rgba(253, 242, 248, 0.92); /* sakura pink */
+}
 [data-theme='summer'] .bg-gray-950 {
   background-color: rgba(236, 254, 255, 0.92); /* cyan tint */
+}
+[data-theme='fall'] .bg-gray-950 {
+  background-color: rgba(255, 247, 237, 0.92); /* warm orange */
 }
 [data-theme='claude'] .bg-gray-950 {
   background-color: rgba(255, 247, 237, 0.92); /* warm peach */
@@ -277,7 +356,9 @@ body::before {
 [data-theme='gemini'] .bg-surface-overlay {
   background-color: #0b1220;
 }
+[data-theme='spring'] .bg-surface-overlay,
 [data-theme='summer'] .bg-surface-overlay,
+[data-theme='fall'] .bg-surface-overlay,
 [data-theme='claude'] .bg-surface-overlay,
 [data-theme='chatgpt'] .bg-surface-overlay {
   background-color: #ffffff;
@@ -289,22 +370,30 @@ body::before {
    ================================================================ */
 /* Border colours: light themes need lighter borders or the dark grey
    leaks through and reads as harsh outlines on white surfaces. */
+[data-theme='spring'] .border-gray-700,
 [data-theme='summer'] .border-gray-700,
+[data-theme='fall'] .border-gray-700,
 [data-theme='claude'] .border-gray-700,
 [data-theme='chatgpt'] .border-gray-700,
+[data-theme='spring'] .border-gray-800,
 [data-theme='summer'] .border-gray-800,
+[data-theme='fall'] .border-gray-800,
 [data-theme='claude'] .border-gray-800,
 [data-theme='chatgpt'] .border-gray-800 {
   border-color: rgba(15, 23, 42, 0.12);
 }
 
 /* Liked button: pink-700/40 + pink-200 needs more contrast on light. */
+[data-theme='spring'] .bg-pink-700\/40,
 [data-theme='summer'] .bg-pink-700\/40,
+[data-theme='fall'] .bg-pink-700\/40,
 [data-theme='claude'] .bg-pink-700\/40,
 [data-theme='chatgpt'] .bg-pink-700\/40 {
   background-color: rgba(190, 24, 93, 0.18);
 }
+[data-theme='spring'] .text-pink-200,
 [data-theme='summer'] .text-pink-200,
+[data-theme='fall'] .text-pink-200,
 [data-theme='claude'] .text-pink-200,
 [data-theme='chatgpt'] .text-pink-200 {
   color: #9d174d;
@@ -312,12 +401,16 @@ body::before {
 
 /* Amber-tinted persona pill border: mute on light themes so the
    warm card border doesn't fight the page tint. */
+[data-theme='spring'] .border-amber-700\/40,
 [data-theme='summer'] .border-amber-700\/40,
+[data-theme='fall'] .border-amber-700\/40,
 [data-theme='claude'] .border-amber-700\/40,
 [data-theme='chatgpt'] .border-amber-700\/40 {
   border-color: rgba(180, 83, 9, 0.25);
 }
+[data-theme='spring'] .text-amber-200,
 [data-theme='summer'] .text-amber-200,
+[data-theme='fall'] .text-amber-200,
 [data-theme='claude'] .text-amber-200,
 [data-theme='chatgpt'] .text-amber-200 {
   color: #b45309;
@@ -326,7 +419,9 @@ body::before {
 /* Mini avatar badge under AI comments: text-gray-500 on light themes
    already maps to #64748b, but the leading-none spacing made it look
    thin. Bump to medium weight so it reads at small size. */
+[data-theme='spring'] .text-\[9px\],
 [data-theme='summer'] .text-\[9px\],
+[data-theme='fall'] .text-\[9px\],
 [data-theme='claude'] .text-\[9px\],
 [data-theme='chatgpt'] .text-\[9px\] {
   font-weight: 500;
