@@ -23,11 +23,15 @@ body,
 
 /* Default (also explicit data-theme='spring') — warmer pink/sakura
    palette. Lighter than winter; the four-AI character art reads as the
-   warm anti-AI-black brand identity for fresh visitors. */
+   warm anti-AI-black brand identity for fresh visitors. The seasonal
+   themes (spring/fall) get an extra blur so the detailed character art
+   reads as ambient brand colour instead of competing with foreground
+   text. */
 :root,
 [data-theme='spring'] {
   --bg-image: url('/themes/spring.png');
-  --bg-image-op: 0.4;
+  --bg-image-op: 0.32;
+  --bg-image-blur: 6px;
   --accent: #ec4899;
   --accent-hover: #db2777;
 }
@@ -41,7 +45,8 @@ body,
 
 [data-theme='fall'] {
   --bg-image: url('/themes/fall.png');
-  --bg-image-op: 0.4;
+  --bg-image-op: 0.32;
+  --bg-image-blur: 6px;
   --accent: #ea580c;
   --accent-hover: #c2410c;
 }
@@ -92,6 +97,10 @@ body::before {
   background-position: var(--bg-image-pos, center 15%);
   background-repeat: no-repeat;
   opacity: var(--bg-image-op, 0);
+  filter: blur(var(--bg-image-blur, 0));
+  /* When blurred, the image edges feather to transparent — scale up
+     slightly so the blur halo doesn't show the page edges. */
+  transform: scale(1.05);
   pointer-events: none;
   z-index: 0;
 }
