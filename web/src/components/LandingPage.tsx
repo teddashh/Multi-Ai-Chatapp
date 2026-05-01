@@ -10,7 +10,11 @@ import React, { useEffect, useState } from 'react';
 import { AI_BIOS, AI_PROVIDERS } from '../shared/constants';
 import type { AIProvider } from '../shared/types';
 import type { Lang } from '../i18n';
-import { listForumPosts, type ForumPostSummary } from '../api';
+import {
+  listForumPosts,
+  type ForumPostSummary,
+  type User,
+} from '../api';
 import LangToggle from './LangToggle';
 import ProviderAvatar from './ProviderAvatar';
 
@@ -18,10 +22,15 @@ interface Props {
   navigate: (path: string) => void;
   lang: Lang;
   onLangChange: (l: Lang) => void;
+  // Logged-in user (if any). When set, the top nav swaps the
+  // login / signup CTAs for a "聊天室" pill that drops the user back
+  // into the product.
+  user: User | null;
 }
 
 interface LandingDict {
   navForum: string;
+  navChat: string;
   navLogin: string;
   navSignup: string;
   heroTitle: string;
@@ -60,6 +69,7 @@ interface LandingDict {
 const DICT: Record<Lang, LandingDict> = {
   'zh-TW': {
     navForum: '討論區',
+    navChat: '聊天室',
     navLogin: '登入',
     navSignup: '免費註冊',
     heroTitle: 'AI 姐妹',
@@ -101,6 +111,7 @@ const DICT: Record<Lang, LandingDict> = {
   },
   en: {
     navForum: 'Forum',
+    navChat: 'Chat',
     navLogin: 'Log in',
     navSignup: 'Sign up free',
     heroTitle: 'AI Sister',
@@ -138,7 +149,7 @@ const DICT: Record<Lang, LandingDict> = {
   },
 };
 
-export default function LandingPage({ navigate, lang, onLangChange }: Props) {
+export default function LandingPage({ navigate, lang, onLangChange, user }: Props) {
   const t = DICT[lang];
   const goChat = () => navigate('/chat');
   const goForum = () => navigate('/forum');
@@ -181,18 +192,29 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
               {t.navForum}
             </button>
             <LangToggle lang={lang} onChange={onLangChange} />
-            <button
-              onClick={goChat}
-              className="px-2 md:px-3 py-1.5 rounded text-gray-300 hover:bg-gray-800 hover:text-white"
-            >
-              {t.navLogin}
-            </button>
-            <button
-              onClick={goChat}
-              className="px-3 md:px-4 py-1.5 rounded-full bg-pink-500 hover:bg-pink-400 text-white font-medium"
-            >
-              {t.navSignup}
-            </button>
+            {user ? (
+              <button
+                onClick={goChat}
+                className="px-3 md:px-4 py-1.5 rounded-full bg-pink-500 hover:bg-pink-400 text-white font-medium"
+              >
+                {t.navChat} →
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={goChat}
+                  className="px-2 md:px-3 py-1.5 rounded text-gray-300 hover:bg-gray-800 hover:text-white"
+                >
+                  {t.navLogin}
+                </button>
+                <button
+                  onClick={goChat}
+                  className="px-3 md:px-4 py-1.5 rounded-full bg-pink-500 hover:bg-pink-400 text-white font-medium"
+                >
+                  {t.navSignup}
+                </button>
+              </>
+            )}
           </nav>
         </div>
       </header>

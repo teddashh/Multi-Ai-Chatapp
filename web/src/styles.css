@@ -367,6 +367,13 @@ body::before {
 [data-theme='chatgpt'] .bg-gray-950\/85 {
   background-color: rgba(255, 255, 255, 0.85);
 }
+[data-theme='spring'] .bg-gray-950\/95,
+[data-theme='summer'] .bg-gray-950\/95,
+[data-theme='fall'] .bg-gray-950\/95,
+[data-theme='claude'] .bg-gray-950\/95,
+[data-theme='chatgpt'] .bg-gray-950\/95 {
+  background-color: rgba(255, 255, 255, 0.92);
+}
 
 /* ================================================================
    Surface overlays — for hover cards, popovers, and other floating

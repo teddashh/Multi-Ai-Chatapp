@@ -754,6 +754,7 @@ export default function App() {
         navigate={navigate}
         lang={lang}
         onLangChange={handleLangToggle}
+        user={user}
       />
     );
   } else if (
