@@ -748,6 +748,10 @@ export default function App() {
             user={user}
             onClose={() => setShowProfile(false)}
             onUpdate={handleProfileUpdate}
+            onViewProfile={() => {
+              setShowProfile(false);
+              navigate(`/forum/user/${user.username}`);
+            }}
           />
         )}
       </div>
@@ -912,6 +916,10 @@ export default function App() {
             user={user}
             onClose={() => setShowProfile(false)}
             onUpdate={handleProfileUpdate}
+            onViewProfile={() => {
+              setShowProfile(false);
+              navigate(`/forum/user/${user.username}`);
+            }}
           />
 
           <ShareToForumModal

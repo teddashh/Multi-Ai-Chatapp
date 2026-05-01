@@ -287,6 +287,17 @@ body::before {
    Light-theme-only tweaks for forum elements that the generic dark
    gray overrides above don't quite cover.
    ================================================================ */
+/* Border colours: light themes need lighter borders or the dark grey
+   leaks through and reads as harsh outlines on white surfaces. */
+[data-theme='summer'] .border-gray-700,
+[data-theme='claude'] .border-gray-700,
+[data-theme='chatgpt'] .border-gray-700,
+[data-theme='summer'] .border-gray-800,
+[data-theme='claude'] .border-gray-800,
+[data-theme='chatgpt'] .border-gray-800 {
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
 /* Liked button: pink-700/40 + pink-200 needs more contrast on light. */
 [data-theme='summer'] .bg-pink-700\/40,
 [data-theme='claude'] .bg-pink-700\/40,

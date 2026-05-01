@@ -27,6 +27,10 @@ interface Props {
   user: User;
   onClose: () => void;
   onUpdate: (user: User) => void;
+  // Caller's "go to public profile" handler — typically closes the
+  // modal and navigates to /forum/user/<username>. Optional so the
+  // button silently disappears if the caller didn't wire it up.
+  onViewProfile?: () => void;
 }
 
 // Convert UTC unix seconds + IANA tz → "YYYY-MM-DD" + "HH:mm" in that tz.
@@ -154,7 +158,7 @@ function PersonaDice({
   };
 
   return (
-    <div className="mt-2 p-2 rounded bg-gray-800/50 border border-gray-700">
+    <div className="mt-2 p-2 rounded bg-gray-800 border border-gray-700">
       <div className="flex items-center justify-between gap-2 mb-1">
         <span className="text-xs text-gray-400 font-semibold">
           核心靈魂定位
@@ -249,7 +253,13 @@ const THEMES: Array<{ id: ThemeId; swatch: string; nameKey: keyof Dict }> = [
   { id: 'chatgpt', swatch: '#10a37f', nameKey: 'themeChatGPT' },
 ];
 
-export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props) {
+export default function ProfileModal({
+  isOpen,
+  user,
+  onClose,
+  onUpdate,
+  onViewProfile,
+}: Props) {
   const { t, setLang } = useI18n();
   const [nickname, setNickname] = useState(user.nickname || '');
   const [bio, setBio] = useState(user.bio || '');
@@ -490,6 +500,15 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           </div>
         </div>
 
+        {onViewProfile && (
+          <button
+            onClick={onViewProfile}
+            className="w-full mb-3 px-3 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
+          >
+            查看我的公開檔案 →
+          </button>
+        )}
+
         {/* Username + Tier (both read-only) */}
         <div className="mb-3 space-y-1.5 text-xs">
           <div className="flex items-center gap-2">
@@ -530,13 +549,18 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500 resize-y"
         />
 
-        {/* Birth + astrology + MBTI section. Filled values are saved
-            regardless; the show* toggles below decide whether the
-            public /forum/user/<username> page exposes them. */}
-        <div className="mb-3 p-3 rounded border border-gray-800 bg-gray-900/40 space-y-2">
-          <div className="text-xs text-gray-400 font-semibold mb-1">
-            出生資訊與占星
-          </div>
+        {/* Birth + astrology + MBTI + persona dice. Wrapped in <details>
+            so the section can collapse when the user just wants to
+            edit nickname/bio. Default open so the dice feature stays
+            discoverable. */}
+        <details
+          open
+          className="mb-3 p-3 rounded border border-gray-800 bg-gray-900/40"
+        >
+          <summary className="text-xs text-gray-400 font-semibold cursor-pointer select-none">
+            出生資訊
+          </summary>
+          <div className="mt-2 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-[10px] text-gray-500 mb-0.5">
@@ -644,9 +668,10 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           {/* Persona dice. Rolls the seed that picks a variant per
               matrix cell. Disabled until the user has SAVED a full
               astro+MBTI set (server-side gate matches). Each click
-              charges a synthetic $0.001 LLM-call cost. */}
+              charges a synthetic $0.1 LLM-call cost. */}
           <PersonaDice user={user} onUpdate={onUpdate} />
-        </div>
+          </div>
+        </details>
 
         {/* Password */}
         <label className="block text-xs text-gray-300 mb-1">
@@ -661,62 +686,71 @@ export default function ProfileModal({ isOpen, user, onClose, onUpdate }: Props)
           className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded text-sm mb-3 focus:outline-none focus:border-blue-500"
         />
 
-        {/* Language */}
-        <label className="block text-xs text-gray-300 mb-1">
-          {t.profileLanguage}
-        </label>
-        <div className="flex gap-2 mb-4">
-          <button
-            type="button"
-            onClick={() => setLocalLang('zh-TW')}
-            className={`flex-1 py-2 rounded text-sm flex items-center justify-center gap-2 ${
-              lang === 'zh-TW'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            <span>{t.langZh}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setLocalLang('en')}
-            className={`flex-1 py-2 rounded text-sm flex items-center justify-center gap-2 ${
-              lang === 'en'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
-          >
-            <span>{t.langEn}</span>
-          </button>
-        </div>
-
-        {/* Theme */}
-        <label className="block text-xs text-gray-300 mb-1">
-          {t.profileTheme}
-        </label>
-        <div className="grid grid-cols-2 gap-2 mb-4">
-          {THEMES.map((th) => {
-            const active = th.id === theme;
-            return (
+        {/* Preferences (language + theme) — collapsible. Less commonly
+            edited so default closed to keep the modal compact. */}
+        <details className="mb-4 p-3 rounded border border-gray-800 bg-gray-900/40">
+          <summary className="text-xs text-gray-400 font-semibold cursor-pointer select-none">
+            喜好設定
+          </summary>
+          <div className="mt-3">
+            {/* Language */}
+            <label className="block text-xs text-gray-300 mb-1">
+              {t.profileLanguage}
+            </label>
+            <div className="flex gap-2 mb-3">
               <button
-                key={th.id}
                 type="button"
-                onClick={() => setTheme(th.id)}
-                className={`py-2 px-2 rounded text-xs flex items-center gap-2 transition-colors ${
-                  active
+                onClick={() => setLocalLang('zh-TW')}
+                className={`flex-1 py-2 rounded text-sm flex items-center justify-center gap-2 ${
+                  lang === 'zh-TW'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                 }`}
               >
-                <span
-                  className="w-3 h-3 rounded-full flex-none border border-white/30"
-                  style={{ backgroundColor: th.swatch }}
-                />
-                <span className="truncate">{t[th.nameKey] as string}</span>
+                <span>{t.langZh}</span>
               </button>
-            );
-          })}
-        </div>
+              <button
+                type="button"
+                onClick={() => setLocalLang('en')}
+                className={`flex-1 py-2 rounded text-sm flex items-center justify-center gap-2 ${
+                  lang === 'en'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                }`}
+              >
+                <span>{t.langEn}</span>
+              </button>
+            </div>
+
+            {/* Theme */}
+            <label className="block text-xs text-gray-300 mb-1">
+              {t.profileTheme}
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {THEMES.map((th) => {
+                const active = th.id === theme;
+                return (
+                  <button
+                    key={th.id}
+                    type="button"
+                    onClick={() => setTheme(th.id)}
+                    className={`py-2 px-2 rounded text-xs flex items-center gap-2 transition-colors ${
+                      active
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                    }`}
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full flex-none border border-white/30"
+                      style={{ backgroundColor: th.swatch }}
+                    />
+                    <span className="truncate">{t[th.nameKey] as string}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </details>
 
         {/* Usage (collapsible) */}
         <div className="mb-4 border-t border-gray-800 pt-3">
