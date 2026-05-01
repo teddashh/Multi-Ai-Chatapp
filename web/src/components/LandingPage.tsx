@@ -138,17 +138,15 @@ const DICT: Record<Lang, LandingDict> = {
   },
 };
 
-const FEATURE_ICONS = ['💬', '🔀', '🗣️', '🌐'];
-
 export default function LandingPage({ navigate, lang, onLangChange }: Props) {
   const t = DICT[lang];
   const goChat = () => navigate('/chat');
   const goForum = () => navigate('/forum');
   const features = [
-    { icon: FEATURE_ICONS[0], title: t.feat1Title, desc: t.feat1Desc },
-    { icon: FEATURE_ICONS[1], title: t.feat2Title, desc: t.feat2Desc },
-    { icon: FEATURE_ICONS[2], title: t.feat3Title, desc: t.feat3Desc },
-    { icon: FEATURE_ICONS[3], title: t.feat4Title, desc: t.feat4Desc },
+    { title: t.feat1Title, desc: t.feat1Desc },
+    { title: t.feat2Title, desc: t.feat2Desc },
+    { title: t.feat3Title, desc: t.feat3Desc },
+    { title: t.feat4Title, desc: t.feat4Desc },
   ];
   const providers: AIProvider[] = ['claude', 'gemini', 'grok', 'chatgpt'];
 
@@ -202,7 +200,7 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
       {/* Hero */}
       <section className="px-4 pt-16 pb-12 md:pt-24 md:pb-16">
         <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl md:text-6xl font-bold leading-tight bg-gradient-to-r from-pink-300 via-purple-300 to-blue-300 bg-clip-text text-transparent">
+          <h1 className="text-4xl md:text-6xl font-bold leading-tight bg-gradient-to-r from-pink-500 via-purple-500 to-pink-600 bg-clip-text text-transparent">
             {t.heroTitle}
           </h1>
           <p className="mt-5 text-lg md:text-2xl text-gray-200 font-medium">
@@ -238,28 +236,28 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
         </div>
       </section>
 
-      {/* Features grid */}
-      <section className="px-4 py-12 md:py-16 border-t border-gray-900">
+      {/* Features — kept compact and icon-less. Four short stanzas in a
+          horizontal row read as a punchy summary instead of cluttering
+          the page with placeholder emoji "icons". */}
+      <section className="px-4 py-10 border-t border-gray-200/40">
         <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl md:text-3xl font-bold text-gray-100">
+          <div className="text-center mb-7">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-100">
               {t.featuresHeading}
             </h2>
-            <p className="mt-3 max-w-2xl mx-auto text-sm md:text-base text-gray-400">
+            <p className="mt-2 max-w-2xl mx-auto text-xs md:text-sm text-gray-400">
               {t.featuresSub}
             </p>
           </div>
-          <div className="grid sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-5">
             {features.map((f) => (
-              <div
-                key={f.title}
-                className="rounded-xl border border-gray-800 bg-gray-900/60 p-5 md:p-6 hover:border-gray-700 transition-colors"
-              >
-                <div className="text-2xl mb-2">{f.icon}</div>
-                <h3 className="text-base md:text-lg font-semibold text-gray-100 mb-1">
+              <div key={f.title}>
+                <h3 className="text-sm font-semibold text-gray-100 mb-1">
                   {f.title}
                 </h3>
-                <p className="text-sm text-gray-400 leading-relaxed">{f.desc}</p>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  {f.desc}
+                </p>
               </div>
             ))}
           </div>

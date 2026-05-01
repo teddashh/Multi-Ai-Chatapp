@@ -27,7 +27,7 @@ body,
 :root,
 [data-theme='spring'] {
   --bg-image: url('/themes/spring.png');
-  --bg-image-op: 0.24;
+  --bg-image-op: 0.4;
   --accent: #ec4899;
   --accent-hover: #db2777;
 }
@@ -339,6 +339,33 @@ body::before {
 }
 [data-theme='chatgpt'] .bg-gray-950 {
   background-color: rgba(236, 253, 245, 0.92); /* mint */
+}
+
+/* Tailwind opacity-modifier variants (.bg-gray-900\/60, .bg-gray-950\/85)
+   compile to a different class name than the plain .bg-gray-900 so the
+   overrides above don't catch them. LandingPage / cards rely on these
+   for translucent panels — without these rules they stay dark on light
+   themes and dark text becomes unreadable. */
+[data-theme='spring'] .bg-gray-900\/60,
+[data-theme='summer'] .bg-gray-900\/60,
+[data-theme='fall'] .bg-gray-900\/60,
+[data-theme='claude'] .bg-gray-900\/60,
+[data-theme='chatgpt'] .bg-gray-900\/60 {
+  background-color: rgba(255, 255, 255, 0.7);
+}
+[data-theme='spring'] .hover\:bg-gray-900:hover,
+[data-theme='summer'] .hover\:bg-gray-900:hover,
+[data-theme='fall'] .hover\:bg-gray-900:hover,
+[data-theme='claude'] .hover\:bg-gray-900:hover,
+[data-theme='chatgpt'] .hover\:bg-gray-900:hover {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+[data-theme='spring'] .bg-gray-950\/85,
+[data-theme='summer'] .bg-gray-950\/85,
+[data-theme='fall'] .bg-gray-950\/85,
+[data-theme='claude'] .bg-gray-950\/85,
+[data-theme='chatgpt'] .bg-gray-950\/85 {
+  background-color: rgba(255, 255, 255, 0.85);
 }
 
 /* ================================================================
