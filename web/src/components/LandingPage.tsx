@@ -173,7 +173,7 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
             onClick={() => navigate('/')}
             className="text-base md:text-lg font-bold text-white hover:text-pink-300 transition-colors"
           >
-            AI Sister · 姐妹
+            AI Sister / AI 姐妹
           </button>
           <nav className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
             <button
