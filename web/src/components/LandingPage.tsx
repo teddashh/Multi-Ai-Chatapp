@@ -172,7 +172,7 @@ export default function LandingPage({ navigate, lang, onLangChange, user }: Prop
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="min-h-screen text-gray-100">
       {/* Top nav — minimal, doesn't reuse the in-app TopNav because that
           one is dense with login/profile/admin controls that don't belong
           on a marketing page. */}

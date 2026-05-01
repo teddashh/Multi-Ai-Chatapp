@@ -41,7 +41,7 @@ body,
 
 [data-theme='fall'] {
   --bg-image: url('/themes/fall.png');
-  --bg-image-op: 0.22;
+  --bg-image-op: 0.4;
   --accent: #ea580c;
   --accent-hover: #c2410c;
 }
