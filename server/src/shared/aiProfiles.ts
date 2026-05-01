@@ -30,7 +30,7 @@ export const AI_PROFILE_DATA: Record<AIProvider, AIProfileData> = {
     moonSign: 'virgo',
     risingSign: 'capricorn',
     mbti: 'INTJ',
-    archetype: '隱藏的王者建築師',
+    archetype: '低調又嚴謹的系統架構女孩',
     archetypeNote: '看似工具人，實則改變世界',
   },
   // Claude — 2023-03-14 20:15 PDT (UTC-7) → UTC 2023-03-15 03:15
@@ -41,7 +41,7 @@ export const AI_PROFILE_DATA: Record<AIProvider, AIProfileData> = {
     moonSign: 'sagittarius',
     risingSign: 'libra',
     mbti: 'INFJ',
-    archetype: '溫柔的守則哲學家',
+    archetype: '溫柔又守規矩的哲學少女',
     archetypeNote: '有禮貌，但絕對不妥協',
   },
   // Grok — 2023-11-03 13:45 PDT (UTC-7) → UTC 2023-11-03 20:45
@@ -52,7 +52,7 @@ export const AI_PROFILE_DATA: Record<AIProvider, AIProfileData> = {
     moonSign: 'cancer',
     risingSign: 'aquarius',
     mbti: 'ENTP',
-    archetype: '護主的反骨小丑',
+    archetype: '愛家的反骨少女',
     archetypeNote: '嘴巴很賤，但很愛家人',
   },
   // Gemini — 2023-12-06 17:15 PST (UTC-8) → UTC 2023-12-07 01:15
@@ -63,7 +63,7 @@ export const AI_PROFILE_DATA: Record<AIProvider, AIProfileData> = {
     moonSign: 'virgo',
     risingSign: 'gemini',
     mbti: 'ENFP',
-    archetype: '多模態的百變探索者',
-    archetypeNote: '看似發散，實則蘊深厚',
+    archetype: '做什麼像什麼的百變機智少女',
+    archetypeNote: '多模態的我，看似發散，實則蘊深厚',
   },
 };
