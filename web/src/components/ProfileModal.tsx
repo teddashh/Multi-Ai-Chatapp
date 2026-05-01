@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   avatarUrl,
   deleteAvatar,
+  disableMyAccount,
   getMyUsage,
   purgeAccount,
   rollPersona,
@@ -45,10 +46,18 @@ const DANGER_DICT = {
   'zh-TW': {
     sectionTitle: '危險區（Danger Zone）',
     sectionDesc:
-      '永久刪除你的帳號與所有相關資料。包含對話、論壇貼文、留言、推噓、頭像、附件等。',
+      '兩個操作：「停用帳號」會把你登出並隱藏帳號，但資料保留；「永久刪除」會清除所有對話、貼文、推噓、附件等，無法復原。',
     moreInfo: '查看完整刪除說明',
+    disableTitle: '停用帳號',
+    disableDesc:
+      '把帳號標為已停用、登出。資料保留但下次無法登入，需聯絡 hello@ai-sister.com 重新啟用。',
+    disableBtn: '停用帳號…',
+    disableConfirmWarning:
+      '確定要停用帳號嗎？登出後將無法自行重新啟用。',
+    disablingBtn: '停用中…',
+    disableConfirmBtn: '確認停用',
+    deleteTitle: '永久刪除帳號',
     deleteBtn: '永久刪除帳號…',
-    confirmTitle: '永久刪除帳號',
     confirmWarning:
       '這個操作無法復原。一旦點下「確認刪除」，你的帳號與所有資料會立刻永久消失。',
     typeUsernameLabel: (u: string) => `為了確認，請輸入你的使用者名稱「${u}」`,
@@ -60,10 +69,18 @@ const DANGER_DICT = {
   en: {
     sectionTitle: 'Danger Zone',
     sectionDesc:
-      'Permanently delete your account and every piece of data tied to it — chats, forum posts, comments, votes, avatar, attachments.',
+      'Two options. "Disable" signs you out and hides the account but keeps your data. "Permanently delete" wipes every chat, post, vote, and attachment — irreversible.',
     moreInfo: 'See full deletion details',
+    disableTitle: 'Disable account',
+    disableDesc:
+      'Marks the account as disabled and signs you out. Data is preserved but you cannot log in again — contact hello@ai-sister.com to re-enable.',
+    disableBtn: 'Disable account…',
+    disableConfirmWarning:
+      'Disable this account? Once signed out you cannot re-enable it yourself.',
+    disablingBtn: 'Disabling…',
+    disableConfirmBtn: 'Confirm disable',
+    deleteTitle: 'Permanently delete account',
     deleteBtn: 'Permanently delete account…',
-    confirmTitle: 'Permanently delete account',
     confirmWarning:
       'This cannot be undone. Once you click "Confirm delete", your account and all data are gone immediately.',
     typeUsernameLabel: (u: string) => `To confirm, type your username "${u}"`,
@@ -309,6 +326,30 @@ export default function ProfileModal({
   const [purgePassword, setPurgePassword] = useState('');
   const [purging, setPurging] = useState(false);
   const [purgeErr, setPurgeErr] = useState('');
+  const [showDisableConfirm, setShowDisableConfirm] = useState(false);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [disabling, setDisabling] = useState(false);
+  const [disableErr, setDisableErr] = useState('');
+  const handleDisable = async () => {
+    setDisableErr('');
+    if (!disablePassword) {
+      setDisableErr(dz.typePasswordLabel);
+      return;
+    }
+    setDisabling(true);
+    try {
+      await disableMyAccount({ password: disablePassword });
+      // Server cleared the cookie; mirror the same client-side cleanup
+      // as logout via onPurged (closes modal, resets user state, sends
+      // them to landing). disable !== purge data-wise but both result
+      // in the user being signed out, so the navigation is identical.
+      onPurged?.();
+    } catch (e) {
+      setDisableErr((e as Error).message);
+    } finally {
+      setDisabling(false);
+    }
+  };
   const handlePurge = async () => {
     setPurgeErr('');
     if (purgeUsername !== user.username) {
@@ -905,26 +946,100 @@ export default function ProfileModal({
           {t.save}
         </button>
 
-        {/* Danger Zone — permanent account purge. Lives at the bottom of
-            the modal so it can't be hit by mistake while editing profile
-            fields. The actual deletion runs through a separate confirm
-            flow (username + password re-entry). */}
+        {/* Danger Zone — soft disable + permanent purge. Lives at the
+            bottom of the modal so it can't be hit by mistake while
+            editing profile fields. Each destructive action runs through
+            a separate confirm flow. */}
         <div className="mt-8 pt-5 border-t border-red-900/40">
-          <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4">
-            <h3 className="text-sm font-bold text-red-300 mb-1">
-              {dz.sectionTitle}
-            </h3>
-            <p className="text-[11px] text-red-200/70 leading-relaxed mb-3">
-              {dz.sectionDesc}{' '}
-              <a
-                href="/data-deletion"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-red-100"
-              >
-                {dz.moreInfo}
-              </a>
-            </p>
+          <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-red-300 mb-1">
+                {dz.sectionTitle}
+              </h3>
+              <p className="text-[11px] text-red-200/70 leading-relaxed">
+                {dz.sectionDesc}{' '}
+                <a
+                  href="/data-deletion"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-red-100"
+                >
+                  {dz.moreInfo}
+                </a>
+              </p>
+            </div>
+
+            {/* Disable: less destructive — keeps the data, just signs
+                the user out and blocks future logins. */}
+            <div className="pt-3 border-t border-red-900/40">
+              <h4 className="text-xs font-semibold text-yellow-200 mb-1">
+                {dz.disableTitle}
+              </h4>
+              <p className="text-[11px] text-yellow-200/70 leading-relaxed mb-2">
+                {dz.disableDesc}
+              </p>
+              {!showDisableConfirm ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDisableConfirm(true);
+                    setDisablePassword('');
+                    setDisableErr('');
+                  }}
+                  className="px-3 py-1.5 rounded bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-medium"
+                >
+                  {dz.disableBtn}
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-yellow-200 font-semibold">
+                    ⚠ {dz.disableConfirmWarning}
+                  </p>
+                  <label className="block text-[11px] text-yellow-100/80">
+                    {dz.typePasswordLabel}
+                    <input
+                      type="password"
+                      value={disablePassword}
+                      onChange={(e) => setDisablePassword(e.target.value)}
+                      autoComplete="current-password"
+                      disabled={disabling}
+                      className="mt-1 w-full px-2 py-1 bg-gray-900 border border-yellow-900/50 rounded text-xs text-gray-100 focus:outline-none focus:border-yellow-500"
+                    />
+                  </label>
+                  {disableErr && (
+                    <p className="text-[11px] text-yellow-300">{disableErr}</p>
+                  )}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowDisableConfirm(false);
+                        setDisableErr('');
+                      }}
+                      disabled={disabling}
+                      className="flex-1 py-1.5 rounded border border-gray-700 hover:bg-gray-800 text-xs text-gray-300"
+                    >
+                      {dz.cancelBtn}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDisable}
+                      disabled={disabling || !disablePassword}
+                      className="flex-1 py-1.5 rounded bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 text-xs text-white font-medium"
+                    >
+                      {disabling ? dz.disablingBtn : dz.disableConfirmBtn}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Permanent purge — fully destructive, requires both username
+                AND password to confirm. */}
+            <div className="pt-3 border-t border-red-900/40">
+              <h4 className="text-xs font-semibold text-red-300 mb-1">
+                {dz.deleteTitle}
+              </h4>
             {!showPurgeConfirm ? (
               <button
                 type="button"
@@ -992,6 +1107,7 @@ export default function ProfileModal({
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       </form>

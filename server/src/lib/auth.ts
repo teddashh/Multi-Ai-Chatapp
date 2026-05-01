@@ -73,6 +73,13 @@ export async function requireAuth(c: AppContext, next: Next): Promise<Response |
     };
     const user = userStmts.findById.get(decoded.sub) as UserRow | undefined;
     if (!user) return c.json({ error: 'unauthorized' }, 401);
+    // Soft-disabled accounts can't act on the API. Cookie is cleared so
+    // the SPA stops sending it; a specific code lets the client show
+    // "your account has been disabled" instead of a generic 401.
+    if (user.disabled_at) {
+      deleteCookie(c, COOKIE_NAME, { path: '/' });
+      return c.json({ error: 'account_disabled' }, 403);
+    }
     c.set('user', {
       id: user.id,
       username: user.username,
@@ -102,7 +109,11 @@ export async function optionalAuth(c: AppContext, next: Next): Promise<Response 
       tier: Tier;
     };
     const user = userStmts.findById.get(decoded.sub) as UserRow | undefined;
-    if (user) {
+    // A disabled user falls through as anonymous instead of being
+    // identified to public endpoints — same effect as if they logged
+    // out. Don't 403 here; that would break public read endpoints for
+    // logged-out callers too.
+    if (user && !user.disabled_at) {
       c.set('user', {
         id: user.id,
         username: user.username,

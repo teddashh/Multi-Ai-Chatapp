@@ -173,6 +173,24 @@ authRoute.post('/login', async (c) => {
       423,
     );
   }
+  // Soft-disabled (停用) accounts can't log in at all — they need to
+  // contact support (or use a future 「重新啟用」 flow) to come back.
+  // Verify password BEFORE returning the disabled error so we don't
+  // leak whether a username exists on a disabled account vs a wrong
+  // password.
+  if (user.disabled_at) {
+    const okIfDisabled = await verifyPassword(body.password, user.password_hash);
+    if (!okIfDisabled) {
+      return c.json({ error: 'invalid credentials' }, 401);
+    }
+    return c.json(
+      {
+        error: 'account_disabled',
+        message: '帳號已停用，如需重新啟用請聯絡 hello@ai-sister.com',
+      },
+      403,
+    );
+  }
 
   const ok = await verifyPassword(body.password, user.password_hash);
   if (!ok) {
@@ -234,6 +252,35 @@ authRoute.post('/logout', (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// POST /api/auth/me/disable — soft-disable (停用) the caller's account.
+// Distinct from the hard purge below: data is preserved, account simply
+// can't be used again until reactivated by support. Requires password to
+// guard against accidental clicks. After success the session cookie is
+// cleared so future requests fail with 403 account_disabled.
+// ---------------------------------------------------------------------------
+authRoute.post('/me/disable', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { password?: string }
+    | null;
+  if (!body?.password) return c.json({ error: 'password required' }, 400);
+  const userRow = userStmts.findById.get(user.id) as UserRow | undefined;
+  if (!userRow) return c.json({ error: 'user not found' }, 404);
+  const ok = await verifyPassword(body.password, userRow.password_hash);
+  if (!ok) return c.json({ error: 'invalid password' }, 401);
+
+  const now = Math.floor(Date.now() / 1000);
+  userStmts.setDisabledById.run(now, user.id);
+  logAudit({
+    actorUserId: user.id,
+    action: 'user_self_disable',
+    metadata: { username: user.username },
+  });
+  clearSession(c);
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
 // DELETE /api/auth/me — hard-purge the caller's account and every row tied
 // to it. Documented to users on /data-deletion. Requires re-typing username
 // and password as a guardrail against accidental clicks.
@@ -276,13 +323,13 @@ authRoute.delete('/me', requireAuth, async (c) => {
     // Override the SET NULL FK on forum_comments so the user's commentary
     // on OTHER people's posts (which would otherwise survive as orphan
     // anonymous rows) gets hard-deleted too.
-    db.prepare('DELETE FROM forum_comments WHERE author_user_id = ?').run(
-      user.id,
-    );
+    userStmts.deleteForumCommentsByAuthor.run(user.id);
     // Everything else (chat_sessions, chat_messages, chat_attachments,
     // forum_posts and their cascaded children, forum_likes,
-    // forum_comment_replies, password_resets, usage_log, AI peer-rating
-    // rows tied to this user) drops via the user FK cascade.
+    // forum_comment_replies, password_resets, usage_log, audit_log entries
+    // referencing this user — admin_user_id and target_user_id both go to
+    // NULL via SET NULL after the v6 migration) drops via the user FK
+    // cascade.
     db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
   purge();

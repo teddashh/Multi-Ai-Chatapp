@@ -172,6 +172,11 @@ addColumnIfMissing('users', 'mbti', 'TEXT');
 // /api/forum/user/:username response.
 addColumnIfMissing('users', 'show_birthday', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_birth_time', 'INTEGER NOT NULL DEFAULT 0');
+// Soft-disable: when set, the user can't sign in or be authenticated by
+// existing sessions, but their data is preserved. Distinct from a hard
+// purge (DELETE /api/auth/me) which removes the row entirely. NULL =
+// active. Set to current epoch when disabled.
+addColumnIfMissing('users', 'disabled_at', 'INTEGER');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Birth year is the most personal field — split off from show_birthday
@@ -234,7 +239,10 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    admin_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    -- Nullable on purpose: audit rows survive admin-account deletion via
+    -- ON DELETE SET NULL; declaring NOT NULL would conflict and throw
+    -- SQLITE_CONSTRAINT_NOTNULL when the cascading SET NULL fires.
+    admin_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     target_session_id TEXT,
     action TEXT NOT NULL,
@@ -416,6 +424,35 @@ if (ver5 < 5) {
   db.exec('PRAGMA user_version = 5');
 }
 
+// v6: audit_log.admin_user_id was declared `NOT NULL ... ON DELETE SET NULL`,
+// which is internally inconsistent — once a user with audit history is
+// deleted, SQLite tries to NULL the FK, hits the NOT NULL constraint, and
+// throws SQLITE_CONSTRAINT_NOTNULL. Surface symptom: clicking "delete user"
+// in the admin panel returns 500. Drop the NOT NULL by recreating the
+// table; SET NULL behaviour is the correct intent (preserve audit trail
+// even when an admin's own account is later removed).
+const ver6 = (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (ver6 < 6) {
+  db.exec(`
+    CREATE TABLE audit_log_new (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      target_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      target_session_id TEXT,
+      action TEXT NOT NULL,
+      metadata TEXT,
+      timestamp INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+    INSERT INTO audit_log_new (id, admin_user_id, target_user_id, target_session_id, action, metadata, timestamp)
+      SELECT id, admin_user_id, target_user_id, target_session_id, action, metadata, timestamp FROM audit_log;
+    DROP TABLE audit_log;
+    ALTER TABLE audit_log_new RENAME TO audit_log;
+    CREATE INDEX IF NOT EXISTS idx_audit_admin ON audit_log(admin_user_id, timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_log(target_user_id, timestamp DESC);
+    PRAGMA user_version = 6;
+  `);
+}
+
 export interface UserRow {
   id: number;
   username: string;
@@ -446,6 +483,7 @@ export interface UserRow {
   show_signs: number;
   show_birth_year: number;
   persona_seed: number | null;
+  disabled_at: number | null;
 }
 
 export interface PasswordResetRow {
@@ -466,11 +504,24 @@ export const userStmts = {
   findById: db.prepare<[number]>('SELECT * FROM users WHERE id = ?'),
   list: db.prepare('SELECT id, username, tier, created_at FROM users ORDER BY id'),
   delete: db.prepare<[string]>('DELETE FROM users WHERE username = ?'),
+  // Override the SET NULL FK on forum_comments so deleting a user also
+  // hard-deletes the comments they wrote on OTHER users' posts. Used by
+  // both admin delete and self-purge paths.
+  deleteForumCommentsByAuthor: db.prepare<[number]>(
+    'DELETE FROM forum_comments WHERE author_user_id = ?',
+  ),
   updatePassword: db.prepare<[string, string]>(
     'UPDATE users SET password_hash = ? WHERE username = ?',
   ),
   updateTier: db.prepare<[Tier, string]>(
     'UPDATE users SET tier = ? WHERE username = ?',
+  ),
+  // Soft disable / re-enable. Sets/clears users.disabled_at; NULL = active.
+  setDisabled: db.prepare<[number | null, string]>(
+    'UPDATE users SET disabled_at = ? WHERE username = ?',
+  ),
+  setDisabledById: db.prepare<[number | null, number]>(
+    'UPDATE users SET disabled_at = ? WHERE id = ?',
   ),
   updateProfile: db.prepare<[string | null, string | null, string]>(
     'UPDATE users SET nickname = ?, email = ? WHERE username = ?',

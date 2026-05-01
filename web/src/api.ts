@@ -171,6 +171,8 @@ export interface AdminUser {
   email: string | null;
   real_name: string | null;
   has_avatar: boolean;
+  // Soft-disabled timestamp (epoch seconds) or null when active.
+  disabled_at: number | null;
   total_calls: number;
   total_tokens_in: number;
   total_tokens_out: number;
@@ -300,6 +302,45 @@ export async function purgeAccount(payload: {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || `Delete failed: ${res.status}`);
   }
+}
+
+// Soft-disable (停用) the caller's account. Less destructive than
+// purgeAccount: data stays, but the account can't sign in until support
+// re-enables it. Cookie is cleared by the server on success.
+export async function disableMyAccount(payload: {
+  password: string;
+}): Promise<void> {
+  const res = await fetch('/api/auth/me/disable', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `Disable failed: ${res.status}`);
+  }
+}
+
+// Admin-side soft disable / re-enable for any user. Requires admin tier.
+export async function adminSetUserDisabled(
+  username: string,
+  disabled: boolean,
+): Promise<{ ok: true; disabledAt: number | null }> {
+  const res = await fetch(
+    `/api/admin/users/${encodeURIComponent(username)}/disabled`,
+    {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ disabled }),
+    },
+  );
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<{ ok: true; disabledAt: number | null }>;
 }
 
 export async function signup(fields: {

@@ -7,6 +7,7 @@ import {
   adminListAudit,
   adminListUserSessions,
   adminRunDigest,
+  adminSetUserDisabled,
   createUser,
   deleteUser,
   inviteUser,
@@ -481,6 +482,18 @@ function UserDetail({
     }
   };
 
+  const isDisabled = !!u.disabled_at;
+  const handleToggleDisabled = async () => {
+    const verb = isDisabled ? '重新啟用' : '停用';
+    if (!confirm(`確定要${verb} '${username}' ?`)) return;
+    try {
+      await adminSetUserDisabled(username, !isDisabled);
+      onUpdated();
+    } catch (err) {
+      onError((err as Error).message);
+    }
+  };
+
   const visibleSessions = showActiveOnly
     ? sessions.filter((s) => s.deleted_at === null)
     : sessions;
@@ -498,16 +511,33 @@ function UserDetail({
         onSubmit={handleSave}
         className="bg-gray-900 border border-gray-700 rounded p-4 space-y-3"
       >
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold">{u.username}</h2>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={u.username === currentUsername}
-            className="text-xs text-red-400 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            刪除帳號
-          </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <h2 className="text-sm font-bold truncate">{u.username}</h2>
+            {isDisabled && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-900/40 text-yellow-200 border border-yellow-700/40">
+                已停用
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-3 flex-none">
+            <button
+              type="button"
+              onClick={handleToggleDisabled}
+              disabled={u.username === currentUsername}
+              className="text-xs text-yellow-300 hover:text-yellow-200 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              {isDisabled ? '重新啟用' : '停用帳號'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={u.username === currentUsername}
+              className="text-xs text-red-400 hover:text-red-300 disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              刪除帳號
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-xs">

@@ -119,6 +119,7 @@ adminRoute.get('/users', (c) => {
       email: full?.email ?? null,
       real_name: full?.real_name ?? null,
       has_avatar: !!full?.avatar_path,
+      disabled_at: full?.disabled_at ?? null,
       total_calls: t?.calls ?? 0,
       total_tokens_in: t?.tokens_in ?? 0,
       total_tokens_out: t?.tokens_out ?? 0,
@@ -313,12 +314,42 @@ adminRoute.delete('/users/:username', (c) => {
   }
   const target = userStmts.findByUsername.get(username) as UserRow | undefined;
   if (!target) return c.json({ error: 'user not found' }, 404);
+  // Override SET NULL on forum_comments to hard-purge the user's
+  // comments on other people's posts (rest cascades via the FK).
+  userStmts.deleteForumCommentsByAuthor.run(target.id);
   userStmts.delete.run(username);
   audit(me.id, 'delete_user', {
     targetUserId: target.id,
     metadata: { username },
   });
   return c.json({ ok: true });
+});
+
+// Admin-side soft disable / re-enable. POST flips the disabled_at flag.
+// `disabled` true → set epoch now; false → clear. Cannot disable yourself
+// (would lock you out of the admin panel).
+adminRoute.post('/users/:username/disabled', async (c) => {
+  const me = c.get('user');
+  const username = c.req.param('username') ?? '';
+  if (!username) return c.json({ error: 'username required' }, 400);
+  if (me.username === username) {
+    return c.json({ error: 'cannot disable yourself' }, 400);
+  }
+  const target = userStmts.findByUsername.get(username) as UserRow | undefined;
+  if (!target) return c.json({ error: 'user not found' }, 404);
+  const body = (await c.req.json().catch(() => null)) as
+    | { disabled?: boolean }
+    | null;
+  if (typeof body?.disabled !== 'boolean') {
+    return c.json({ error: 'disabled boolean required' }, 400);
+  }
+  const next = body.disabled ? Math.floor(Date.now() / 1000) : null;
+  userStmts.setDisabled.run(next, username);
+  audit(me.id, body.disabled ? 'disable_user' : 'enable_user', {
+    targetUserId: target.id,
+    metadata: { username },
+  });
+  return c.json({ ok: true, disabledAt: next });
 });
 
 // === SESSIONS (admin audit view) ===
