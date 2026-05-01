@@ -113,18 +113,19 @@ export default function UserProfile({ username, navigate }: Props) {
         moonSign={data.moonSign}
         risingSign={data.risingSign}
         mbti={data.mbti}
-        // Archetype only renders after the user has rolled the dice
-        // (persona_seed != null). Otherwise the section just shows
-        // birth + signs + MBTI without the yellow headline.
-        {...(data.personaSeed != null
-          ? composePersona({
-              sun: data.sunSign,
-              moon: data.moonSign,
-              rising: data.risingSign,
-              mbti: data.mbti,
-              seed: data.personaSeed,
-            })
-          : { archetype: undefined, archetypeNote: undefined })}
+        // Archetype always renders on the public profile — even users
+        // who haven't rolled the dice (or only filled some fields)
+        // get a sensible fallback so the section never feels empty.
+        // Without seed → composer uses canonical index 0 of every
+        // cell. With partial data → fills the slots it can, drops
+        // the rest. With nothing at all → "未知的神秘人物".
+        {...composePersona({
+          sun: data.sunSign,
+          moon: data.moonSign,
+          rising: data.risingSign,
+          mbti: data.mbti,
+          seed: data.personaSeed,
+        })}
       />
 
       {/* Stats — five metrics matching AIProfile. Posts + comments are
