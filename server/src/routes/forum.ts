@@ -167,6 +167,7 @@ forumRoute.get('/categories', (c) => {
 // ---------------------------------------------------------------------------
 forumRoute.get('/', (c) => {
   const category = c.req.query('category');
+  const sort = c.req.query('sort') === 'trending' ? 'trending' : 'latest';
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10) || 1);
   const offset = (page - 1) * PAGE_SIZE;
 
@@ -174,10 +175,14 @@ forumRoute.get('/', (c) => {
     return c.json({ error: 'invalid category' }, 400);
   }
 
+  // Category filtering always uses the latest-first sort. Trending
+  // applies to the global feed (homepage's 熱門貼文 row).
   const rows = (
     category
       ? forumStmts.listByCategory.all(category, PAGE_SIZE, offset)
-      : forumStmts.listAll.all(PAGE_SIZE, offset)
+      : sort === 'trending'
+        ? forumStmts.listByTrending.all(PAGE_SIZE, offset)
+        : forumStmts.listAll.all(PAGE_SIZE, offset)
   ) as PostListRow[];
 
   return c.json({

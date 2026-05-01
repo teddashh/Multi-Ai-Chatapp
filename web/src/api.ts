@@ -825,10 +825,14 @@ export async function listForumCategories(): Promise<ForumCategoryCount[]> {
 export async function listForumPosts(opts: {
   category?: string;
   page?: number;
+  // 'latest' default — 'trending' is global only (server ignores it
+  // when category is set so the per-看板 list stays chronological).
+  sort?: 'latest' | 'trending';
 }): Promise<{ posts: ForumPostSummary[]; page: number; pageSize: number }> {
   const params = new URLSearchParams();
   if (opts.category) params.set('category', opts.category);
   if (opts.page) params.set('page', String(opts.page));
+  if (opts.sort) params.set('sort', opts.sort);
   const qs = params.toString();
   const res = await fetch(`/api/forum${qs ? '?' + qs : ''}`, {
     credentials: 'include',

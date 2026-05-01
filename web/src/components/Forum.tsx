@@ -115,18 +115,47 @@ function parseForumPath(p: string): ForumRoute {
 // ---------------------------------------------------------------------------
 // Index view — 看板 list (category cards) + recent-posts feed.
 // ---------------------------------------------------------------------------
+// View mode for the forum index — 'tile' is the modern default
+// (cards in a grid), 'list' is the original long-row layout. Persisted
+// to localStorage so the user's pick sticks across sessions.
+type ViewMode = 'tile' | 'list';
+function loadViewMode(): ViewMode {
+  try {
+    const v = localStorage.getItem('forumViewMode');
+    if (v === 'list' || v === 'tile') return v;
+  } catch {
+    // ignore
+  }
+  return 'tile';
+}
+
 function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
   const [categories, setCategories] = useState<ForumCategoryCount[] | null>(null);
-  const [recent, setRecent] = useState<ForumPostSummary[] | null>(null);
+  const [latest, setLatest] = useState<ForumPostSummary[] | null>(null);
+  const [trending, setTrending] = useState<ForumPostSummary[] | null>(null);
   const [err, setErr] = useState<string>('');
+  const [viewMode, setViewModeState] = useState<ViewMode>(loadViewMode);
+  const setViewMode = (m: ViewMode) => {
+    setViewModeState(m);
+    try {
+      localStorage.setItem('forumViewMode', m);
+    } catch {
+      // ignore
+    }
+  };
 
   useEffect(() => {
     let alive = true;
-    Promise.all([listForumCategories(), listForumPosts({})])
-      .then(([cats, posts]) => {
+    Promise.all([
+      listForumCategories(),
+      listForumPosts({ sort: 'latest' }),
+      listForumPosts({ sort: 'trending' }),
+    ])
+      .then(([cats, latestRes, trendingRes]) => {
         if (!alive) return;
         setCategories(cats);
-        setRecent(posts.posts);
+        setLatest(latestRes.posts);
+        setTrending(trendingRes.posts);
       })
       .catch((e: Error) => {
         if (alive) setErr(e.message);
@@ -137,7 +166,7 @@ function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
   }, []);
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-6">
+    <div className="max-w-5xl mx-auto p-4 space-y-6">
       <section>
         <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-3">
           看板
@@ -163,25 +192,89 @@ function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
         )}
       </section>
 
+      {/* Single view-mode toggle drives both the latest + trending
+          rows. localStorage-backed so the user's preference sticks. */}
+      <div className="flex items-center justify-end -mb-3">
+        <div className="flex rounded border border-gray-800 overflow-hidden text-[11px]">
+          <button
+            onClick={() => setViewMode('tile')}
+            className={`px-2 py-1 ${
+              viewMode === 'tile'
+                ? 'bg-gray-700 text-white'
+                : 'bg-gray-900 text-gray-400 hover:text-white'
+            }`}
+            title="塊狀檢視"
+          >
+            ▦ 塊狀
+          </button>
+          <button
+            onClick={() => setViewMode('list')}
+            className={`px-2 py-1 ${
+              viewMode === 'list'
+                ? 'bg-gray-700 text-white'
+                : 'bg-gray-900 text-gray-400 hover:text-white'
+            }`}
+            title="條狀檢視"
+          >
+            ☰ 條狀
+          </button>
+        </div>
+      </div>
+
       <section>
         <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-3">
           最新貼文
         </h2>
         {err && <div className="text-red-400 text-sm mb-2">{err}</div>}
-        {!recent ? (
+        {!latest ? (
           <div className="text-gray-500 text-sm">載入中…</div>
-        ) : recent.length === 0 ? (
+        ) : latest.length === 0 ? (
           <div className="text-gray-500 text-sm">
-            還沒人貼文 — 在主畫面跟 AI 聊一聊，從 chat header 的「分享到論壇」按鈕分享你的對話吧。
+            還沒人貼文 — 在主畫面跟 AI 聊一聊，從左邊 sidebar 對話旁的「分享」按鈕分享你的對話吧。
           </div>
         ) : (
-          <div className="space-y-2">
-            {recent.map((p) => (
-              <PostCard key={p.id} post={p} navigate={navigate} />
-            ))}
-          </div>
+          <PostList posts={latest} viewMode={viewMode} navigate={navigate} />
         )}
       </section>
+
+      {trending && trending.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-3">
+            🔥 熱門貼文
+          </h2>
+          <PostList posts={trending} viewMode={viewMode} navigate={navigate} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+// Renders a list of posts in the requested mode. Tile = responsive
+// grid (2 / 3 / 4 cols depending on width); list = the long-row card
+// layout that was the original index style.
+function PostList({
+  posts,
+  viewMode,
+  navigate,
+}: {
+  posts: ForumPostSummary[];
+  viewMode: ViewMode;
+  navigate: (p: string) => void;
+}) {
+  if (viewMode === 'list') {
+    return (
+      <div className="space-y-2">
+        {posts.map((p) => (
+          <PostCard key={p.id} post={p} navigate={navigate} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      {posts.map((p) => (
+        <PostTile key={p.id} post={p} navigate={navigate} />
+      ))}
     </div>
   );
 }
@@ -486,6 +579,58 @@ function ForumPostView({
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+// Tile variant — vertical card sized for grid layout. Surfaces avatar
+// + author up front so the index reads like a Reddit/Hacker News card
+// row instead of a raw text list.
+function PostTile({
+  post,
+  navigate,
+}: {
+  post: ForumPostSummary;
+  navigate: (p: string) => void;
+}) {
+  return (
+    <button
+      onClick={() => navigate(`/forum/post/${post.id}`)}
+      className="flex flex-col gap-2 bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg p-3 text-left transition-colors h-full"
+    >
+      <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
+        <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+          {post.category}
+        </span>
+        {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
+        <span className="text-gray-500 ml-auto">
+          {relativeTime(post.createdAt)}
+        </span>
+      </div>
+      <div className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
+        {post.title}
+      </div>
+      <div className="text-xs text-gray-400 line-clamp-3 flex-1 leading-relaxed">
+        {post.bodyPreview}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-gray-500 pt-1 border-t border-gray-800">
+        <TileAuthorAvatar post={post} />
+        <span className="truncate flex-1">{post.authorDisplay}</span>
+        <span className="whitespace-nowrap">
+          👍 {post.thumbsCount} · 💬 {post.commentCount}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// Tiny avatar (24px) for the tile footer. Anonymous posts get the
+// silhouette; named users try their uploaded avatar with an initial
+// fallback if the request 404s.
+function TileAuthorAvatar({ post }: { post: ForumPostSummary }) {
+  const SIZE = 24;
+  if (post.isAnonymous || !post.authorUsername) {
+    return <AnonAvatar size={SIZE} />;
+  }
+  return <UserAvatar username={post.authorUsername} size={SIZE} />;
+}
 
 function PostCard({
   post,
