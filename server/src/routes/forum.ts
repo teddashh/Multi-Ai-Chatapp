@@ -469,6 +469,27 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
 
   const mediaRows = forumStmts.listMediaForPost.all(postId) as MediaRow[];
 
+  // PTT-style replies on the OP itself. Same shape as comment replies
+  // so the client can reuse <RepliesBlock> with minimal branching.
+  const postReplyRows = forumStmts.listPostReplies.all(postId) as Array<{
+    id: number;
+    vote: 'up' | 'down' | 'none';
+    body: string;
+    created_at: number;
+    author_username: string;
+    author_nickname: string | null;
+    author_avatar: string | null;
+  }>;
+  const postReplies = postReplyRows.map((r) => ({
+    id: r.id,
+    vote: r.vote,
+    body: r.body,
+    createdAt: r.created_at * 1000,
+    authorUsername: r.author_username,
+    authorDisplay: r.author_nickname || r.author_username,
+    authorAvatarPath: r.author_avatar,
+  }));
+
   return c.json({
     post: formatPostDetail(
       {
@@ -485,6 +506,7 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     aiStats,
     userStats,
     media: mediaRows.map(mediaRowDTO),
+    postReplies,
   });
 });
 
@@ -592,6 +614,104 @@ forumRoute.delete('/comments/:id/replies/:replyId', requireAuth, (c) => {
     forumStmts.deleteReply.run(replyId, user.id);
     if (reply.vote === 'up') forumStmts.decCommentThumbs.run(commentId);
     else if (reply.vote === 'down') forumStmts.incCommentThumbs.run(commentId);
+  })();
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/forum/posts/:id/replies — PTT-style 推/噓/→ on the OP.
+// Same shape as the comment-replies endpoint: 'up'/'down' bumps the
+// post's thumbs_count, 'none' is just an inline reply with no vote.
+// Same one-±-vote-per-user fallback: silently downgrade duplicate
+// votes to 'none' and surface a voteOverridden flag for the client to
+// show a friendly note.
+// ---------------------------------------------------------------------------
+forumRoute.post('/posts/:id/replies', requireAuth, async (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const body = (await c.req.json().catch(() => null)) as
+    | { vote?: string; body?: string }
+    | null;
+  if (!body) return c.json({ error: 'invalid body' }, 400);
+  const vote =
+    body.vote === 'up' || body.vote === 'down' || body.vote === 'none'
+      ? body.vote
+      : null;
+  if (!vote) return c.json({ error: 'invalid vote' }, 400);
+  const text = body.body?.trim() ?? '';
+  if (!text) return c.json({ error: 'body required' }, 400);
+  if (text.length > MAX_REPLY_LEN) {
+    return c.json({ error: 'too long (max 200 chars)' }, 400);
+  }
+
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+
+  let effectiveVote: 'up' | 'down' | 'none' = vote;
+  let voteOverridden: { previousVote: 'up' | 'down' } | null = null;
+  if (vote !== 'none') {
+    const prior = forumStmts.findUserVoteOnPost.get(postId, user.id) as
+      | { id: number; vote: 'up' | 'down' }
+      | undefined;
+    if (prior) {
+      effectiveVote = 'none';
+      voteOverridden = { previousVote: prior.vote };
+    }
+  }
+
+  const insert = db.transaction(() => {
+    const result = forumStmts.insertPostReply.run(
+      postId,
+      user.id,
+      effectiveVote,
+      text,
+    );
+    if (effectiveVote === 'up') forumStmts.incPostThumbs.run(postId);
+    else if (effectiveVote === 'down') forumStmts.decPostThumbs.run(postId);
+    return Number(result.lastInsertRowid);
+  });
+
+  try {
+    const replyId = insert();
+    return c.json({
+      ok: true,
+      replyId,
+      effectiveVote,
+      voteOverridden,
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+forumRoute.delete('/posts/:postId/replies/:replyId', requireAuth, (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('postId') ?? '', 10);
+  const replyId = parseInt(c.req.param('replyId') ?? '', 10);
+  if (
+    !Number.isFinite(postId) ||
+    postId <= 0 ||
+    !Number.isFinite(replyId) ||
+    replyId <= 0
+  ) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const reply = forumStmts.findPostReplyById.get(replyId) as
+    | { id: number; post_id: number; author_user_id: number; vote: 'up' | 'down' | 'none' }
+    | undefined;
+  if (!reply || reply.post_id !== postId) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  if (reply.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  db.transaction(() => {
+    forumStmts.deletePostReply.run(replyId, user.id);
+    if (reply.vote === 'up') forumStmts.decPostThumbs.run(postId);
+    else if (reply.vote === 'down') forumStmts.incPostThumbs.run(postId);
   })();
   return c.json({ ok: true });
 });

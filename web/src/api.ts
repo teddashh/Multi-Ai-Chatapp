@@ -1041,6 +1041,7 @@ export async function getForumPost(
   aiStats: AIStatsMap;
   userStats: Record<string, UserStat>;
   media: MediaItem[];
+  postReplies: ForumCommentReply[];
 }> {
   const res = await fetch(`/api/forum/${postId}`, {
     credentials: 'include',
@@ -1052,7 +1053,41 @@ export async function getForumPost(
     aiStats: AIStatsMap;
     userStats: Record<string, UserStat>;
     media: MediaItem[];
+    postReplies: ForumCommentReply[];
   }>;
+}
+
+// PTT-style 推/噓/→ on the OP itself. Same payload + response shape as
+// postCommentReply so the existing graceful-fallback UI can be reused.
+export async function postPostReply(
+  postId: number,
+  body: { vote: 'up' | 'down' | 'none'; body: string },
+): Promise<PostCommentReplyResult> {
+  const res = await fetch(`/api/forum/posts/${postId}/replies`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<PostCommentReplyResult>;
+}
+
+export async function deletePostReply(
+  postId: number,
+  replyId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/forum/posts/${postId}/replies/${replyId}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
 }
 
 // Upload an image to a post's media library. Caller must be the post

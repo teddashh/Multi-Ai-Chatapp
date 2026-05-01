@@ -25,6 +25,7 @@ import {
   listForumPosts,
   postCommentReply,
   postForumComment,
+  postPostReply,
   toggleForumLike,
   uploadPostMedia,
   type AIStatsMap,
@@ -621,6 +622,7 @@ function ForumPostView({
     aiStats: AIStatsMap;
     userStats: Record<string, UserStat>;
     media: MediaItem[];
+    postReplies: ForumCommentReply[];
   } | null>(null);
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -923,7 +925,7 @@ function ForumPostView({
                 {relativeTime(post.createdAt)}
               </span>
             </div>
-            <MarkdownBody body={post.body} className="text-base mt-2" />
+            <CollapsiblePostBody body={post.body} />
 
             <div className="mt-3 flex items-center gap-3">
               <LikeButton
@@ -939,6 +941,16 @@ function ForumPostView({
                 {post.commentCount} 則回應
               </span>
             </div>
+
+            {/* PTT-style replies on the OP itself — same shape as the
+                ones under comments. Lets people 推/噓/→ the post with
+                a one-liner. ±1 votes also bump post.thumbsCount. */}
+            <RepliesBlock
+              target={{ kind: 'post', id: post.id }}
+              replies={data.postReplies}
+              canReply={!!user}
+              onChange={reload}
+            />
           </div>
         </div>
       </div>
@@ -1597,7 +1609,7 @@ function CommentRow({
         </div>
         {/* PTT-style replies — 推/噓/→ list + composer underneath. */}
         <RepliesBlock
-          commentId={comment.id}
+          target={{ kind: 'comment', id: comment.id }}
           replies={comment.replies}
           canReply={canReply}
           onChange={onReplyChange}
@@ -1728,16 +1740,49 @@ function CollapsibleBody({ body }: { body: string }) {
   );
 }
 
+// Same idea as CollapsibleBody but tuned for the OP — the body is the
+// page's main content so the threshold + clamp are looser (12 lines,
+// ~800 chars before folding) and the rendered text is text-base
+// instead of text-sm.
+function CollapsiblePostBody({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = body.split('\n').length;
+  const isLong = body.length > 800 || lineCount > 12;
+  return (
+    <div className="mt-2">
+      <div className={isLong && !expanded ? 'line-clamp-[12] overflow-hidden' : ''}>
+        <MarkdownBody body={body} className="text-base" />
+      </div>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-2 text-xs text-blue-300 hover:text-blue-200"
+        >
+          {expanded ? '收起 ▲' : '閱讀更多 ▼'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // PTT-style reply strip — 推 (vote='up'), 噓 (vote='down'), → (vote=
-// 'none'). 推 / 噓 also bump the parent comment's thumbs_count by ±1
-// server-side; 'none' is just an inline reply.
+// 'none'). 推 / 噓 also bump the target's thumbs_count by ±1 server-
+// side; 'none' is just an inline reply with no thumb impact.
+//
+// `target` lets the same component drive either comment-replies or
+// post-replies; the composer routes to the matching endpoint and the
+// list rendering is identical.
+type ReplyTarget =
+  | { kind: 'comment'; id: number }
+  | { kind: 'post'; id: number };
+
 function RepliesBlock({
-  commentId,
+  target,
   replies,
   canReply,
   onChange,
 }: {
-  commentId: number;
+  target: ReplyTarget;
   replies: ForumCommentReply[];
   canReply: boolean;
   onChange: () => void;
@@ -1750,7 +1795,7 @@ function RepliesBlock({
             <ReplyRow key={r.id} reply={r} />
           ))}
           {canReply && (
-            <ReplyComposer commentId={commentId} onPosted={onChange} />
+            <ReplyComposer target={target} onPosted={onChange} />
           )}
         </>
       )}
@@ -1804,10 +1849,10 @@ function ReplyRow({ reply }: { reply: ForumCommentReply }) {
 }
 
 function ReplyComposer({
-  commentId,
+  target,
   onPosted,
 }: {
-  commentId: number;
+  target: ReplyTarget;
   onPosted: () => void;
 }) {
   const [vote, setVote] = useState<'up' | 'down' | 'none'>('none');
@@ -1823,12 +1868,16 @@ function ReplyComposer({
     setErr('');
     setOverrideNote('');
     try {
-      const result = await postCommentReply(commentId, { vote, body: text });
+      const result =
+        target.kind === 'post'
+          ? await postPostReply(target.id, { vote, body: text })
+          : await postCommentReply(target.id, { vote, body: text });
       setBody('');
       setVote('none');
       if (result.voteOverridden) {
         const prev = result.voteOverridden.previousVote === 'up' ? '推' : '噓';
-        setOverrideNote(`你已經${prev}過這則留言了，幫您用 → 發送`);
+        const noun = target.kind === 'post' ? '這篇文章' : '這則留言';
+        setOverrideNote(`你已經${prev}過${noun}了，幫您用 → 發送`);
       }
       onPosted();
     } catch (e) {

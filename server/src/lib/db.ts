@@ -134,6 +134,20 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_comment_replies ON forum_comment_replies(comment_id, id);
 
+  -- Same shape as forum_comment_replies but keyed to a forum_post —
+  -- lets users do PTT-style 推/噓/→ on the OP itself, not just on
+  -- individual comments. Vote 'up'/'down' bumps forum_posts.thumbs_count
+  -- by ±1; 'none' is just an inline reply with no thumb impact.
+  CREATE TABLE IF NOT EXISTS forum_post_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    author_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vote TEXT NOT NULL CHECK (vote IN ('up','down','none')),
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_post_replies ON forum_post_replies(post_id, id);
+
   -- Media library — image attachments associated with either a forum
   -- post (post_id set) or one of the four AI personas (ai_provider set).
   -- Exactly one of the two must be non-null. Thumbnails surface as the
@@ -1126,6 +1140,37 @@ export const forumStmts = {
      JOIN forum_comments c ON c.id = r.comment_id
      JOIN users u ON u.id = r.author_user_id
      WHERE c.post_id = ?
+     ORDER BY r.id`,
+  ),
+
+  // Mirrors above for forum_post_replies (PTT-style replies on the OP).
+  insertPostReply: db.prepare<[
+    number,
+    number,
+    'up' | 'down' | 'none',
+    string,
+  ]>(
+    `INSERT INTO forum_post_replies (post_id, author_user_id, vote, body)
+     VALUES (?, ?, ?, ?)`,
+  ),
+  findUserVoteOnPost: db.prepare<[number, number]>(
+    `SELECT id, vote FROM forum_post_replies
+     WHERE post_id = ? AND author_user_id = ? AND vote IN ('up', 'down')
+     LIMIT 1`,
+  ),
+  findPostReplyById: db.prepare<[number]>(
+    `SELECT * FROM forum_post_replies WHERE id = ?`,
+  ),
+  deletePostReply: db.prepare<[number, number]>(
+    `DELETE FROM forum_post_replies WHERE id = ? AND author_user_id = ?`,
+  ),
+  listPostReplies: db.prepare<[number]>(
+    `SELECT r.id, r.vote, r.body, r.created_at,
+            u.username AS author_username, u.nickname AS author_nickname,
+            u.avatar_path AS author_avatar
+     FROM forum_post_replies r
+     JOIN users u ON u.id = r.author_user_id
+     WHERE r.post_id = ?
      ORDER BY r.id`,
   ),
 
