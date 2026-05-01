@@ -701,10 +701,17 @@ export interface ForumCommentReply {
   authorAvatarPath: string | null;
 }
 
+export interface PostCommentReplyResult {
+  ok: true;
+  replyId: number;
+  effectiveVote: 'up' | 'down' | 'none';
+  voteOverridden: { previousVote: 'up' | 'down' } | null;
+}
+
 export async function postCommentReply(
   commentId: number,
   body: { vote: 'up' | 'down' | 'none'; body: string },
-): Promise<{ ok: true; replyId: number }> {
+): Promise<PostCommentReplyResult> {
   const res = await fetch(`/api/forum/comments/${commentId}/replies`, {
     method: 'POST',
     credentials: 'include',
@@ -715,7 +722,7 @@ export async function postCommentReply(
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || `${res.status}`);
   }
-  return res.json() as Promise<{ ok: true; replyId: number }>;
+  return res.json() as Promise<PostCommentReplyResult>;
 }
 
 export async function deleteCommentReply(

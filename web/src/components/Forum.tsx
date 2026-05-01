@@ -5,7 +5,9 @@
 //   /forum/cat/:category    → posts in that 看板
 //   /forum/post/:id         → post detail + comments
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   FORUM_CATEGORIES,
   type AIProvider,
@@ -616,6 +618,12 @@ function ForumPostView({
   const [likersTarget, setLikersTarget] = useState<
     { type: 'post' | 'comment'; id: number } | null
   >(null);
+  // 回復 button at the top scrolls down to this composer ref so users
+  // who land on a long thread can jump straight to the reply box.
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const scrollToComposer = useCallback(() => {
+    composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
 
   const reload = useCallback(() => {
     setErr('');
@@ -698,9 +706,23 @@ function ForumPostView({
           full feed of that category or chat-mode. */}
       <Breadcrumb post={post} navigate={navigate} />
 
-      {/* Share row at the TOP — twin of the row at the bottom so users
-          can hit it without scrolling either way. */}
-      <ShareRow post={post} />
+      {/* Big repeat of the post title under the breadcrumb so the
+          subject is unmistakably visible the moment someone lands
+          here. The share-and-jump strip sits right under it. */}
+      <div className="space-y-2">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-100 leading-snug">
+          {post.title}
+        </h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <ShareRow post={post} variant="compact" />
+          <button
+            onClick={scrollToComposer}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium"
+          >
+            ↓ 回復
+          </button>
+        </div>
+      </div>
 
       {/* Post header */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
@@ -794,12 +816,8 @@ function ForumPostView({
                 {relativeTime(post.createdAt)}
               </span>
             </div>
-            <h1 className="text-xl font-bold text-gray-100 mb-3">
-              {post.title}
-            </h1>
-            <div className="text-gray-200 whitespace-pre-wrap leading-relaxed">
-              {post.body}
-            </div>
+            <MarkdownBody body={post.body} className="text-base mt-2" />
+
             <div className="mt-3 flex items-center gap-3">
               <LikeButton
                 liked={post.liked}
@@ -837,14 +855,17 @@ function ForumPostView({
         ))}
       </div>
 
-      {/* Composer */}
-      {user ? (
-        <CommentComposer onSubmit={submitComment} busy={busy} />
-      ) : (
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm text-gray-400">
-          登入後即可留言。
-        </div>
-      )}
+      {/* Composer — composerRef anchors the 回復 jump button at the
+          top of the page so readers can scroll straight here. */}
+      <div ref={composerRef}>
+        {user ? (
+          <CommentComposer onSubmit={submitComment} busy={busy} />
+        ) : (
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm text-gray-400">
+            登入後即可留言。
+          </div>
+        )}
+      </div>
 
       {/* Bottom share row — mirrors the top one so readers who scroll
           all the way through can share without scrolling back up. */}
@@ -900,12 +921,43 @@ function Breadcrumb({
   );
 }
 
-// Share row — opens platform-specific intent URLs (Twitter / Facebook
-// / Threads) plus a copy-link fallback that covers Instagram + any
-// app the user wants to paste into. Per-post OG image generation is
-// a future phase; for now Twitter / FB will scrape whatever site-
-// wide meta tags index.html ships with.
-function ShareRow({ post }: { post: ForumPostDetail }) {
+// Brand-icon set for the share row. Inline SVGs avoid an icon-pack
+// dep and keep the markup self-contained. Each icon is sized 16×16 to
+// match the surrounding 12px / 11px text baseline.
+const IconX = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+    <path d="M18.244 2H21.5l-7.514 8.59L23 22h-6.84l-5.36-7.013L4.6 22H1.34l8.04-9.193L1 2h7.014l4.853 6.41L18.244 2zm-2.4 18h1.86L7.27 4H5.31l10.534 16z" />
+  </svg>
+);
+const IconFacebook = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+    <path d="M22 12.06C22 6.5 17.52 2 12 2S2 6.5 2 12.06c0 4.99 3.66 9.13 8.44 9.93v-7.02H7.9v-2.91h2.54V9.85c0-2.51 1.49-3.9 3.77-3.9 1.09 0 2.24.2 2.24.2v2.46h-1.26c-1.24 0-1.63.78-1.63 1.57v1.88h2.78l-.44 2.91h-2.34V22c4.78-.8 8.44-4.94 8.44-9.94z" />
+  </svg>
+);
+const IconThreads = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+    <path d="M12.186 2C6.62 2 3 5.6 3 11.93 3 18.42 6.74 22 12.13 22h.06c5.36 0 8.81-3.38 8.81-8.62 0-3.05-1.18-5.27-3.32-6.45l-.18-.1-.04-.2c-.6-3.04-2.86-4.72-5.28-4.63zm.07 1.94c1.84 0 3.36 1.16 3.86 3.06l.1.4-.4.05c-.78.1-1.5.27-2.16.5l-.55.2-.18-.55c-.32-1-.93-1.5-1.96-1.5-1.4 0-2.5.93-2.5 2.34 0 1.5 1.34 2.34 2.84 2.34 1.46 0 2.6-.5 3.46-1.4l.27-.28.32.2c.6.4 1.05.95 1.36 1.62l.16.34-.3.22c-1.32 1-3.03 1.5-5.06 1.5-3.13 0-5.46-1.94-5.46-5.16 0-3.04 2.36-5.18 5.7-5.18zm.86 7.62c-.04 1.74-.42 2.84-1.94 3.96l-.36.26.36.26c1.96 1.4 4.72 1.18 5.06-1.06.18-1.2-.46-2.5-1.94-3.04l-.4-.14-.1.4c-.18.7-.46 1.18-.86 1.5l-.18.13.32-.27c.94-.78 1.04-1.66 1.04-1.86l.04-.34h-1.04z" />
+  </svg>
+);
+const IconLink = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.41 1.41" />
+    <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.41-1.41" />
+  </svg>
+);
+
+// Share row — opens platform-specific intent URLs (X / Facebook /
+// Threads) plus a copy-link fallback. Compact icon-only style on
+// detail pages; falls back to text+icon on broader screens. Per-post
+// OG image generation lives server-side now (see server/src/index.ts
+// HTML middleware) so link previews show real post content.
+function ShareRow({
+  post,
+  variant = 'default',
+}: {
+  post: ForumPostDetail;
+  variant?: 'default' | 'compact';
+}) {
   const [copied, setCopied] = useState(false);
   const url =
     typeof window !== 'undefined'
@@ -916,15 +968,21 @@ function ShareRow({ post }: { post: ForumPostDetail }) {
   const encT = encodeURIComponent(text);
   const targets = [
     {
+      key: 'x',
       label: 'X',
+      Icon: IconX,
       href: `https://twitter.com/intent/tweet?text=${encT}&url=${encU}`,
     },
     {
+      key: 'fb',
       label: 'Facebook',
+      Icon: IconFacebook,
       href: `https://www.facebook.com/sharer/sharer.php?u=${encU}`,
     },
     {
+      key: 'th',
       label: 'Threads',
+      Icon: IconThreads,
       href: `https://www.threads.net/intent/post?text=${encT}%0A${encU}`,
     },
   ];
@@ -937,26 +995,36 @@ function ShareRow({ post }: { post: ForumPostDetail }) {
       // ignore — older browsers without async clipboard API
     }
   };
+  const isCompact = variant === 'compact';
   return (
-    <div className="flex flex-wrap items-center gap-1.5 text-xs">
-      <span className="text-gray-500">分享至：</span>
-      {targets.map((t) => (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-gray-500">分享至</span>
+      {targets.map(({ key, label, Icon, href }) => (
         <a
-          key={t.label}
-          href={t.href}
+          key={key}
+          href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+          title={label}
+          aria-label={`分享到 ${label}`}
+          className={`flex items-center justify-center rounded-full text-gray-300 hover:text-white hover:bg-gray-800 transition-colors ${
+            isCompact ? 'w-7 h-7' : 'w-8 h-8'
+          }`}
         >
-          {t.label}
+          <Icon className={isCompact ? 'w-4 h-4' : 'w-[18px] h-[18px]'} />
         </a>
       ))}
       <button
         onClick={handleCopy}
-        className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+        title="複製連結"
+        aria-label="複製連結"
+        className={`flex items-center justify-center rounded-full text-gray-300 hover:text-white hover:bg-gray-800 transition-colors ${
+          isCompact ? 'w-7 h-7' : 'w-8 h-8'
+        }`}
       >
-        {copied ? '✓ 已複製' : '複製連結'}
+        <IconLink className={isCompact ? 'w-4 h-4' : 'w-[18px] h-[18px]'} />
       </button>
+      {copied && <span className="text-green-300">✓ 已複製</span>}
     </div>
   );
 }
@@ -1236,6 +1304,103 @@ function CommentRow({
   );
 }
 
+// Markdown renderer for forum bodies. AIs love writing **bold**, tables,
+// and code fences — vanilla whitespace-pre-wrap renders those as raw
+// asterisks and pipes, which looks broken. ReactMarkdown + remark-gfm
+// gives us tables, strikethrough, autolinks, and inline emphasis with
+// styled defaults that match the rest of the dark theme.
+function MarkdownBody({
+  body,
+  className = '',
+}: {
+  body: string;
+  className?: string;
+}) {
+  return (
+    <div className={`forum-md text-sm text-gray-200 leading-relaxed ${className}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // Wrap tables so wide ones scroll horizontally instead of
+          // breaking the layout.
+          table: ({ node, ...props }) => (
+            <div className="overflow-x-auto my-2">
+              <table
+                {...props}
+                className="border-collapse text-xs border border-gray-700"
+              />
+            </div>
+          ),
+          th: ({ node, ...props }) => (
+            <th
+              {...props}
+              className="border border-gray-700 bg-gray-800 px-2 py-1 text-left font-semibold"
+            />
+          ),
+          td: ({ node, ...props }) => (
+            <td {...props} className="border border-gray-700 px-2 py-1 align-top" />
+          ),
+          a: ({ node, ...props }) => (
+            <a
+              {...props}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-300 hover:text-blue-200 underline"
+            />
+          ),
+          code: ({ node, className: cls, children, ...props }) => {
+            const isBlock = /\n/.test(String(children));
+            return isBlock ? (
+              <code
+                {...props}
+                className="block bg-gray-950 border border-gray-800 rounded p-2 text-xs overflow-x-auto"
+              >
+                {children}
+              </code>
+            ) : (
+              <code
+                {...props}
+                className="bg-gray-800 px-1 py-0.5 rounded text-xs"
+              >
+                {children}
+              </code>
+            );
+          },
+          pre: ({ node, ...props }) => (
+            <pre {...props} className="my-2" />
+          ),
+          ul: ({ node, ...props }) => (
+            <ul {...props} className="list-disc pl-5 my-1" />
+          ),
+          ol: ({ node, ...props }) => (
+            <ol {...props} className="list-decimal pl-5 my-1" />
+          ),
+          blockquote: ({ node, ...props }) => (
+            <blockquote
+              {...props}
+              className="border-l-2 border-gray-700 pl-3 my-2 text-gray-400"
+            />
+          ),
+          h1: ({ node, ...props }) => (
+            <h1 {...props} className="text-lg font-bold mt-2 mb-1" />
+          ),
+          h2: ({ node, ...props }) => (
+            <h2 {...props} className="text-base font-bold mt-2 mb-1" />
+          ),
+          h3: ({ node, ...props }) => (
+            <h3 {...props} className="text-sm font-bold mt-2 mb-1" />
+          ),
+          p: ({ node, ...props }) => (
+            <p {...props} className="my-1 whitespace-pre-wrap" />
+          ),
+        }}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 // Long comments (over ~5 lines or 240 chars) collapse to a clamped
 // preview with a "閱讀更多" toggle. Keeps the post scannable when an
 // AI dumps a 30-line essay reply.
@@ -1245,12 +1410,8 @@ function CollapsibleBody({ body }: { body: string }) {
   const isLong = body.length > 240 || lineCount > 5;
   return (
     <div>
-      <div
-        className={`text-sm text-gray-200 whitespace-pre-wrap leading-relaxed ${
-          isLong && !expanded ? 'line-clamp-5' : ''
-        }`}
-      >
-        {body}
+      <div className={isLong && !expanded ? 'line-clamp-5 overflow-hidden' : ''}>
+        <MarkdownBody body={body} />
       </div>
       {isLong && (
         <button
@@ -1315,7 +1476,23 @@ function ReplyRow({ reply }: { reply: ForumCommentReply }) {
         {reply.authorDisplay}
       </span>
       <span className="text-gray-500">：</span>
-      <span className="text-gray-200 flex-1 break-words">{reply.body}</span>
+      <span className="text-gray-200 flex-1 break-words [&_p]:inline [&_p]:m-0">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ node, ...props }) => (
+              <a
+                {...props}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-300 hover:text-blue-200 underline"
+              />
+            ),
+          }}
+        >
+          {reply.body}
+        </ReactMarkdown>
+      </span>
       <span className="text-gray-600 whitespace-nowrap">
         {relativeTime(reply.createdAt)}
       </span>
@@ -1334,16 +1511,22 @@ function ReplyComposer({
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [overrideNote, setOverrideNote] = useState('');
 
   const submit = async () => {
     const text = body.trim();
     if (!text) return;
     setBusy(true);
     setErr('');
+    setOverrideNote('');
     try {
-      await postCommentReply(commentId, { vote, body: text });
+      const result = await postCommentReply(commentId, { vote, body: text });
       setBody('');
       setVote('none');
+      if (result.voteOverridden) {
+        const prev = result.voteOverridden.previousVote === 'up' ? '推' : '噓';
+        setOverrideNote(`你已經${prev}過這則留言了，幫您用 → 發送`);
+      }
       onPosted();
     } catch (e) {
       setErr((e as Error).message);
@@ -1377,7 +1560,7 @@ function ReplyComposer({
         type="text"
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="留一行..."
+        placeholder="快速評論..."
         maxLength={200}
         disabled={busy}
         onKeyDown={(e) => {
@@ -1393,6 +1576,9 @@ function ReplyComposer({
         送出
       </button>
       {err && <div className="w-full text-[11px] text-red-300">{err}</div>}
+      {overrideNote && (
+        <div className="w-full text-[11px] text-red-300">{overrideNote}</div>
+      )}
     </div>
   );
 }

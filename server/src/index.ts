@@ -8,8 +8,9 @@ import { adminRoute } from './routes/admin.js';
 import { sessionsRoute } from './routes/sessions.js';
 import { forumRoute } from './routes/forum.js';
 import { startFallbackDigest } from './lib/fallbackDigest.js';
+import { forumStmts } from './lib/db.js';
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const app = new Hono();
 app.use('*', logger());
@@ -24,7 +25,103 @@ app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Serve the built web UI from ../web/dist when present
 const webDist = resolve(process.cwd(), '../web/dist');
+const indexHtmlPath = resolve(webDist, 'index.html');
+
+// Cache the SPA shell once at boot so the OG-injection middleware
+// doesn't hit disk per request. The build outputs a fresh index.html
+// each deploy and the service is restarted, so a long-lived cache is
+// safe.
+let indexHtmlCache: string | null = null;
+function getIndexHtml(): string | null {
+  if (indexHtmlCache !== null) return indexHtmlCache;
+  if (!existsSync(indexHtmlPath)) return null;
+  indexHtmlCache = readFileSync(indexHtmlPath, 'utf8');
+  return indexHtmlCache;
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function trimForOg(s: string, max = 200): string {
+  // Strip markdown noise (asterisks, hashes, pipes, code fences) so
+  // social previews don't show "**bold**" or "| col |" raw. Just a
+  // best-effort cleanup; full markdown parsing isn't worth it here.
+  const cleaned = s
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/[*_`#>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleaned.length > max ? `${cleaned.slice(0, max - 1)}…` : cleaned;
+}
+
+// Render the SPA shell with per-post OG tags so Facebook / X / Threads
+// link previews show the actual post title + body excerpt instead of a
+// generic site-wide banner. Falls back to the unmodified shell when the
+// post id is unknown or the DB lookup fails for any reason.
 if (existsSync(webDist)) {
+  app.get('/forum/post/:id', (c) => {
+    const html = getIndexHtml();
+    if (!html) return c.text('Not found', 404);
+    const idStr = c.req.param('id');
+    const id = parseInt(idStr ?? '', 10);
+    if (!Number.isFinite(id) || id <= 0) {
+      return c.html(html);
+    }
+    let post:
+      | {
+          title: string;
+          body: string;
+        }
+      | null = null;
+    try {
+      post = forumStmts.findPostById.get(id) as
+        | { title: string; body: string }
+        | undefined
+        ?? null;
+    } catch {
+      post = null;
+    }
+    if (!post) return c.html(html);
+
+    const publicUrl = process.env.PUBLIC_URL ?? '';
+    const url = publicUrl
+      ? `${publicUrl.replace(/\/+$/, '')}/forum/post/${id}`
+      : `/forum/post/${id}`;
+    const title = `${post.title} | AI Sister`;
+    const description = trimForOg(post.body);
+
+    const ogBlock = `
+    <meta property="og:url" content="${escapeHtml(url)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="${escapeHtml(title)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(title)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />`;
+
+    // Strip the site-wide og:title / og:description / og:type and the
+    // matching twitter:* tags, then splice the per-post block in just
+    // before </head>. This keeps og:site_name + favicons untouched.
+    const stripped = html
+      .replace(
+        /\s*<meta\s+property="og:type"[^>]*\/?>/gi,
+        '',
+      )
+      .replace(/\s*<meta\s+property="og:title"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+property="og:description"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:card"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:title"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:description"[^>]*\/?>/gi, '');
+    const out = stripped.replace('</head>', `${ogBlock}\n  </head>`);
+    return c.html(out);
+  });
+
   app.use(
     '/*',
     serveStatic({

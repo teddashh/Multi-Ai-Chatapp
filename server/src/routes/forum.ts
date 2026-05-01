@@ -494,30 +494,41 @@ forumRoute.post('/comments/:id/replies', requireAuth, async (c) => {
     | undefined;
   if (!comment) return c.json({ error: 'comment not found' }, 404);
 
-  const reply = db.transaction(() => {
-    if (vote !== 'none') {
-      // One ±-vote per user per comment. If they want to switch from
-      // 推 to 噓 they need to delete first (UI offers that as 取消).
-      const prior = forumStmts.findUserVoteOnComment.get(commentId, user.id) as
-        | { id: number; vote: 'up' | 'down' }
-        | undefined;
-      if (prior) {
-        throw new Error(
-          prior.vote === vote
-            ? '你已經對這則留言投過了'
-            : '請先取消上一個推/噓',
-        );
-      }
+  // Graceful fallback: if the user already voted on this comment, silently
+  // downgrade their new vote to 'none' instead of rejecting. The reply text
+  // still goes through; the client surfaces a red note explaining the override.
+  let effectiveVote: 'up' | 'down' | 'none' = vote;
+  let voteOverridden: { previousVote: 'up' | 'down' } | null = null;
+  if (vote !== 'none') {
+    const prior = forumStmts.findUserVoteOnComment.get(commentId, user.id) as
+      | { id: number; vote: 'up' | 'down' }
+      | undefined;
+    if (prior) {
+      effectiveVote = 'none';
+      voteOverridden = { previousVote: prior.vote };
     }
-    const result = forumStmts.insertReply.run(commentId, user.id, vote, text);
-    if (vote === 'up') forumStmts.incCommentThumbs.run(commentId);
-    else if (vote === 'down') forumStmts.decCommentThumbs.run(commentId);
+  }
+
+  const reply = db.transaction(() => {
+    const result = forumStmts.insertReply.run(
+      commentId,
+      user.id,
+      effectiveVote,
+      text,
+    );
+    if (effectiveVote === 'up') forumStmts.incCommentThumbs.run(commentId);
+    else if (effectiveVote === 'down') forumStmts.decCommentThumbs.run(commentId);
     return Number(result.lastInsertRowid);
   });
 
   try {
     const replyId = reply();
-    return c.json({ ok: true, replyId });
+    return c.json({
+      ok: true,
+      replyId,
+      effectiveVote,
+      voteOverridden,
+    });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
