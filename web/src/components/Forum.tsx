@@ -26,6 +26,7 @@ import {
   postCommentReply,
   postForumComment,
   postPostReply,
+  setPostShareSummary,
   toggleForumLike,
   uploadPostMedia,
   type AIStatsMap,
@@ -659,6 +660,11 @@ function ForumPostView({
   const isAuthor = !!user && data?.post.authorUsername === user.username;
   const canModerate = isAdmin;
   const canUploadMedia = isAdmin || isAuthor;
+  const canEditSummary = isAdmin || isAuthor;
+  // Inline share-summary editor — only renders when the user opens it.
+  const [editingSummary, setEditingSummary] = useState(false);
+  const [summaryDraft, setSummaryDraft] = useState('');
+  const [savingSummary, setSavingSummary] = useState(false);
 
   const reload = useCallback(() => {
     setErr('');
@@ -830,7 +836,74 @@ function ForumPostView({
               {post.nsfw ? '取消 18+ 標記' : '🔞 標記為 18+'}
             </button>
           )}
+          {canEditSummary && !editingSummary && (
+            <button
+              onClick={() => {
+                setSummaryDraft(post.shareSummary ?? '');
+                setEditingSummary(true);
+              }}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-gray-700 text-gray-300 hover:bg-gray-800 text-xs font-medium"
+              title="設定 Facebook / X / Threads 連結預覽用的 2 句摘要"
+            >
+              ✏ {post.shareSummary ? '編輯分享摘要' : '設定分享摘要'}
+            </button>
+          )}
         </div>
+
+        {editingSummary && (
+          <div className="rounded-lg border border-gray-800 bg-gray-900/60 p-3 space-y-2">
+            <p className="text-[11px] text-gray-400">
+              這段會出現在 Facebook / X / Threads 的連結預覽卡上（最多 280 字）。
+              留白會自動用內文前 200 字當摘要。
+            </p>
+            <textarea
+              value={summaryDraft}
+              onChange={(e) => setSummaryDraft(e.target.value)}
+              rows={3}
+              maxLength={280}
+              placeholder="兩句話，告訴點進來的人這篇文章在講什麼…"
+              className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
+              disabled={savingSummary}
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-gray-500">
+                {summaryDraft.length} / 280
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingSummary(false);
+                    setSummaryDraft('');
+                  }}
+                  disabled={savingSummary}
+                  className="px-3 py-1 rounded border border-gray-700 hover:bg-gray-800 text-xs text-gray-300"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setSavingSummary(true);
+                    try {
+                      await setPostShareSummary(post.id, summaryDraft.trim());
+                      setEditingSummary(false);
+                      reload();
+                    } catch (e) {
+                      alert((e as Error).message);
+                    } finally {
+                      setSavingSummary(false);
+                    }
+                  }}
+                  disabled={savingSummary}
+                  className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-xs text-white font-medium"
+                >
+                  {savingSummary ? '儲存中…' : '儲存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Post header */}

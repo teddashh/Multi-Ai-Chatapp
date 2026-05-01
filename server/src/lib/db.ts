@@ -220,6 +220,11 @@ addColumnIfMissing('users', 'disabled_at', 'INTEGER');
 // surfaced to logged-in users with a click-to-confirm 18+ overlay on
 // the post detail page. Default 0 (safe).
 addColumnIfMissing('forum_posts', 'nsfw', 'INTEGER NOT NULL DEFAULT 0');
+// Optional curated 2-sentence summary used as og:description in social
+// shares. When NULL the OG injector falls back to a 200-char trim of
+// the body — fine, but mid-sentence cuts can look off. Set explicitly
+// from the post detail page (post author or admin) for a clean hook.
+addColumnIfMissing('forum_posts', 'share_summary', 'TEXT');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Birth year is the most personal field — split off from show_birthday
@@ -993,6 +998,7 @@ export interface ForumPostRow {
   updated_at: number;
   ai_persona: string | null;
   nsfw: number;
+  share_summary: string | null;
 }
 
 export interface ForumCommentRow {
@@ -1037,6 +1043,9 @@ export const forumStmts = {
   ),
   setPostNsfw: db.prepare<[number, number]>(
     `UPDATE forum_posts SET nsfw = ? WHERE id = ?`,
+  ),
+  setPostShareSummary: db.prepare<[string | null, number]>(
+    `UPDATE forum_posts SET share_summary = ? WHERE id = ?`,
   ),
   bumpCommentCount: db.prepare<[number, number]>(
     `UPDATE forum_posts SET comment_count = comment_count + ?, updated_at = strftime('%s','now') WHERE id = ?`,

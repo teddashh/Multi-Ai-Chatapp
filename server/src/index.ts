@@ -78,11 +78,17 @@ if (existsSync(webDist)) {
           title: string;
           body: string;
           nsfw: number;
+          share_summary: string | null;
         }
       | null = null;
     try {
       post = forumStmts.findPostById.get(id) as
-        | { title: string; body: string; nsfw: number }
+        | {
+            title: string;
+            body: string;
+            nsfw: number;
+            share_summary: string | null;
+          }
         | undefined
         ?? null;
     } catch {
@@ -98,7 +104,13 @@ if (existsSync(webDist)) {
     const baseUrl = publicUrl ? publicUrl.replace(/\/+$/, '') : '';
     const url = `${baseUrl}/forum/post/${id}`;
     const title = `${post.title} | AI Sister`;
-    const description = trimForOg(post.body);
+    // Curated share summary wins over the body excerpt — author / admin
+    // can write a clean 2-sentence hook so social cards don't mid-
+    // sentence-cut into the body. Falls back to the auto-trimmed body
+    // when share_summary is NULL.
+    const description = post.share_summary
+      ? trimForOg(post.share_summary)
+      : trimForOg(post.body);
 
     // Look up a share thumbnail for the post — admin-flagged thumbnail
     // wins, else the first media row by position. Bare-host fallback

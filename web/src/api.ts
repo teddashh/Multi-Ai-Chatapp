@@ -735,6 +735,9 @@ export interface ForumPostDetail extends ForumPostSummary {
   // provider name on AI comments. Null when not applicable.
   aiPersona: string | null;
   liked: boolean;
+  // Optional curated 2-sentence summary used as og:description on
+  // social-share cards. Null = server falls back to body excerpt.
+  shareSummary: string | null;
 }
 
 // Image attached to either a forum post or one of the four AI personas.
@@ -1155,6 +1158,25 @@ export async function adminDeleteAIMedia(
     { method: 'DELETE', credentials: 'include' },
   );
   if (!res.ok) throw new Error(`${res.status}`);
+}
+
+// Set the curated share-card summary for a post. Author or admin only.
+// Pass an empty string to clear (server normalises to null → falls
+// back to a body excerpt for og:description).
+export async function setPostShareSummary(
+  postId: number,
+  summary: string,
+): Promise<void> {
+  const res = await fetch(`/api/forum/posts/${postId}/share-summary`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
 }
 
 // Admin-only: flag / unflag a post as NSFW. Anonymous viewers stop

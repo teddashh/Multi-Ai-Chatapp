@@ -120,6 +120,7 @@ function formatPostDetail(r: PostListRow, liked: boolean) {
     body: r.body,
     aiPersona: r.ai_persona ?? null,
     liked,
+    shareSummary: r.share_summary ?? null,
   };
 }
 
@@ -685,6 +686,35 @@ forumRoute.post('/posts/:id/replies', requireAuth, async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+});
+
+// Curated 2-sentence summary used as og:description in social shares.
+// Either the post author or an admin can set it; pass an empty string
+// to clear (server normalises to NULL → falls back to body excerpt).
+const MAX_SHARE_SUMMARY_LEN = 280;
+forumRoute.post('/posts/:id/share-summary', requireAuth, async (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid post id' }, 400);
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  const body = (await c.req.json().catch(() => null)) as
+    | { summary?: string | null }
+    | null;
+  const raw = (body?.summary ?? '').trim();
+  if (raw.length > MAX_SHARE_SUMMARY_LEN) {
+    return c.json(
+      { error: `too long (max ${MAX_SHARE_SUMMARY_LEN} chars)` },
+      400,
+    );
+  }
+  forumStmts.setPostShareSummary.run(raw || null, postId);
+  return c.json({ ok: true, summary: raw || null });
 });
 
 forumRoute.delete('/posts/:postId/replies/:replyId', requireAuth, (c) => {
