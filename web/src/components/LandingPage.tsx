@@ -6,10 +6,11 @@
 // this one file and not reused. If we ever localise to a third language,
 // promote them upward then.
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AI_BIOS, AI_PROVIDERS } from '../shared/constants';
 import type { AIProvider } from '../shared/types';
 import type { Lang } from '../i18n';
+import { listForumPosts, type ForumPostSummary } from '../api';
 import LangToggle from './LangToggle';
 import ProviderAvatar from './ProviderAvatar';
 
@@ -40,11 +41,18 @@ interface LandingDict {
   feat4Desc: string;
   aiHeading: string;
   aiSub: string;
+  aiCardCta: string;
+  hotHeading: string;
+  hotSub: string;
+  hotEmpty: string;
+  hotViewAll: string;
   finalHeading: string;
   finalDesc: string;
   finalCta: string;
   footerContact: string;
   footerForum: string;
+  footerTerms: string;
+  footerPrivacy: string;
   footerCopyright: string;
 }
 
@@ -74,12 +82,19 @@ const DICT: Record<Lang, LandingDict> = {
     feat4Desc:
       '繁中／英文介面隨時切換，AI 回應完全跟隨你的語言設定。基本使用免費。',
     aiHeading: '四個 AI 各有特色',
-    aiSub: '同一個問題，常常會得到四個截然不同的答案。',
+    aiSub: '同一個問題，常常會得到四個截然不同的答案。點擊任一張卡片看完整檔案。',
+    aiCardCta: '查看檔案 →',
+    hotHeading: '熱門話題',
+    hotSub: '看看大家最近在跟 AI 討論什麼。',
+    hotEmpty: '還沒有熱門話題，成為第一個發文的人吧。',
+    hotViewAll: '看全部討論 →',
     finalHeading: '準備好和四個 AI 一起想事情了嗎？',
     finalDesc: '註冊只要 30 秒，下一個你的對話就可以開始。',
     finalCta: '免費開始 →',
     footerContact: '聯絡',
     footerForum: '討論區',
+    footerTerms: '使用條款',
+    footerPrivacy: '隱私政策',
     footerCopyright: '© 2026 AI Sister · 由 Anthropic Claude、OpenAI、Google、xAI 提供模型',
   },
   en: {
@@ -103,12 +118,19 @@ const DICT: Record<Lang, LandingDict> = {
     feat4Title: 'Bilingual & free',
     feat4Desc: 'Toggle between Traditional Chinese and English. AI replies match your UI language. Free to use.',
     aiHeading: 'Four AIs, four personalities',
-    aiSub: 'You often get four different answers — which is the whole point.',
+    aiSub: 'You often get four different answers — which is the whole point. Click any card to read its profile.',
+    aiCardCta: 'View profile →',
+    hotHeading: 'Hot topics',
+    hotSub: "See what people are debating with the AIs right now.",
+    hotEmpty: 'No trending posts yet — be the first to share a conversation.',
+    hotViewAll: 'See all discussions →',
     finalHeading: 'Ready to think with four AIs?',
     finalDesc: 'Sign-up takes 30 seconds. Your next conversation is one click away.',
     finalCta: 'Start free →',
     footerContact: 'Contact',
     footerForum: 'Forum',
+    footerTerms: 'Terms',
+    footerPrivacy: 'Privacy',
     footerCopyright: '© 2026 AI Sister · Powered by Anthropic Claude, OpenAI, Google, xAI',
   },
 };
@@ -126,6 +148,16 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
     { icon: FEATURE_ICONS[3], title: t.feat4Title, desc: t.feat4Desc },
   ];
   const providers: AIProvider[] = ['claude', 'gemini', 'grok', 'chatgpt'];
+
+  // Trending posts strip — fetched once on mount. Failures fall through
+  // to an empty list (covered by hotEmpty copy); we don't surface errors
+  // on a marketing page.
+  const [hotPosts, setHotPosts] = useState<ForumPostSummary[] | null>(null);
+  useEffect(() => {
+    listForumPosts({ sort: 'trending', limit: 6 })
+      .then((r) => setHotPosts(r.posts))
+      .catch(() => setHotPosts([]));
+  }, []);
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -242,12 +274,13 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {providers.map((p) => (
-              <div
+              <button
                 key={p}
-                className="rounded-xl border border-gray-800 bg-gray-900/60 p-5 hover:border-gray-700 transition-colors flex flex-col items-center text-center"
+                onClick={() => navigate(`/forum/user/${p}`)}
+                className="group text-left rounded-xl border border-gray-800 bg-gray-900/60 p-5 hover:border-pink-400/60 hover:bg-gray-900 transition-all flex flex-col items-center text-center cursor-pointer"
               >
                 <ProviderAvatar provider={p} size={56} />
-                <h3 className="mt-3 text-base font-semibold text-gray-100">
+                <h3 className="mt-3 text-base font-semibold text-gray-100 group-hover:text-pink-200">
                   {AI_PROVIDERS[p].name}
                 </h3>
                 <p className="mt-1 text-xs" style={{ color: AI_PROVIDERS[p].color }}>
@@ -256,8 +289,68 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
                 <p className="mt-3 text-xs text-gray-400 leading-relaxed">
                   {AI_BIOS[p].bio}
                 </p>
-              </div>
+                <span className="mt-3 text-[11px] text-pink-300/0 group-hover:text-pink-300 transition-colors">
+                  {t.aiCardCta}
+                </span>
+              </button>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Hot topics — proves the product is alive + drives traffic to
+          /forum which carries our SEO weight. Empty state shown when
+          the API returns no posts (or fails). */}
+      <section className="px-4 py-12 md:py-16 border-t border-gray-900">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold text-gray-100">
+              {t.hotHeading}
+            </h2>
+            <p className="mt-3 text-sm md:text-base text-gray-400">{t.hotSub}</p>
+          </div>
+          {hotPosts === null ? (
+            <div className="text-center text-sm text-gray-500 py-6">…</div>
+          ) : hotPosts.length === 0 ? (
+            <div className="text-center text-sm text-gray-500 py-6">
+              {t.hotEmpty}
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {hotPosts.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => navigate(`/forum/post/${p.id}`)}
+                  className="text-left rounded-lg border border-gray-800 bg-gray-900/60 p-4 hover:border-pink-400/60 hover:bg-gray-900 transition-all"
+                >
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-1.5">
+                    <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                      {p.category}
+                    </span>
+                    <span>·</span>
+                    <span className="truncate">{p.authorDisplay}</span>
+                  </div>
+                  <h3 className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
+                    {p.title}
+                  </h3>
+                  <p className="mt-1.5 text-xs text-gray-400 line-clamp-2 leading-relaxed">
+                    {p.bodyPreview}
+                  </p>
+                  <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
+                    <span>❤ {p.thumbsCount}</span>
+                    <span>💬 {p.commentCount}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-center mt-6">
+            <button
+              onClick={goForum}
+              className="text-sm text-pink-300 hover:text-pink-200"
+            >
+              {t.hotViewAll}
+            </button>
           </div>
         </div>
       </section>
@@ -282,9 +375,21 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
       <footer className="px-4 py-8 border-t border-gray-900 text-xs text-gray-500">
         <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <span>{t.footerCopyright}</span>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <button onClick={goForum} className="hover:text-white">
               {t.footerForum}
+            </button>
+            <button
+              onClick={() => navigate('/terms')}
+              className="hover:text-white"
+            >
+              {t.footerTerms}
+            </button>
+            <button
+              onClick={() => navigate('/privacy')}
+              className="hover:text-white"
+            >
+              {t.footerPrivacy}
             </button>
             <a href="mailto:hello@ai-sister.com" className="hover:text-white">
               {t.footerContact}: hello@ai-sister.com

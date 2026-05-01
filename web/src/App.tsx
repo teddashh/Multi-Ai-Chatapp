@@ -42,6 +42,7 @@ import Sidebar from './components/Sidebar';
 import ProfileModal from './components/ProfileModal';
 import Forum from './components/Forum';
 import LandingPage from './components/LandingPage';
+import LegalPage from './components/LegalPage';
 import ShareToForumModal from './components/ShareToForumModal';
 import TopNav from './components/TopNav';
 import { DICTS, I18nContext, useT, type Lang } from './i18n';
@@ -745,6 +746,17 @@ export default function App() {
     // useEffect bounces them to /chat.
     content = (
       <LandingPage
+        navigate={navigate}
+        lang={lang}
+        onLangChange={handleLangToggle}
+      />
+    );
+  } else if (pathname === '/terms' || pathname === '/privacy') {
+    // Static legal pages — public, no auth gate. Footer of LandingPage
+    // links here; we keep them shallow so search engines can crawl them.
+    content = (
+      <LegalPage
+        kind={pathname === '/terms' ? 'terms' : 'privacy'}
         navigate={navigate}
         lang={lang}
         onLangChange={handleLangToggle}
