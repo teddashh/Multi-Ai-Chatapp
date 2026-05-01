@@ -143,6 +143,14 @@ export interface Dict {
   modeImageHowto2: string;
   modeImageHowto3: string;
 
+  // Forum CTAs surfaced to anonymous viewers — sub the bare "登入後
+  // 即可留言" with a friendly nudge to register.
+  forumGuestCommentTitle: string;
+  forumGuestCommentDesc: string;
+  forumGuestSignupBtn: string;
+  forumGuestLoginBtn: string;
+  forumShareTail: string;
+
   chatStartHere: string;
   chatExpand: string;
   chatCollapse: string;
@@ -389,6 +397,12 @@ const ZH: Dict = {
     '不同家風格不同：gpt-image 寫實／商品感、Imagen 畫質高、Flux 偏藝術、Grok Imagine 即興。',
   modeImageHowto3:
     '按張計費（不是 token），下方下拉選單會顯示每張的價格。',
+
+  forumGuestCommentTitle: '登入後即可留言',
+  forumGuestCommentDesc: '想跟 Claude、Gemini、Grok、ChatGPT 一起參與討論嗎？快註冊成會員！',
+  forumGuestSignupBtn: '免費註冊 →',
+  forumGuestLoginBtn: '已有帳號？登入',
+  forumShareTail: '快來 AI 姐妹跟四個 AI 一起討論！',
 
   chatStartHere: '在下方輸入框開始對話',
   chatExpand: '▼ 展開',
@@ -638,6 +652,12 @@ const EN: Dict = {
     'Different vendors, different vibes: gpt-image is realistic / product-like, Imagen is high-detail, Flux is painterly, Grok Imagine is freestyle.',
   modeImageHowto3:
     'Billed per image (not per token); the dropdown below shows price per shot.',
+
+  forumGuestCommentTitle: 'Sign in to comment',
+  forumGuestCommentDesc: 'Want to join the discussion with Claude, Gemini, Grok, and ChatGPT? Create a free account!',
+  forumGuestSignupBtn: 'Sign up free →',
+  forumGuestLoginBtn: 'Already have an account? Log in',
+  forumShareTail: 'Come join the conversation with the four AIs on AI Sister!',
 
   chatStartHere: 'Type below to start the conversation',
   chatExpand: '▼ Expand',

@@ -41,6 +41,7 @@ import {
   type UserStat,
 } from '../api';
 import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
+import { useT } from '../i18n';
 import ProviderAvatar from './ProviderAvatar';
 import AIProfile from './AIProfile';
 import UserProfile from './UserProfile';
@@ -617,6 +618,7 @@ function ForumPostView({
   navigate: (p: string) => void;
   user: User | null;
 }) {
+  const t = useT();
   const [data, setData] = useState<{
     post: ForumPostDetail;
     comments: ForumComment[];
@@ -1087,15 +1089,43 @@ function ForumPostView({
         {user ? (
           <CommentComposer onSubmit={submitComment} busy={busy} />
         ) : (
-          <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 text-sm text-gray-400">
-            登入後即可留言。
+          <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 space-y-3">
+            <div>
+              <h3 className="text-base font-semibold text-gray-100 mb-1">
+                {t.forumGuestCommentTitle}
+              </h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                {t.forumGuestCommentDesc}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => navigate('/chat')}
+                className="px-4 py-2 rounded-full bg-pink-500 hover:bg-pink-400 text-white text-sm font-semibold"
+              >
+                {t.forumGuestSignupBtn}
+              </button>
+              <button
+                onClick={() => navigate('/chat')}
+                className="px-4 py-2 rounded-full border border-gray-700 hover:bg-gray-800 text-sm text-gray-300"
+              >
+                {t.forumGuestLoginBtn}
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Bottom share row — mirrors the top one so readers who scroll
-          all the way through can share without scrolling back up. */}
-      <ShareRow post={post} />
+          all the way through can share without scrolling back up. The
+          tail line nudges anonymous readers who land via a social
+          share toward signing up. */}
+      <div className="space-y-2">
+        <ShareRow post={post} />
+        {!user && (
+          <p className="text-xs text-gray-400">{t.forumShareTail}</p>
+        )}
+      </div>
 
       {likersTarget && (
         <LikersModal
