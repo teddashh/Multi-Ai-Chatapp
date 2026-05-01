@@ -265,7 +265,7 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
       </section>
 
       {/* AI characters */}
-      <section className="px-4 py-12 md:py-16 border-t border-gray-900 bg-gradient-to-b from-gray-950 to-gray-950/0">
+      <section className="px-4 py-12 md:py-16 border-t border-gray-200/40">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
             <h2 className="text-2xl md:text-3xl font-bold text-gray-100">

@@ -406,7 +406,12 @@ body::before {
 [data-theme='summer'] .border-gray-800,
 [data-theme='fall'] .border-gray-800,
 [data-theme='claude'] .border-gray-800,
-[data-theme='chatgpt'] .border-gray-800 {
+[data-theme='chatgpt'] .border-gray-800,
+[data-theme='spring'] .border-gray-900,
+[data-theme='summer'] .border-gray-900,
+[data-theme='fall'] .border-gray-900,
+[data-theme='claude'] .border-gray-900,
+[data-theme='chatgpt'] .border-gray-900 {
   border-color: rgba(15, 23, 42, 0.12);
 }
 
