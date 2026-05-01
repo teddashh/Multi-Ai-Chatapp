@@ -9,6 +9,7 @@
 // Lang toggle in the header lets readers swap on the spot.
 
 import React from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { Lang } from '../i18n';
 import LangToggle from './LangToggle';
 
@@ -24,6 +25,11 @@ const COPY = {
     backToHome: '← 回首頁',
     lastUpdated: '最後更新日期：2026-05-01',
     contact: '如有疑問請聯絡：hello@ai-sister.com',
+    footerTerms: '使用條款',
+    footerPrivacy: '隱私政策',
+    footerDataDeletion: '資料刪除',
+    footerHome: '回首頁',
+    footerCopyright: '© 2026 AI Sister · 由 Anthropic Claude、OpenAI、Google、xAI 提供模型',
     terms: {
       title: '使用條款',
       intro:
@@ -96,7 +102,7 @@ const COPY = {
         {
           h: '1. 我們收集哪些資料',
           list: [
-            '帳號資料：電子郵件、使用者名稱、密碼（以雜湊形式儲存）、語言偏好、頭像（選填）。',
+            '帳號資料：電子郵件、使用者名稱、密碼（經過不可逆加密處理，無法還原為原始密碼）、語言偏好、您上傳的頭像（如有）。',
             '對話與發文內容：您與 AI 的訊息、您在論壇上發表的貼文、留言、推噓紀錄。',
             '使用紀錄：登入時間、IP 位址、瀏覽器類型、操作日誌（用於除錯與防止濫用）。',
             'Cookies：用於維持登入狀態、語言偏好、最近瀏覽過的論壇貼文等基本功能。',
@@ -129,7 +135,7 @@ const COPY = {
         },
         {
           h: '6. 資料安全',
-          p: '我們採取合理的技術與管理措施保護您的資料（包含密碼雜湊、TLS 加密傳輸、資料庫權限隔離等）。但**沒有任何網路服務能保證 100% 安全**。萬一發生資料外洩事件，我們將依適用法律盡速通知受影響的使用者。',
+          p: '我們採取合理的技術與管理措施保護您的資料（包含密碼不可逆加密、TLS 加密傳輸、資料庫權限隔離等）。但**沒有任何網路服務能保證 100% 安全**。萬一發生資料外洩事件，我們將依適用法律盡速通知受影響的使用者。',
         },
         {
           h: '7. 兒童',
@@ -195,11 +201,11 @@ const COPY = {
         {
           h: '會被刪除的內容',
           list: [
-            '您的帳號資料（使用者名稱、email、密碼雜湊、暱稱、頭像、語言偏好、生日、星座、MBTI、自介等所有個人欄位）。',
+            '您的帳號資料（使用者名稱、email、密碼加密值、暱稱、頭像、語言偏好、生日、星座、MBTI、自介等所有個人欄位）。',
             '您的所有聊天會話（chat sessions）與訊息（包含上傳的附件、圖片、PDF 等）。',
             '您發表至論壇的貼文（forum posts）與其下所有留言（包括其他人的留言，因為它們依附於該貼文）。',
             '您在他人貼文下的留言（forum comments）與所有推噓回應（forum replies）。',
-            '您對其他貼文／留言的推（讚、❤）紀錄（forum likes）。',
+            '您對其他貼文與留言所做的推（讚）紀錄（forum likes）。',
             '您的密碼重設 token、登入 session 等技術紀錄。',
             '您頭像的實體檔案。',
           ],
@@ -210,7 +216,7 @@ const COPY = {
             '已被其他使用者**引用、轉貼、複製**到他們自己的內容中的部分（這些屬於對方的內容，我們無權擅自修改）。',
             '已被搜尋引擎、社群網站、第三方網站**快取或備份**的公開內容。',
             '系統技術紀錄（如錯誤日誌、伺服器存取紀錄等），但這些紀錄會以**匿名形式**保留至多 90 天，之後自動清除。',
-            '法律強制要求保留的紀錄（如本服務未來如有金流，依稅法須保留之交易紀錄）。目前 AI Sister 為免費服務，**無強制保留之金流資料**。',
+            '法律強制要求保留的紀錄（如本服務未來如有金流，依稅法須保留之交易紀錄）。',
           ],
         },
         {
@@ -228,6 +234,11 @@ const COPY = {
     backToHome: '← Back to home',
     lastUpdated: 'Last updated: 2026-05-01',
     contact: 'Questions? Email hello@ai-sister.com',
+    footerTerms: 'Terms',
+    footerPrivacy: 'Privacy',
+    footerDataDeletion: 'Data deletion',
+    footerHome: 'Home',
+    footerCopyright: '© 2026 AI Sister · Powered by Anthropic Claude, OpenAI, Google, xAI',
     terms: {
       title: 'Terms of Service',
       intro:
@@ -300,7 +311,7 @@ const COPY = {
         {
           h: '1. What we collect',
           list: [
-            'Account data: email, username, password (stored as a hash), language preference, optional avatar.',
+            'Account data: email, username, password (stored as a one-way irreversible hash — the original password cannot be recovered), language preference, and the avatar you uploaded if any.',
             'Conversation & forum content: messages exchanged with the AIs, posts, comments, and votes you make in the forum.',
             'Usage logs: login times, IP address, browser type, server logs (for debugging and abuse prevention).',
             'Cookies: used for login state, language preference, and recent-forum-views.',
@@ -333,7 +344,7 @@ const COPY = {
         },
         {
           h: '6. Security',
-          p: 'We apply reasonable technical and organisational safeguards (password hashing, TLS in transit, database access controls). **No online service is 100% secure.** In the event of a data incident we will notify affected users as required by applicable law.',
+          p: 'We apply reasonable technical and organisational safeguards (one-way irreversible password hashing, TLS in transit, database access controls). **No online service is 100% secure.** In the event of a data incident we will notify affected users as required by applicable law.',
         },
         {
           h: '7. Children',
@@ -399,7 +410,7 @@ const COPY = {
         {
           h: 'What gets deleted',
           list: [
-            'Your account data (username, email, password hash, nickname, avatar, language preference, birthday, astrology fields, MBTI, bio, and all other personal fields).',
+            'Your account data (username, email, hashed password, nickname, avatar, language preference, birthday, astrology fields, MBTI, bio, and all other personal fields).',
             'All your chat sessions and messages, including uploaded attachments (images, PDFs, etc.).',
             'Forum posts you authored — including all comments under those posts (because the comments depend on the post).',
             'Comments and replies (推/噓/→) you made on other users\' posts.',
@@ -414,7 +425,7 @@ const COPY = {
             'Content other users have **quoted, reposted, or copied** into their own content (that belongs to them; we cannot edit it on your behalf).',
             'Public content **cached or backed up** by search engines, social platforms, or third-party sites.',
             'System technical logs (error logs, server access logs); these are kept in **anonymised form** for up to 90 days and then automatically purged.',
-            'Records that applicable law requires us to retain (e.g. transaction records under tax law if we ever charge for the Service). AI Sister is currently free, so **no mandatory financial records exist**.',
+            'Records that applicable law requires us to retain (e.g. transaction records under tax law if we ever charge for the Service).',
           ],
         },
         {
@@ -436,11 +447,45 @@ interface Section {
   list?: readonly string[];
 }
 
+// Inline markdown renderer for legal copy. Source strings use **bold**,
+// [link](href), and (occasionally) emphasis; we want those to render as
+// real <strong> / <a> instead of leaking literal asterisks. We don't
+// wrap in an extra <p> — caller controls the surrounding tag — so the
+// `p` mapping just unwraps to a Fragment.
+const MD_COMPONENTS = {
+  p: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  strong: ({ children }: { children?: React.ReactNode }) => (
+    <strong className="font-semibold text-gray-100">{children}</strong>
+  ),
+  em: ({ children }: { children?: React.ReactNode }) => (
+    <em className="italic">{children}</em>
+  ),
+  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-300 hover:text-blue-200 underline"
+    >
+      {children}
+    </a>
+  ),
+};
+
+function MD({ children }: { children: string }) {
+  return <ReactMarkdown components={MD_COMPONENTS}>{children}</ReactMarkdown>;
+}
+
 export default function LegalPage({ kind, navigate, lang, onLangChange }: Props) {
   const c = COPY[lang];
   const page = c[kind];
+  const navLinks: Array<{ key: typeof kind; label: string; path: string }> = [
+    { key: 'terms', label: c.footerTerms, path: '/terms' },
+    { key: 'privacy', label: c.footerPrivacy, path: '/privacy' },
+    { key: 'data-deletion', label: c.footerDataDeletion, path: '/data-deletion' },
+  ];
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
+    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
       <header className="sticky top-0 z-30 bg-gray-950/85 backdrop-blur border-b border-gray-800">
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <button
@@ -453,13 +498,13 @@ export default function LegalPage({ kind, navigate, lang, onLangChange }: Props)
         </div>
       </header>
 
-      <article className="max-w-3xl mx-auto px-4 py-10 md:py-14">
+      <article className="flex-1 max-w-3xl mx-auto w-full px-4 py-10 md:py-14">
         <h1 className="text-3xl md:text-4xl font-bold text-gray-100 mb-3">
           {page.title}
         </h1>
         <p className="text-xs text-gray-500 mb-6">{c.lastUpdated}</p>
         <p className="text-sm md:text-base text-gray-300 leading-relaxed mb-8">
-          {page.intro}
+          <MD>{page.intro}</MD>
         </p>
 
         <div className="space-y-6">
@@ -469,14 +514,16 @@ export default function LegalPage({ kind, navigate, lang, onLangChange }: Props)
                 {s.h}
               </h2>
               {s.p && (
-                <p className="text-sm md:text-base text-gray-300 leading-relaxed mb-2 whitespace-pre-wrap">
-                  {s.p}
+                <p className="text-sm md:text-base text-gray-300 leading-relaxed mb-2">
+                  <MD>{s.p}</MD>
                 </p>
               )}
               {s.list && (
                 <ul className="list-disc pl-5 space-y-1 text-sm md:text-base text-gray-300 leading-relaxed">
                   {s.list.map((item, i) => (
-                    <li key={i}>{item}</li>
+                    <li key={i}>
+                      <MD>{item}</MD>
+                    </li>
                   ))}
                 </ul>
               )}
@@ -488,6 +535,37 @@ export default function LegalPage({ kind, navigate, lang, onLangChange }: Props)
           {c.contact}
         </p>
       </article>
+
+      {/* Cross-link footer — mirrors LandingPage so legal pages don't dead-end.
+          Highlights the page the reader is currently on so navigation is
+          unambiguous. */}
+      <footer className="border-t border-gray-900 px-4 py-8 text-xs text-gray-500">
+        <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-between gap-3">
+          <span>{c.footerCopyright}</span>
+          <div className="flex items-center gap-4 flex-wrap">
+            <button onClick={() => navigate('/')} className="hover:text-white">
+              {c.footerHome}
+            </button>
+            {navLinks.map((l) => (
+              <button
+                key={l.key}
+                onClick={() => navigate(l.path)}
+                className={
+                  l.key === kind
+                    ? 'text-gray-200 font-medium'
+                    : 'hover:text-white'
+                }
+                aria-current={l.key === kind ? 'page' : undefined}
+              >
+                {l.label}
+              </button>
+            ))}
+            <a href="mailto:hello@ai-sister.com" className="hover:text-white">
+              hello@ai-sister.com
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
