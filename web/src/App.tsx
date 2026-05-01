@@ -41,6 +41,7 @@ import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
 import ProfileModal from './components/ProfileModal';
 import Forum from './components/Forum';
+import LandingPage from './components/LandingPage';
 import ShareToForumModal from './components/ShareToForumModal';
 import TopNav from './components/TopNav';
 import { DICTS, I18nContext, useT, type Lang } from './i18n';
@@ -284,10 +285,23 @@ export default function App() {
       })
       .finally(() => {
         setVerifyToken(null);
-        // Strip the param so a refresh doesn't try again.
-        window.history.replaceState({}, '', '/');
+        // Strip the param so a refresh doesn't try again. Land on /chat
+        // because the verify-success banner lives inside the chat UI;
+        // landing on / would just bounce through LandingPage.
+        window.history.replaceState({}, '', '/chat');
+        setPathname('/chat');
       });
   }, [verifyToken]);
+
+  // Logged-in users at `/` shouldn't sit on the marketing landing page —
+  // bounce them to /chat so existing bookmarks (chat.ted-h.com → 301 →
+  // ai-sister.com/) and post-login navigation keep landing in the product.
+  // Anonymous visitors stay on LandingPage.
+  useEffect(() => {
+    if (authChecked && user && pathname === '/') {
+      navigate('/chat');
+    }
+  }, [authChecked, user, pathname, navigate]);
 
   const handleResendVerify = useCallback(async () => {
     setResendState('sending');
@@ -724,6 +738,18 @@ export default function App() {
         {t.loading}
       </div>
     );
+  } else if (pathname === '/') {
+    // Public landing page — first impression for new visitors and the
+    // surface that picks up traffic from social shares of forum posts.
+    // Logged-in users only flash this briefly before the auto-redirect
+    // useEffect bounces them to /chat.
+    content = (
+      <LandingPage
+        navigate={navigate}
+        lang={lang}
+        onLangChange={handleLangToggle}
+      />
+    );
   } else if (pathname.startsWith('/forum')) {
     // Forum is browseable by anonymous viewers — keep before the !user
     // gate so unauthed visitors land on read-only forum instead of Login.
@@ -762,7 +788,7 @@ export default function App() {
     content = (
       <AdminPage
         currentUser={user}
-        onExit={() => navigate('/')}
+        onExit={() => navigate('/chat')}
       />
     );
   } else {

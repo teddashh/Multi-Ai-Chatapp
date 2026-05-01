@@ -39,7 +39,9 @@ export default function TopNav({
 }: Props) {
   const t = useT();
   const isForum = pathname.startsWith('/forum');
-  const isChat = !isForum && pathname !== '/admin';
+  // Chat lives at /chat now (was /). Anything that's not forum / admin /
+  // landing falls back to chat (covers nested routes if we add any).
+  const isChat = !isForum && pathname !== '/admin' && pathname !== '/';
 
   return (
     <header className="flex-none sticky top-0 z-30 bg-gray-950/95 backdrop-blur border-b border-gray-800">
@@ -55,14 +57,14 @@ export default function TopNav({
             </button>
           )}
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chat')}
             className="font-bold text-gray-100 hover:text-white truncate"
           >
             {t.appName}
           </button>
           <nav className="flex gap-0.5 ml-2">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/chat')}
               className={`px-2.5 py-1 rounded text-xs transition-colors ${
                 isChat
                   ? 'bg-gray-800 text-white'
