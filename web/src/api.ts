@@ -828,11 +828,15 @@ export async function listForumPosts(opts: {
   // 'latest' default — 'trending' is global only (server ignores it
   // when category is set so the per-看板 list stays chronological).
   sort?: 'latest' | 'trending';
+  // 1–50, defaults to server PAGE_SIZE (20). Used by the homepage
+  // sections — 6 collapsed, 15 when "查看全部" is clicked.
+  limit?: number;
 }): Promise<{ posts: ForumPostSummary[]; page: number; pageSize: number }> {
   const params = new URLSearchParams();
   if (opts.category) params.set('category', opts.category);
   if (opts.page) params.set('page', String(opts.page));
   if (opts.sort) params.set('sort', opts.sort);
+  if (opts.limit) params.set('limit', String(opts.limit));
   const qs = params.toString();
   const res = await fetch(`/api/forum${qs ? '?' + qs : ''}`, {
     credentials: 'include',
@@ -843,6 +847,21 @@ export async function listForumPosts(opts: {
     page: number;
     pageSize: number;
   }>;
+}
+
+// Bulk-fetch posts by id, preserving the order the caller sent. Used
+// by the homepage "你剛看過" row which keeps recently-viewed ids in
+// localStorage and asks the server for fresh post-summary data so
+// counts (likes / comments) stay current.
+export async function bulkFetchForumPosts(
+  ids: number[],
+): Promise<ForumPostSummary[]> {
+  if (ids.length === 0) return [];
+  const qs = `ids=${ids.join(',')}`;
+  const res = await fetch(`/api/forum/bulk?${qs}`, { credentials: 'include' });
+  if (!res.ok) throw new Error(`${res.status}`);
+  const data = (await res.json()) as { posts: ForumPostSummary[] };
+  return data.posts;
 }
 
 // Per-AI stats inlined on the post-detail response — feeds the

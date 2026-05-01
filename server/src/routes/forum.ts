@@ -169,7 +169,15 @@ forumRoute.get('/', (c) => {
   const category = c.req.query('category');
   const sort = c.req.query('sort') === 'trending' ? 'trending' : 'latest';
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10) || 1);
-  const offset = (page - 1) * PAGE_SIZE;
+  // ?limit=N — clamped [1, 50]. Defaults to PAGE_SIZE so old callers
+  // get their previous behaviour. Index sections pass 6 (default) or
+  // 15 (after "查看全部").
+  const limitRaw = parseInt(c.req.query('limit') ?? '', 10);
+  const limit =
+    Number.isFinite(limitRaw) && limitRaw > 0
+      ? Math.min(50, limitRaw)
+      : PAGE_SIZE;
+  const offset = (page - 1) * limit;
 
   if (category && !FORUM_CATEGORIES.includes(category as ForumCategory)) {
     return c.json({ error: 'invalid category' }, 400);
@@ -179,17 +187,45 @@ forumRoute.get('/', (c) => {
   // applies to the global feed (homepage's 熱門貼文 row).
   const rows = (
     category
-      ? forumStmts.listByCategory.all(category, PAGE_SIZE, offset)
+      ? forumStmts.listByCategory.all(category, limit, offset)
       : sort === 'trending'
-        ? forumStmts.listByTrending.all(PAGE_SIZE, offset)
-        : forumStmts.listAll.all(PAGE_SIZE, offset)
+        ? forumStmts.listByTrending.all(limit, offset)
+        : forumStmts.listAll.all(limit, offset)
   ) as PostListRow[];
 
   return c.json({
     posts: rows.map(formatPostSummary),
     page,
-    pageSize: PAGE_SIZE,
+    pageSize: limit,
   });
+});
+
+// GET /api/forum/bulk?ids=1,5,3 — fetch a batch of posts by id and
+// return them in the same order as the query (no missing-id padding;
+// posts the requester listed but the server doesn't have just drop
+// out). Backs the homepage "你剛看過" row, which keeps a localStorage
+// list of recently-viewed post ids.
+forumRoute.get('/bulk', (c) => {
+  const raw = c.req.query('ids') ?? '';
+  const ids = raw
+    .split(',')
+    .map((s) => parseInt(s, 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (ids.length === 0) return c.json({ posts: [] });
+  if (ids.length > 50) ids.length = 50;
+  const placeholders = ids.map(() => '?').join(',');
+  const sql = `
+    SELECT p.*, u.username AS author_username, u.nickname AS author_nickname
+    FROM forum_posts p
+    JOIN users u ON u.id = p.author_user_id
+    WHERE p.id IN (${placeholders})
+  `;
+  const rows = db.prepare(sql).all(...ids) as PostListRow[];
+  // SQLite's IN doesn't preserve query order — sort in JS so the
+  // client gets posts back in the recency order they sent.
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const ordered = ids.map((id) => byId.get(id)).filter(Boolean) as PostListRow[];
+  return c.json({ posts: ordered.map(formatPostSummary) });
 });
 
 // ---------------------------------------------------------------------------

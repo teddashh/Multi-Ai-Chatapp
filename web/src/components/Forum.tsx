@@ -13,6 +13,7 @@ import {
 } from '../shared/types';
 import {
   avatarUrl,
+  bulkFetchForumPosts,
   getForumPost,
   listForumCategories,
   listForumLikers,
@@ -115,6 +116,34 @@ function parseForumPath(p: string): ForumRoute {
 // ---------------------------------------------------------------------------
 // Index view — 看板 list (category cards) + recent-posts feed.
 // ---------------------------------------------------------------------------
+// localStorage key + cap for the "你剛看過" row. We store post ids in
+// most-recent-first order; the server bulk endpoint resolves them back
+// to fresh summaries on each index load so counts stay current.
+const VIEWED_KEY = 'forumRecentlyViewed';
+const VIEWED_MAX = 24;
+
+function trackViewedPost(id: number): void {
+  try {
+    const raw = localStorage.getItem(VIEWED_KEY);
+    const arr = raw ? (JSON.parse(raw) as number[]) : [];
+    const next = [id, ...arr.filter((x) => x !== id)].slice(0, VIEWED_MAX);
+    localStorage.setItem(VIEWED_KEY, JSON.stringify(next));
+  } catch {
+    // ignore — private browsing / quota
+  }
+}
+
+function getViewedIds(): number[] {
+  try {
+    const raw = localStorage.getItem(VIEWED_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr.filter((n) => Number.isFinite(n)) : [];
+  } catch {
+    return [];
+  }
+}
+
 // View mode for the forum index — 'tile' is the modern default
 // (cards in a grid), 'list' is the original long-row layout. Persisted
 // to localStorage so the user's pick sticks across sessions.
@@ -129,10 +158,15 @@ function loadViewMode(): ViewMode {
   return 'tile';
 }
 
+// Default + expanded counts for each row. 6 = comfortable 2-row tile
+// preview (3 cols × 2 rows) without overwhelming the index. 15 = 5
+// rows × 3 cols when the user hits "查看全部"; pagination kicks in
+// past that.
+const SECTION_DEFAULT = 6;
+const SECTION_EXPANDED = 15;
+
 function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
   const [categories, setCategories] = useState<ForumCategoryCount[] | null>(null);
-  const [latest, setLatest] = useState<ForumPostSummary[] | null>(null);
-  const [trending, setTrending] = useState<ForumPostSummary[] | null>(null);
   const [err, setErr] = useState<string>('');
   const [viewMode, setViewModeState] = useState<ViewMode>(loadViewMode);
   const setViewMode = (m: ViewMode) => {
@@ -146,16 +180,9 @@ function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
 
   useEffect(() => {
     let alive = true;
-    Promise.all([
-      listForumCategories(),
-      listForumPosts({ sort: 'latest' }),
-      listForumPosts({ sort: 'trending' }),
-    ])
-      .then(([cats, latestRes, trendingRes]) => {
-        if (!alive) return;
-        setCategories(cats);
-        setLatest(latestRes.posts);
-        setTrending(trendingRes.posts);
+    listForumCategories()
+      .then((cats) => {
+        if (alive) setCategories(cats);
       })
       .catch((e: Error) => {
         if (alive) setErr(e.message);
@@ -192,8 +219,8 @@ function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
         )}
       </section>
 
-      {/* Single view-mode toggle drives both the latest + trending
-          rows. localStorage-backed so the user's preference sticks. */}
+      {/* Single view-mode toggle drives every section below.
+          localStorage-backed so the user's preference sticks. */}
       <div className="flex items-center justify-end -mb-3">
         <div className="flex rounded border border-gray-800 overflow-hidden text-[11px]">
           <button
@@ -221,31 +248,204 @@ function ForumIndex({ navigate }: { navigate: (p: string) => void }) {
         </div>
       </div>
 
-      <section>
-        <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-3">
-          最新貼文
-        </h2>
-        {err && <div className="text-red-400 text-sm mb-2">{err}</div>}
-        {!latest ? (
-          <div className="text-gray-500 text-sm">載入中…</div>
-        ) : latest.length === 0 ? (
-          <div className="text-gray-500 text-sm">
-            還沒人貼文 — 在主畫面跟 AI 聊一聊，從左邊 sidebar 對話旁的「分享」按鈕分享你的對話吧。
-          </div>
-        ) : (
-          <PostList posts={latest} viewMode={viewMode} navigate={navigate} />
-        )}
-      </section>
+      {err && <div className="text-red-400 text-sm">{err}</div>}
 
-      {trending && trending.length > 0 && (
-        <section>
-          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-3">
-            🔥 熱門貼文
-          </h2>
-          <PostList posts={trending} viewMode={viewMode} navigate={navigate} />
-        </section>
-      )}
+      <RecentlyViewedSection viewMode={viewMode} navigate={navigate} />
+      <PostSection
+        title="最新貼文"
+        emptyHint="還沒人貼文 — 在主畫面跟 AI 聊一聊，從左邊 sidebar 對話旁的「分享」按鈕分享你的對話吧。"
+        viewMode={viewMode}
+        navigate={navigate}
+        fetcher={({ limit, page }) =>
+          listForumPosts({ sort: 'latest', limit, page }).then((d) => d.posts)
+        }
+      />
+      <PostSection
+        title="熱門貼文"
+        viewMode={viewMode}
+        navigate={navigate}
+        fetcher={({ limit, page }) =>
+          listForumPosts({ sort: 'trending', limit, page }).then((d) => d.posts)
+        }
+      />
     </div>
+  );
+}
+
+// Generic post-listing section with three states:
+//   - default (collapsed-into-summary or just shorter): 6 posts
+//   - expanded ("查看全部"): 15 posts with pagination
+//   - hidden (<details> closed): summary only
+// Each section drives its own state so the user can have one expanded
+// while another stays collapsed.
+function PostSection({
+  title,
+  emptyHint,
+  viewMode,
+  navigate,
+  fetcher,
+}: {
+  title: string;
+  emptyHint?: string;
+  viewMode: ViewMode;
+  navigate: (p: string) => void;
+  fetcher: (args: { limit: number; page: number }) => Promise<ForumPostSummary[]>;
+}) {
+  const [posts, setPosts] = useState<ForumPostSummary[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(
+    (next: { expanded: boolean; page: number }) => {
+      setLoading(true);
+      const limit = next.expanded ? SECTION_EXPANDED : SECTION_DEFAULT;
+      fetcher({ limit, page: next.page })
+        .then((p) => setPosts(p))
+        .catch(() => {
+          // Section keeps last good data on error; surface via console only.
+          // The PostSection isn't critical enough to flash an error banner
+          // for transient blips.
+        })
+        .finally(() => setLoading(false));
+    },
+    [fetcher],
+  );
+
+  useEffect(() => {
+    load({ expanded: false, page: 1 });
+  }, [load]);
+
+  const handleViewAll = () => {
+    setExpanded(true);
+    setPage(1);
+    load({ expanded: true, page: 1 });
+  };
+  const handleCollapse = () => {
+    setExpanded(false);
+    setPage(1);
+    load({ expanded: false, page: 1 });
+  };
+  const handlePage = (delta: number) => {
+    const next = Math.max(1, page + delta);
+    setPage(next);
+    load({ expanded: true, page: next });
+  };
+
+  return (
+    <details open className="space-y-2">
+      <summary className="cursor-pointer select-none text-sm uppercase tracking-wider text-gray-500 mb-3 hover:text-gray-300">
+        {title}
+      </summary>
+      {posts === null ? (
+        <div className="text-gray-500 text-sm">載入中…</div>
+      ) : posts.length === 0 ? (
+        emptyHint ? (
+          <div className="text-gray-500 text-sm">{emptyHint}</div>
+        ) : null
+      ) : (
+        <>
+          <PostList posts={posts} viewMode={viewMode} navigate={navigate} />
+          <div className="flex items-center gap-2 mt-2">
+            {!expanded ? (
+              posts.length >= SECTION_DEFAULT && (
+                <button
+                  onClick={handleViewAll}
+                  disabled={loading}
+                  className="text-xs text-blue-300 hover:text-blue-200 disabled:opacity-50"
+                >
+                  查看全部 →
+                </button>
+              )
+            ) : (
+              <>
+                <button
+                  onClick={handleCollapse}
+                  disabled={loading}
+                  className="text-xs text-gray-400 hover:text-white disabled:opacity-50"
+                >
+                  ← 收起
+                </button>
+                <div className="ml-auto flex items-center gap-1 text-xs">
+                  <button
+                    onClick={() => handlePage(-1)}
+                    disabled={loading || page === 1}
+                    className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30"
+                  >
+                    上一頁
+                  </button>
+                  <span className="text-gray-500 px-1">第 {page} 頁</span>
+                  <button
+                    onClick={() => handlePage(1)}
+                    disabled={loading || posts.length < SECTION_EXPANDED}
+                    className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30"
+                    title={
+                      posts.length < SECTION_EXPANDED
+                        ? '已是最後一頁'
+                        : '下一頁'
+                    }
+                  >
+                    下一頁
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </details>
+  );
+}
+
+// "你剛看過" row — pulls ids from localStorage and bulk-fetches their
+// current summaries from the server (so post counts stay fresh). The
+// section silently disappears when the user has no viewing history
+// yet, so it doesn't take up space on a brand-new account.
+function RecentlyViewedSection({
+  viewMode,
+  navigate,
+}: {
+  viewMode: ViewMode;
+  navigate: (p: string) => void;
+}) {
+  const [posts, setPosts] = useState<ForumPostSummary[] | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    const ids = getViewedIds();
+    if (ids.length === 0) {
+      setPosts([]);
+      return;
+    }
+    bulkFetchForumPosts(ids.slice(0, VIEWED_MAX))
+      .then((p) => setPosts(p))
+      .catch(() => setPosts([]));
+  }, []);
+
+  if (!posts || posts.length === 0) return null;
+
+  const visible = expanded
+    ? posts.slice(0, SECTION_EXPANDED)
+    : posts.slice(0, SECTION_DEFAULT);
+  const hasMore = posts.length > SECTION_DEFAULT;
+
+  return (
+    <details open className="space-y-2">
+      <summary className="cursor-pointer select-none text-sm uppercase tracking-wider text-gray-500 mb-3 hover:text-gray-300">
+        你剛看過
+      </summary>
+      <PostList posts={visible} viewMode={viewMode} navigate={navigate} />
+      {hasMore && (
+        <div className="flex items-center gap-2 mt-2">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-xs text-blue-300 hover:text-blue-200"
+          >
+            {expanded ? '← 收起' : '查看全部 →'}
+          </button>
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -360,7 +560,10 @@ function ForumPostView({
 
   useEffect(() => {
     reload();
-  }, [reload]);
+    // Push this post id onto the localStorage "recently viewed" list.
+    // Forum index reads it back to populate the 你剛看過 row.
+    trackViewedPost(postId);
+  }, [reload, postId]);
 
   const togglePostLike = useCallback(async () => {
     if (!user || !data) return;
