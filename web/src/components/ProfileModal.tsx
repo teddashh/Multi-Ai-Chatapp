@@ -48,6 +48,8 @@ const DANGER_DICT = {
     sectionDesc:
       '兩個操作：「停用帳號」會把你登出並隱藏帳號，但資料保留；「永久刪除」會清除所有對話、貼文、推噓、附件等，無法復原。',
     moreInfo: '查看完整刪除說明',
+    expandBtn: '展開危險操作',
+    collapseBtn: '收合',
     disableTitle: '停用帳號',
     disableDesc:
       '把帳號標為已停用、登出。資料保留但下次無法登入，需聯絡 hello@ai-sister.com 重新啟用。',
@@ -71,6 +73,8 @@ const DANGER_DICT = {
     sectionDesc:
       'Two options. "Disable" signs you out and hides the account but keeps your data. "Permanently delete" wipes every chat, post, vote, and attachment — irreversible.',
     moreInfo: 'See full deletion details',
+    expandBtn: 'Show destructive actions',
+    collapseBtn: 'Hide',
     disableTitle: 'Disable account',
     disableDesc:
       'Marks the account as disabled and signs you out. Data is preserved but you cannot log in again — contact hello@ai-sister.com to re-enable.',
@@ -324,6 +328,10 @@ export default function ProfileModal({
 }: Props) {
   const { t, setLang, lang: currentLang } = useI18n();
   const dz = DANGER_DICT[currentLang];
+  // Danger Zone is collapsed by default so the destructive buttons
+  // can't be hit by accident while the user is reaching for the Save
+  // button just above.
+  const [dangerExpanded, setDangerExpanded] = useState(false);
   const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
   const [purgeUsername, setPurgeUsername] = useState('');
   const [purgePassword, setPurgePassword] = useState('');
@@ -949,29 +957,52 @@ export default function ProfileModal({
           {t.save}
         </button>
 
-        {/* Danger Zone — soft disable + permanent purge. Lives at the
-            bottom of the modal so it can't be hit by mistake while
-            editing profile fields. Each destructive action runs through
-            a separate confirm flow. */}
+        {/* Danger Zone — soft disable + permanent purge. Collapsed by
+            default; the destructive buttons only appear after the user
+            clicks "展開危險操作" so the Save button above can't be
+            mis-clicked into a disable / purge. Each action then runs
+            through its own confirm flow. */}
         <div className="mt-8 pt-5 border-t border-red-900/40">
           <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-bold text-red-300 mb-1">
-                {dz.sectionTitle}
-              </h3>
-              <p className="text-[11px] text-red-200/70 leading-relaxed">
-                {dz.sectionDesc}{' '}
-                <a
-                  href="/data-deletion"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline hover:text-red-100"
-                >
-                  {dz.moreInfo}
-                </a>
-              </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-red-300 mb-1">
+                  {dz.sectionTitle}
+                </h3>
+                <p className="text-[11px] text-red-200/70 leading-relaxed">
+                  {dz.sectionDesc}{' '}
+                  <a
+                    href="/data-deletion"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-red-100"
+                  >
+                    {dz.moreInfo}
+                  </a>
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDangerExpanded((v) => !v);
+                  // When collapsing, drop any half-typed confirms so
+                  // re-expanding shows clean state.
+                  if (dangerExpanded) {
+                    setShowDisableConfirm(false);
+                    setShowPurgeConfirm(false);
+                    setDisableErr('');
+                    setPurgeErr('');
+                  }
+                }}
+                className="flex-none px-2.5 py-1 rounded border border-red-900/60 text-[11px] text-red-200 hover:bg-red-900/30"
+                aria-expanded={dangerExpanded}
+              >
+                {dangerExpanded ? `▲ ${dz.collapseBtn}` : `▼ ${dz.expandBtn}`}
+              </button>
             </div>
 
+            {dangerExpanded && (
+            <>
             {/* Disable: less destructive — keeps the data, just signs
                 the user out and blocks future logins. */}
             <div className="pt-3 border-t border-red-900/40">
@@ -1111,6 +1142,8 @@ export default function ProfileModal({
               </div>
             )}
             </div>
+            </>
+            )}
           </div>
         </div>
       </form>
