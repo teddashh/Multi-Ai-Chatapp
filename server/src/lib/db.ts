@@ -133,6 +133,30 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
   );
   CREATE INDEX IF NOT EXISTS idx_comment_replies ON forum_comment_replies(comment_id, id);
+
+  -- Media library — image attachments associated with either a forum
+  -- post (post_id set) or one of the four AI personas (ai_provider set).
+  -- Exactly one of the two must be non-null. Thumbnails surface as the
+  -- og:image when sharing a post; ai_provider rows render in the AI's
+  -- public profile gallery. Files live under UPLOAD_DIR/_forum-media/
+  -- as <uuid>.<ext>; path stores the bare filename so moving the
+  -- uploads dir doesn't break rows (same pattern as users.avatar_path).
+  CREATE TABLE IF NOT EXISTS forum_media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER REFERENCES forum_posts(id) ON DELETE CASCADE,
+    ai_provider TEXT,
+    path TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    caption TEXT,
+    is_thumbnail INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    uploaded_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    CHECK ((post_id IS NULL) <> (ai_provider IS NULL))
+  );
+  CREATE INDEX IF NOT EXISTS idx_forum_media_post ON forum_media(post_id, position);
+  CREATE INDEX IF NOT EXISTS idx_forum_media_ai ON forum_media(ai_provider, position);
 `);
 
 // One-shot, idempotent column additions for existing DBs.
@@ -1280,7 +1304,82 @@ export const forumStmts = {
      JOIN forum_comments c ON c.id = l.target_id
      WHERE l.user_id = ? AND l.target_type = 'comment' AND c.post_id = ?`,
   ),
+
+  // ── Media library ────────────────────────────────────────────────
+  insertPostMedia: db.prepare<[
+    number,
+    string,
+    string,
+    number,
+    string | null,
+    number,
+    number,
+    number | null,
+  ]>(
+    `INSERT INTO forum_media
+       (post_id, ai_provider, path, mime_type, size, caption,
+        is_thumbnail, position, uploaded_by_user_id)
+     VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  insertAIMedia: db.prepare<[
+    string,
+    string,
+    string,
+    number,
+    string | null,
+    number,
+    number,
+    number | null,
+  ]>(
+    `INSERT INTO forum_media
+       (post_id, ai_provider, path, mime_type, size, caption,
+        is_thumbnail, position, uploaded_by_user_id)
+     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ),
+  listMediaForPost: db.prepare<[number]>(
+    `SELECT * FROM forum_media WHERE post_id = ? ORDER BY position, id`,
+  ),
+  listMediaForAI: db.prepare<[string]>(
+    `SELECT * FROM forum_media WHERE ai_provider = ? ORDER BY position, id`,
+  ),
+  // OG image lookup — prefer the row marked is_thumbnail, fall back to
+  // the first by position. Used by the SSR meta-tag injector.
+  thumbnailForPost: db.prepare<[number]>(
+    `SELECT * FROM forum_media
+     WHERE post_id = ?
+     ORDER BY is_thumbnail DESC, position, id
+     LIMIT 1`,
+  ),
+  findMediaById: db.prepare<[number]>(
+    `SELECT * FROM forum_media WHERE id = ?`,
+  ),
+  deleteMediaById: db.prepare<[number]>(
+    `DELETE FROM forum_media WHERE id = ?`,
+  ),
+  // Clears the thumbnail flag on every other media row for the same
+  // owner so only one row per post / per AI persona is the canonical
+  // share thumbnail at any time.
+  clearPostThumbnailExcept: db.prepare<[number, number]>(
+    `UPDATE forum_media SET is_thumbnail = 0 WHERE post_id = ? AND id <> ?`,
+  ),
+  clearAIThumbnailExcept: db.prepare<[string, number]>(
+    `UPDATE forum_media SET is_thumbnail = 0 WHERE ai_provider = ? AND id <> ?`,
+  ),
 };
+
+export interface MediaRow {
+  id: number;
+  post_id: number | null;
+  ai_provider: string | null;
+  path: string;
+  mime_type: string;
+  size: number;
+  caption: string | null;
+  is_thumbnail: number;
+  position: number;
+  uploaded_by_user_id: number | null;
+  created_at: number;
+}
 
 export const messageStmts = {
   insert: db.prepare<[string, 'user' | 'ai', string | null, string | null, string, number]>(

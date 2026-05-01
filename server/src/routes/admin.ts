@@ -8,6 +8,7 @@ import {
 import {
   attachmentStmts,
   auditStmts,
+  forumStmts,
   messageStmts,
   resetStmts,
   sessionStmts,
@@ -15,11 +16,18 @@ import {
   userStmts,
   type AuditRow,
   type AttachmentRow,
+  type MediaRow,
   type MessageRow,
   type SessionRow,
   type UserRow,
 } from '../lib/db.js';
 import { sendInviteEmail } from '../lib/mail.js';
+import {
+  MAX_FORUM_MEDIA_BYTES,
+  deleteForumMedia,
+  isSupportedForumMediaMime,
+  saveForumMedia,
+} from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
@@ -350,6 +358,74 @@ adminRoute.post('/users/:username/disabled', async (c) => {
     metadata: { username },
   });
   return c.json({ ok: true, disabledAt: next });
+});
+
+// === AI PERSONA MEDIA LIBRARY ===
+// Each of the 4 AI personas (claude / chatgpt / gemini / grok) gets a
+// public-facing media gallery on their forum profile. Admin-only upload
+// since AIs aren't real users; we don't want random users posting
+// images there.
+
+const VALID_AI_PROVIDERS = new Set(['claude', 'chatgpt', 'gemini', 'grok']);
+
+adminRoute.post('/ai-personas/:provider/media', async (c) => {
+  const me = c.get('user');
+  const provider = c.req.param('provider') ?? '';
+  if (!VALID_AI_PROVIDERS.has(provider)) {
+    return c.json({ error: 'invalid provider' }, 400);
+  }
+  const form = await c.req.parseBody();
+  const file = form['file'];
+  if (!(file instanceof File)) return c.json({ error: 'file required' }, 400);
+  if (!isSupportedForumMediaMime(file.type)) {
+    return c.json({ error: 'unsupported mime' }, 400);
+  }
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (buf.length > MAX_FORUM_MEDIA_BYTES) {
+    return c.json({ error: 'file too large (max 8 MB)' }, 400);
+  }
+  const caption = typeof form['caption'] === 'string' ? form['caption'] : null;
+  const isThumbnail =
+    form['isThumbnail'] === '1' || form['isThumbnail'] === 'true';
+
+  const path = saveForumMedia(file.type, buf);
+  const existing = forumStmts.listMediaForAI.all(provider) as MediaRow[];
+  const result = forumStmts.insertAIMedia.run(
+    provider,
+    path,
+    file.type,
+    buf.length,
+    caption,
+    isThumbnail ? 1 : 0,
+    existing.length,
+    me.id,
+  );
+  const newId = Number(result.lastInsertRowid);
+  if (isThumbnail) {
+    forumStmts.clearAIThumbnailExcept.run(provider, newId);
+  }
+  audit(me.id, 'ai_media_upload', {
+    metadata: { provider, mediaId: newId, size: buf.length },
+  });
+  return c.json({ ok: true, mediaId: newId });
+});
+
+adminRoute.delete('/ai-personas/:provider/media/:id', (c) => {
+  const me = c.get('user');
+  const provider = c.req.param('provider') ?? '';
+  if (!VALID_AI_PROVIDERS.has(provider)) {
+    return c.json({ error: 'invalid provider' }, 400);
+  }
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'invalid id' }, 400);
+  const row = forumStmts.findMediaById.get(id) as MediaRow | undefined;
+  if (!row || row.ai_provider !== provider) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  forumStmts.deleteMediaById.run(id);
+  deleteForumMedia(row.path);
+  audit(me.id, 'ai_media_delete', { metadata: { provider, mediaId: id } });
+  return c.json({ ok: true });
 });
 
 // === SESSIONS (admin audit view) ===

@@ -131,6 +131,43 @@ export default function AIProfile({ provider, navigate }: Props) {
         />
       </div>
 
+      {/* Media library — admin-curated images for this AI persona. */}
+      {data && data.media.length > 0 && (
+        <section>
+          <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-2">
+            媒體庫
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {data.media.map((m) => (
+              <a
+                key={m.id}
+                href={m.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative block aspect-square rounded-md overflow-hidden bg-gray-800 hover:ring-2 transition-all"
+                style={{
+                  // hover ring follows the persona's brand colour
+                  ['--tw-ring-color' as string]: `${meta.color}99`,
+                }}
+                title={m.caption ?? '查看原圖'}
+              >
+                <img
+                  src={m.url}
+                  alt={m.caption ?? ''}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                />
+                {m.caption && (
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2">
+                    {m.caption}
+                  </div>
+                )}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Recent comments */}
       <section>
         <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-2">

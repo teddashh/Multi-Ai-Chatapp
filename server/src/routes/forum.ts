@@ -20,6 +20,7 @@ import {
   userStmts,
   type ForumCommentRow,
   type ForumPostRow,
+  type MediaRow,
   type MessageRow,
   type SessionRow,
   type UserRow,
@@ -27,6 +28,13 @@ import {
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { AI_PROFILE_DATA } from '../shared/aiProfiles.js';
+import {
+  MAX_FORUM_MEDIA_BYTES,
+  deleteForumMedia,
+  isSupportedForumMediaMime,
+  readForumMedia,
+  saveForumMedia,
+} from '../lib/uploads.js';
 
 interface UsageRollup {
   totalTokens: number;
@@ -441,6 +449,8 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     });
   }
 
+  const mediaRows = forumStmts.listMediaForPost.all(postId) as MediaRow[];
+
   return c.json({
     post: formatPostDetail(
       {
@@ -456,6 +466,7 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     })),
     aiStats,
     userStats,
+    media: mediaRows.map(mediaRowDTO),
   });
 });
 
@@ -564,6 +575,122 @@ forumRoute.delete('/comments/:id/replies/:replyId', requireAuth, (c) => {
     if (reply.vote === 'up') forumStmts.decCommentThumbs.run(commentId);
     else if (reply.vote === 'down') forumStmts.incCommentThumbs.run(commentId);
   })();
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Media library — image attachments for posts (and AI personas — those
+// upload via /api/admin/...). Files live under UPLOAD_DIR/_forum-media/
+// and are served via GET /api/forum/media/:id below. Only the post
+// author or an admin can upload / delete.
+// ---------------------------------------------------------------------------
+
+function mediaRowDTO(row: MediaRow) {
+  return {
+    id: row.id,
+    postId: row.post_id,
+    aiProvider: row.ai_provider,
+    url: `/api/forum/media/${row.id}`,
+    mimeType: row.mime_type,
+    size: row.size,
+    caption: row.caption,
+    isThumbnail: !!row.is_thumbnail,
+    position: row.position,
+    createdAt: row.created_at * 1000,
+  };
+}
+
+forumRoute.get('/media/:id', (c) => {
+  const id = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(id) || id <= 0) return c.json({ error: 'invalid' }, 400);
+  const row = forumStmts.findMediaById.get(id) as MediaRow | undefined;
+  if (!row) return c.json({ error: 'not found' }, 404);
+  const buf = readForumMedia(row.path);
+  if (!buf) return c.json({ error: 'not found' }, 404);
+  return new Response(buf, {
+    headers: {
+      'Content-Type': row.mime_type,
+      'Cache-Control': 'public, max-age=86400',
+    },
+  });
+});
+
+// Upload one image and attach it to a post the caller authored (or any
+// post if the caller is admin). multipart/form-data with a single
+// 'file' field; optional 'caption' + 'isThumbnail' booleans.
+forumRoute.post('/posts/:postId/media', requireAuth, async (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('postId') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid post id' }, 400);
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+
+  const form = await c.req.parseBody();
+  const file = form['file'];
+  if (!(file instanceof File)) {
+    return c.json({ error: 'file required' }, 400);
+  }
+  if (!isSupportedForumMediaMime(file.type)) {
+    return c.json({ error: 'unsupported mime' }, 400);
+  }
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (buf.length > MAX_FORUM_MEDIA_BYTES) {
+    return c.json({ error: 'file too large (max 8 MB)' }, 400);
+  }
+  const caption = typeof form['caption'] === 'string' ? form['caption'] : null;
+  const isThumbnail =
+    form['isThumbnail'] === '1' || form['isThumbnail'] === 'true';
+
+  const path = saveForumMedia(file.type, buf);
+  // Append to end by default — admins can reorder later.
+  const existing = forumStmts.listMediaForPost.all(postId) as MediaRow[];
+  const position = existing.length;
+  const result = forumStmts.insertPostMedia.run(
+    postId,
+    path,
+    file.type,
+    buf.length,
+    caption,
+    isThumbnail ? 1 : 0,
+    position,
+    user.id,
+  );
+  const newId = Number(result.lastInsertRowid);
+  if (isThumbnail) {
+    forumStmts.clearPostThumbnailExcept.run(postId, newId);
+  }
+  const row = forumStmts.findMediaById.get(newId) as MediaRow;
+  return c.json({ media: mediaRowDTO(row) });
+});
+
+forumRoute.delete('/posts/:postId/media/:mediaId', requireAuth, (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('postId') ?? '', 10);
+  const mediaId = parseInt(c.req.param('mediaId') ?? '', 10);
+  if (
+    !Number.isFinite(postId) ||
+    postId <= 0 ||
+    !Number.isFinite(mediaId) ||
+    mediaId <= 0
+  ) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  const row = forumStmts.findMediaById.get(mediaId) as MediaRow | undefined;
+  if (!row || row.post_id !== postId) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  forumStmts.deleteMediaById.run(mediaId);
+  deleteForumMedia(row.path);
   return c.json({ ok: true });
 });
 
@@ -786,6 +913,7 @@ function aiProfileResponse(
   ) as UsageRollupRow[];
   const usage = rollupUsage(usageRows);
   const profile = AI_PROFILE_DATA[provider as keyof typeof AI_PROFILE_DATA];
+  const media = forumStmts.listMediaForAI.all(provider) as MediaRow[];
   return c.json({
     provider,
     // Per spec: admin and AIs share the "Admin" badge — AIs are first-
@@ -822,6 +950,7 @@ function aiProfileResponse(
       postTitle: r.post_title,
       postCategory: r.post_category,
     })),
+    media: media.map(mediaRowDTO),
   });
 }
 

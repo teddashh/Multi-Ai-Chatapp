@@ -31,6 +31,7 @@ import {
   type ForumLiker,
   type ForumPostDetail,
   type ForumPostSummary,
+  type MediaItem,
   type User,
   type UserStat,
 } from '../api';
@@ -612,6 +613,7 @@ function ForumPostView({
     comments: ForumComment[];
     aiStats: AIStatsMap;
     userStats: Record<string, UserStat>;
+    media: MediaItem[];
   } | null>(null);
   const [err, setErr] = useState<string>('');
   const [busy, setBusy] = useState(false);
@@ -855,6 +857,12 @@ function ForumPostView({
         ))}
       </div>
 
+      {/* Media library — admin-curated images attached to this post.
+          Empty array hides the section. The thumbnail (is_thumbnail=1)
+          is also what the server serves as og:image for share previews,
+          so the gallery doubles as the social-card source of truth. */}
+      {data.media.length > 0 && <MediaGallery media={data.media} />}
+
       {/* Composer — composerRef anchors the 回復 jump button at the
           top of the page so readers can scroll straight here. */}
       <div ref={composerRef}>
@@ -945,6 +953,56 @@ const IconLink = ({ className = 'w-4 h-4' }: { className?: string }) => (
     <path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.41-1.41" />
   </svg>
 );
+
+// Media gallery — surfaces the post's image library as a horizontal
+// thumbnail row. Click a tile to open the image in a new tab (full
+// resolution). The thumbnail flag (★) is purely informational — server
+// already used it for the og:image; on the page itself every image is
+// equally browsable.
+export function MediaGallery({ media }: { media: MediaItem[] }) {
+  return (
+    <section className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <h3 className="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">
+        <span>媒體庫</span>
+        <span className="text-[11px] text-gray-500 font-normal">
+          {media.length} 張圖
+        </span>
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {media.map((m) => (
+          <a
+            key={m.id}
+            href={m.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="relative block aspect-square rounded-md overflow-hidden bg-gray-800 hover:ring-2 hover:ring-pink-400/60 transition-all"
+            title={m.caption ?? '查看原圖'}
+          >
+            <img
+              src={m.url}
+              alt={m.caption ?? ''}
+              loading="lazy"
+              className="w-full h-full object-cover"
+            />
+            {m.isThumbnail && (
+              <span
+                className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-yellow-300 text-[10px]"
+                title="社群分享封面"
+              >
+                ★ 封面
+              </span>
+            )}
+            {m.caption && (
+              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2">
+                {m.caption}
+              </div>
+            )}
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 // Share row — opens platform-specific intent URLs (X / Facebook /
 // Threads) plus a copy-link fallback. Compact icon-only style on

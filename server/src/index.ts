@@ -90,11 +90,29 @@ if (existsSync(webDist)) {
     if (!post) return c.html(html);
 
     const publicUrl = process.env.PUBLIC_URL ?? '';
-    const url = publicUrl
-      ? `${publicUrl.replace(/\/+$/, '')}/forum/post/${id}`
-      : `/forum/post/${id}`;
+    const baseUrl = publicUrl ? publicUrl.replace(/\/+$/, '') : '';
+    const url = `${baseUrl}/forum/post/${id}`;
     const title = `${post.title} | AI Sister`;
     const description = trimForOg(post.body);
+
+    // Look up a share thumbnail for the post — admin-flagged thumbnail
+    // wins, else the first media row by position. Bare-host fallback
+    // means the FB / X preview shows the site default rather than no
+    // image (easier visual consistency than an empty thumbnail).
+    let imageMeta = '';
+    try {
+      const thumb = forumStmts.thumbnailForPost.get(id) as
+        | { id: number }
+        | undefined;
+      if (thumb && baseUrl) {
+        const imgUrl = `${baseUrl}/api/forum/media/${thumb.id}`;
+        imageMeta = `
+    <meta property="og:image" content="${escapeHtml(imgUrl)}" />
+    <meta name="twitter:image" content="${escapeHtml(imgUrl)}" />`;
+      }
+    } catch {
+      // ignore — image is optional, preview still works without one
+    }
 
     const ogBlock = `
     <meta property="og:url" content="${escapeHtml(url)}" />
@@ -103,7 +121,7 @@ if (existsSync(webDist)) {
     <meta property="og:description" content="${escapeHtml(description)}" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="${escapeHtml(title)}" />
-    <meta name="twitter:description" content="${escapeHtml(description)}" />`;
+    <meta name="twitter:description" content="${escapeHtml(description)}" />${imageMeta}`;
 
     // Strip the site-wide og:title / og:description / og:type and the
     // matching twitter:* tags, then splice the per-post block in just

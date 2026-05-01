@@ -14,8 +14,10 @@ export const UPLOAD_ROOT = resolve(process.env.UPLOAD_DIR || './data/uploads');
 mkdirSync(UPLOAD_ROOT, { recursive: true });
 mkdirSync(join(UPLOAD_ROOT, '_pending'), { recursive: true });
 mkdirSync(join(UPLOAD_ROOT, '_avatars'), { recursive: true });
+mkdirSync(join(UPLOAD_ROOT, '_forum-media'), { recursive: true });
 
 const AVATAR_DIR = join(UPLOAD_ROOT, '_avatars');
+const FORUM_MEDIA_DIR = join(UPLOAD_ROOT, '_forum-media');
 const AVATAR_MIME_EXT: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -62,6 +64,52 @@ export function readAvatar(ref: string): Buffer | null {
     return readFileSync(abs);
   } catch {
     return null;
+  }
+}
+
+// ── Forum media (post galleries + AI persona galleries) ──────────────
+export const MAX_FORUM_MEDIA_BYTES = 8 * 1024 * 1024;
+const FORUM_MEDIA_MIME_EXT: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+export function isSupportedForumMediaMime(mime: string): boolean {
+  return mime in FORUM_MEDIA_MIME_EXT;
+}
+
+export function forumMediaExt(mime: string): string {
+  const ext = FORUM_MEDIA_MIME_EXT[mime];
+  if (!ext) throw new Error(`unsupported forum media mime ${mime}`);
+  return ext;
+}
+
+// Writes the bytes under _forum-media/<uuid>.<ext> and returns the bare
+// filename for storage in forum_media.path. Same portability rationale
+// as users.avatar_path — moving UPLOAD_DIR doesn't invalidate rows.
+export function saveForumMedia(mime: string, buffer: Buffer): string {
+  const ext = forumMediaExt(mime);
+  const filename = `${randomUUID()}.${ext}`;
+  writeFileSync(join(FORUM_MEDIA_DIR, filename), buffer);
+  return filename;
+}
+
+export function readForumMedia(filename: string): Buffer | null {
+  try {
+    return readFileSync(join(FORUM_MEDIA_DIR, filename));
+  } catch {
+    return null;
+  }
+}
+
+export function deleteForumMedia(filename: string): void {
+  try {
+    rmSync(join(FORUM_MEDIA_DIR, filename));
+  } catch {
+    // ignore — file may already be missing
   }
 }
 

@@ -733,6 +733,22 @@ export interface ForumPostDetail extends ForumPostSummary {
   liked: boolean;
 }
 
+// Image attached to either a forum post or one of the four AI personas.
+// Posts surface their media as a gallery row at the bottom of the post
+// detail page; AI personas surface theirs in the persona profile.
+export interface MediaItem {
+  id: number;
+  postId: number | null;
+  aiProvider: 'claude' | 'chatgpt' | 'gemini' | 'grok' | null;
+  url: string;
+  mimeType: string;
+  size: number;
+  caption: string | null;
+  isThumbnail: boolean;
+  position: number;
+  createdAt: number;
+}
+
 export interface ForumComment {
   id: number;
   authorType: 'user' | 'ai';
@@ -836,6 +852,8 @@ export interface AIProfileResponse {
     postTitle: string;
     postCategory: string;
   }>;
+  // Admin-curated media library shown on the AI's public profile.
+  media: MediaItem[];
 }
 
 export async function getAIProfile(
@@ -1018,6 +1036,7 @@ export async function getForumPost(
   comments: ForumComment[];
   aiStats: AIStatsMap;
   userStats: Record<string, UserStat>;
+  media: MediaItem[];
 }> {
   const res = await fetch(`/api/forum/${postId}`, {
     credentials: 'include',
@@ -1028,7 +1047,43 @@ export async function getForumPost(
     comments: ForumComment[];
     aiStats: AIStatsMap;
     userStats: Record<string, UserStat>;
+    media: MediaItem[];
   }>;
+}
+
+// Upload an image to a post's media library. Caller must be the post
+// author or admin. Returns the new media item.
+export async function uploadPostMedia(
+  postId: number,
+  file: File,
+  opts: { caption?: string; isThumbnail?: boolean } = {},
+): Promise<MediaItem> {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (opts.caption) fd.append('caption', opts.caption);
+  if (opts.isThumbnail) fd.append('isThumbnail', '1');
+  const res = await fetch(`/api/forum/posts/${postId}/media`, {
+    method: 'POST',
+    credentials: 'include',
+    body: fd,
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  const out = (await res.json()) as { media: MediaItem };
+  return out.media;
+}
+
+export async function deletePostMedia(
+  postId: number,
+  mediaId: number,
+): Promise<void> {
+  const res = await fetch(`/api/forum/posts/${postId}/media/${mediaId}`, {
+    method: 'DELETE',
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
 }
 
 export async function shareSessionToForum(body: {
