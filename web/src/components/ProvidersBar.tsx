@@ -57,14 +57,16 @@ export default function ProvidersBar({ models, selected, onSelect, priceLabels, 
               onChange={(e) => onSelect(p, e.target.value)}
               className="bg-transparent text-[10px] sm:text-[11px] text-gray-300 border-none focus:outline-none truncate min-w-0 flex-1 cursor-pointer hover:text-white"
             >
-              {filteredOptions.map((m) => {
-                const price = priceLabels[m];
-                return (
-                  <option key={m} value={m} className="bg-gray-900 text-gray-200">
-                    {price ? `${m}  ${price}` : m}
-                  </option>
-                );
-              })}
+              {filteredOptions.map((m) => (
+                // Multi-mode roundtable only ever lists chat models.
+                // Per Phase-7 cleanup, chat-model token pricing no
+                // longer renders inline (users mostly know it; image
+                // models keep their per-call price in SingleProvider
+                // picker). priceLabels prop kept for API stability.
+                <option key={m} value={m} className="bg-gray-900 text-gray-200">
+                  {m}
+                </option>
+              ))}
             </select>
           </div>
         );

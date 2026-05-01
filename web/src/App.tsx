@@ -1045,7 +1045,18 @@ const REASONING_MODEL_HINT: Record<AIProvider, string> = {
 // vendor's image stack, with SDXL as the universal cheap fallback.
 // Keep in sync with server/src/shared/models.ts.
 const IMAGE_MODELS: Record<AIProvider, string[]> = {
-  chatgpt: ['gpt-image-1-high', 'gpt-image-1-medium', 'gpt-image-1-low', 'sdxl'],
+  chatgpt: [
+    'gpt-image-2-high',
+    'gpt-image-2-medium',
+    'gpt-image-2-low',
+    'gpt-image-1.5-high',
+    'gpt-image-1.5-medium',
+    'gpt-image-1-high',
+    'gpt-image-1-medium',
+    'gpt-image-1-low',
+    'gpt-image-1-mini',
+    'sdxl',
+  ],
   claude: ['flux-1.1-pro-ultra', 'flux-1.1-pro', 'sdxl'],
   gemini: [
     'imagen-4.0-ultra-generate-001',
@@ -1143,7 +1154,11 @@ function SingleProviderPicker({
           style={{ minWidth: '12em' }}
         >
           {options.map((m) => {
-            const price = priceLabels[m];
+            // Only show the per-call price label for image models —
+            // chat token pricing is widely understood and clutters
+            // the dropdown. Image models are the surprising/opaque
+            // ones (per-image, not per-token), so the price stays.
+            const price = isImageMode ? priceLabels[m] : null;
             return (
               <option key={m} value={m}>
                 {price ? `${m}  ${price}` : m}
