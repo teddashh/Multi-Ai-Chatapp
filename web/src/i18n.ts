@@ -131,6 +131,17 @@ export interface Dict {
   modeRoundtableHowto1: string;
   modeRoundtableHowto2: string;
   modeRoundtableHowto3: string;
+  modePersonalHowto1: string;
+  modePersonalHowto2: string;
+  modeProfessionHowto1: string;
+  modeProfessionHowto2: string;
+  modeProfessionHowto3: string;
+  modeReasoningHowto1: string;
+  modeReasoningHowto2: string;
+  modeReasoningHowto3: string;
+  modeImageHowto1: string;
+  modeImageHowto2: string;
+  modeImageHowto3: string;
 
   chatStartHere: string;
   chatExpand: string;
@@ -334,7 +345,7 @@ const ZH: Dict = {
   modeReasoningName: '深度思考',
   modeReasoningDesc: '單一 AI 走推理模型，慢但深',
   modeImageName: '出圖模式',
-  modeImageDesc: 'AI 生圖（DALL-E / SD）',
+  modeImageDesc: 'AI 文字生圖，多家模型可選',
   modeGroupAgent: '單人模式',
   modeGroupMulti: '多人模式',
   agentTalkTo: '對象',
@@ -356,6 +367,28 @@ const ZH: Dict = {
     '5 輪 × 4 人辯證螺旋：開場 → 質疑 → 攻防 → 收斂 → 真理浮現。',
   modeRoundtableHowto2: '適合開放性議題，給 AI 充分時間互相挑戰、修正、收斂。',
   modeRoundtableHowto3: '注意：這個模式會跑很久（10-30 分鐘）。',
+  modePersonalHowto1:
+    '挑一位 AI 當你的對話對象，所有訊息只送給它一家。',
+  modePersonalHowto2:
+    '適合長對話、跟特定 AI 建立角色脈絡，或想專心跟某一家深聊。',
+  modeProfessionHowto1:
+    '指派一個職業（醫生、律師、心理師、品酒師…），AI 會以該領域的視角與口吻回答。',
+  modeProfessionHowto2:
+    '比通用回答更聚焦，適合需要特定專業思考框架的諮詢。',
+  modeProfessionHowto3:
+    'AI 不是真的合格專業人士，重大決定還是要洽詢真人。',
+  modeReasoningHowto1:
+    'AI 切到推理（reasoning / thinking）模型，會在腦中先模擬步驟才下結論。',
+  modeReasoningHowto2:
+    '適合邏輯題、數學、複雜程式偵錯，或任何需要嚴謹推理的問題。',
+  modeReasoningHowto3:
+    '比一般模式慢 5–30 倍、token 也燒得比較凶。',
+  modeImageHowto1:
+    '用文字描述想要的畫面，AI 會生成對應的圖。',
+  modeImageHowto2:
+    '不同家風格不同：gpt-image 寫實／商品感、Imagen 畫質高、Flux 偏藝術、Grok Imagine 即興。',
+  modeImageHowto3:
+    '按張計費（不是 token），下方下拉選單會顯示每張的價格。',
 
   chatStartHere: '在下方輸入框開始對話',
   chatExpand: '▼ 展開',
@@ -558,7 +591,7 @@ const EN: Dict = {
   modeReasoningName: 'Deep Thought',
   modeReasoningDesc: 'Single AI on a reasoning model — slow but deep',
   modeImageName: 'Image',
-  modeImageDesc: 'AI image generation (DALL-E / SD)',
+  modeImageDesc: 'Text-to-image with your choice of model',
   modeGroupAgent: 'Agent Mode',
   modeGroupMulti: 'Multi Mode',
   agentTalkTo: 'Talk to',
@@ -583,6 +616,28 @@ const EN: Dict = {
   modeRoundtableHowto2:
     'Best for open-ended topics — gives the AIs real time to challenge, revise, and converge.',
   modeRoundtableHowto3: 'Heads up: this mode runs long (10-30 min).',
+  modePersonalHowto1:
+    'Pick one AI as your dedicated chat partner — every message goes only to that model.',
+  modePersonalHowto2:
+    'Good for long conversations, building a single persona, or going deep with one model\'s voice.',
+  modeProfessionHowto1:
+    'Assign a job (doctor, lawyer, therapist, sommelier…) and the AI answers from that field\'s perspective.',
+  modeProfessionHowto2:
+    'More focused than a generic answer when you want a specific professional tone or framework.',
+  modeProfessionHowto3:
+    'The AI is not a licensed professional — consult a real one for serious decisions.',
+  modeReasoningHowto1:
+    'Switches the AI to its reasoning / thinking model — it spends extra compute simulating steps before answering.',
+  modeReasoningHowto2:
+    'Good for logic puzzles, math, complex debugging, or anything that benefits from careful step-by-step thought.',
+  modeReasoningHowto3:
+    '5–30× slower than normal and burns more tokens.',
+  modeImageHowto1:
+    'Describe the picture you want and the AI generates an image to match.',
+  modeImageHowto2:
+    'Different vendors, different vibes: gpt-image is realistic / product-like, Imagen is high-detail, Flux is painterly, Grok Imagine is freestyle.',
+  modeImageHowto3:
+    'Billed per image (not per token); the dropdown below shows price per shot.',
 
   chatStartHere: 'Type below to start the conversation',
   chatExpand: '▼ Expand',
@@ -762,11 +817,21 @@ export function modeHowto(t: Dict, mode: ChatMode): string[] {
         t.modeRoundtableHowto2,
         t.modeRoundtableHowto3,
       ];
-    // Agent modes don't have a multi-step howto guide. Return desc as
-    // the single instructional line.
-    case 'personal': return [t.modePersonalDesc];
-    case 'profession': return [t.modeProfessionDesc];
-    case 'reasoning': return [t.modeReasoningDesc];
-    case 'image': return [t.modeImageDesc];
+    case 'personal':
+      return [t.modePersonalHowto1, t.modePersonalHowto2];
+    case 'profession':
+      return [
+        t.modeProfessionHowto1,
+        t.modeProfessionHowto2,
+        t.modeProfessionHowto3,
+      ];
+    case 'reasoning':
+      return [
+        t.modeReasoningHowto1,
+        t.modeReasoningHowto2,
+        t.modeReasoningHowto3,
+      ];
+    case 'image':
+      return [t.modeImageHowto1, t.modeImageHowto2, t.modeImageHowto3];
   }
 }
