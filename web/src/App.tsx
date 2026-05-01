@@ -294,16 +294,6 @@ export default function App() {
       });
   }, [verifyToken]);
 
-  // Logged-in users at `/` shouldn't sit on the marketing landing page —
-  // bounce them to /chat so existing bookmarks (chat.ted-h.com → 301 →
-  // ai-sister.com/) and post-login navigation keep landing in the product.
-  // Anonymous visitors stay on LandingPage.
-  useEffect(() => {
-    if (authChecked && user && pathname === '/') {
-      navigate('/chat');
-    }
-  }, [authChecked, user, pathname, navigate]);
-
   const handleResendVerify = useCallback(async () => {
     setResendState('sending');
     try {

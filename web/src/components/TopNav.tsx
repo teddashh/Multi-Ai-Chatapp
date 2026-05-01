@@ -57,8 +57,9 @@ export default function TopNav({
             </button>
           )}
           <button
-            onClick={() => navigate('/chat')}
+            onClick={() => navigate('/')}
             className="font-bold text-gray-100 hover:text-white truncate"
+            title="回首頁"
           >
             {t.appName}
           </button>

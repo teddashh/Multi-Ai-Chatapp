@@ -62,7 +62,7 @@ const DICT: Record<Lang, LandingDict> = {
     navForum: '討論區',
     navLogin: '登入',
     navSignup: '免費註冊',
-    heroTitle: 'AI 姐妹群',
+    heroTitle: 'AI 姐妹',
     heroTagline: '和 Claude、Gemini、Grok、ChatGPT 同桌對話',
     heroDesc:
       '一個對話框，四個 AI 同時回答。可以辯論、推理、扮演、諮詢專業意見，所有對話都能一鍵分享到公開論壇供大家討論。',
@@ -173,7 +173,7 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
             onClick={() => navigate('/')}
             className="text-base md:text-lg font-bold text-white hover:text-pink-300 transition-colors"
           >
-            AI Sister · 姐妹群
+            AI Sister · 姐妹
           </button>
           <nav className="flex items-center gap-1 md:gap-2 text-xs md:text-sm">
             <button
