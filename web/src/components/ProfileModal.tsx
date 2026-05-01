@@ -3,6 +3,7 @@ import {
   avatarUrl,
   deleteAvatar,
   getMyUsage,
+  purgeAccount,
   rollPersona,
   updateProfile,
   uploadAvatar,
@@ -31,7 +32,47 @@ interface Props {
   // modal and navigates to /forum/user/<username>. Optional so the
   // button silently disappears if the caller didn't wire it up.
   onViewProfile?: () => void;
+  // Called after the caller's account has been hard-deleted server-side.
+  // Caller is responsible for clearing user state and navigating to a
+  // public route (typically /).
+  onPurged?: () => void;
 }
+
+// Bilingual strings for the Danger Zone are kept inline since they're
+// only rendered here. If we add another destructive action later we can
+// promote them into i18n.ts.
+const DANGER_DICT = {
+  'zh-TW': {
+    sectionTitle: '危險區（Danger Zone）',
+    sectionDesc:
+      '永久刪除你的帳號與所有相關資料。包含對話、論壇貼文、留言、推噓、頭像、附件等。',
+    moreInfo: '查看完整刪除說明',
+    deleteBtn: '永久刪除帳號…',
+    confirmTitle: '永久刪除帳號',
+    confirmWarning:
+      '這個操作無法復原。一旦點下「確認刪除」，你的帳號與所有資料會立刻永久消失。',
+    typeUsernameLabel: (u: string) => `為了確認，請輸入你的使用者名稱「${u}」`,
+    typePasswordLabel: '輸入密碼',
+    cancelBtn: '取消',
+    confirmBtn: '確認刪除',
+    deletingBtn: '刪除中…',
+  },
+  en: {
+    sectionTitle: 'Danger Zone',
+    sectionDesc:
+      'Permanently delete your account and every piece of data tied to it — chats, forum posts, comments, votes, avatar, attachments.',
+    moreInfo: 'See full deletion details',
+    deleteBtn: 'Permanently delete account…',
+    confirmTitle: 'Permanently delete account',
+    confirmWarning:
+      'This cannot be undone. Once you click "Confirm delete", your account and all data are gone immediately.',
+    typeUsernameLabel: (u: string) => `To confirm, type your username "${u}"`,
+    typePasswordLabel: 'Enter your password',
+    cancelBtn: 'Cancel',
+    confirmBtn: 'Confirm delete',
+    deletingBtn: 'Deleting…',
+  },
+} as const;
 
 // Convert UTC unix seconds + IANA tz → "YYYY-MM-DD" + "HH:mm" in that tz.
 // Used to populate the date/time inputs from the stored birthAt.
@@ -259,8 +300,40 @@ export default function ProfileModal({
   onClose,
   onUpdate,
   onViewProfile,
+  onPurged,
 }: Props) {
-  const { t, setLang } = useI18n();
+  const { t, setLang, lang: currentLang } = useI18n();
+  const dz = DANGER_DICT[currentLang];
+  const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+  const [purgeUsername, setPurgeUsername] = useState('');
+  const [purgePassword, setPurgePassword] = useState('');
+  const [purging, setPurging] = useState(false);
+  const [purgeErr, setPurgeErr] = useState('');
+  const handlePurge = async () => {
+    setPurgeErr('');
+    if (purgeUsername !== user.username) {
+      setPurgeErr(dz.typeUsernameLabel(user.username));
+      return;
+    }
+    if (!purgePassword) {
+      setPurgeErr(dz.typePasswordLabel);
+      return;
+    }
+    setPurging(true);
+    try {
+      await purgeAccount({
+        password: purgePassword,
+        confirmUsername: purgeUsername,
+      });
+      // Server has cleared the cookie + deleted everything; tell the
+      // caller so it can clear React state and navigate away.
+      onPurged?.();
+    } catch (e) {
+      setPurgeErr((e as Error).message);
+    } finally {
+      setPurging(false);
+    }
+  };
   const [nickname, setNickname] = useState(user.nickname || '');
   const [bio, setBio] = useState(user.bio || '');
   const [password, setPassword] = useState('');
@@ -831,6 +904,96 @@ export default function ProfileModal({
         >
           {t.save}
         </button>
+
+        {/* Danger Zone — permanent account purge. Lives at the bottom of
+            the modal so it can't be hit by mistake while editing profile
+            fields. The actual deletion runs through a separate confirm
+            flow (username + password re-entry). */}
+        <div className="mt-8 pt-5 border-t border-red-900/40">
+          <div className="rounded-lg border border-red-900/60 bg-red-950/30 p-4">
+            <h3 className="text-sm font-bold text-red-300 mb-1">
+              {dz.sectionTitle}
+            </h3>
+            <p className="text-[11px] text-red-200/70 leading-relaxed mb-3">
+              {dz.sectionDesc}{' '}
+              <a
+                href="/data-deletion"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-red-100"
+              >
+                {dz.moreInfo}
+              </a>
+            </p>
+            {!showPurgeConfirm ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPurgeConfirm(true);
+                  setPurgeUsername('');
+                  setPurgePassword('');
+                  setPurgeErr('');
+                }}
+                className="px-3 py-1.5 rounded bg-red-700 hover:bg-red-600 text-white text-xs font-medium"
+              >
+                {dz.deleteBtn}
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[11px] text-red-200 font-semibold">
+                  ⚠ {dz.confirmWarning}
+                </p>
+                <label className="block text-[11px] text-red-100/80">
+                  {dz.typeUsernameLabel(user.username)}
+                  <input
+                    type="text"
+                    value={purgeUsername}
+                    onChange={(e) => setPurgeUsername(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={purging}
+                    className="mt-1 w-full px-2 py-1 bg-gray-900 border border-red-900/50 rounded text-xs text-gray-100 focus:outline-none focus:border-red-500"
+                  />
+                </label>
+                <label className="block text-[11px] text-red-100/80">
+                  {dz.typePasswordLabel}
+                  <input
+                    type="password"
+                    value={purgePassword}
+                    onChange={(e) => setPurgePassword(e.target.value)}
+                    autoComplete="current-password"
+                    disabled={purging}
+                    className="mt-1 w-full px-2 py-1 bg-gray-900 border border-red-900/50 rounded text-xs text-gray-100 focus:outline-none focus:border-red-500"
+                  />
+                </label>
+                {purgeErr && (
+                  <p className="text-[11px] text-red-300">{purgeErr}</p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPurgeConfirm(false);
+                      setPurgeErr('');
+                    }}
+                    disabled={purging}
+                    className="flex-1 py-1.5 rounded border border-gray-700 hover:bg-gray-800 text-xs text-gray-300"
+                  >
+                    {dz.cancelBtn}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePurge}
+                    disabled={purging || !purgeUsername || !purgePassword}
+                    className="flex-1 py-1.5 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50 text-xs text-white font-medium"
+                  >
+                    {purging ? dz.deletingBtn : dz.confirmBtn}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </form>
     </div>
   );

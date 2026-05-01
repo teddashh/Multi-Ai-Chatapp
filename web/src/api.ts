@@ -282,6 +282,26 @@ export async function logout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
 }
 
+// Permanently delete the caller's account and every row tied to it.
+// Documented to users on /data-deletion. Requires re-typing username and
+// password as a guardrail against accidental clicks. Server returns
+// 200 on success, 401 / 400 / 404 with an error message otherwise.
+export async function purgeAccount(payload: {
+  password: string;
+  confirmUsername: string;
+}): Promise<void> {
+  const res = await fetch('/api/auth/me', {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `Delete failed: ${res.status}`);
+  }
+}
+
 export async function signup(fields: {
   email: string;
   password: string;

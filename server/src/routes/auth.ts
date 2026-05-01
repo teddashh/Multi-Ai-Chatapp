@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { randomBytes } from 'node:crypto';
+import { unlinkSync } from 'node:fs';
 import {
   clearSession,
   findUserByCredentials,
@@ -9,7 +10,7 @@ import {
   verifyPassword,
   type AppVariables,
 } from '../lib/auth.js';
-import { resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
+import { db, resetStmts, usageStmts, userStmts, type UserRow } from '../lib/db.js';
 import { logAudit } from '../lib/audit.js';
 import { IMAGE_MODELS, TIER_MODELS } from '../shared/models.js';
 import { formatPriceLabel } from '../shared/prices.js';
@@ -228,6 +229,82 @@ authRoute.post('/login', async (c) => {
 });
 
 authRoute.post('/logout', (c) => {
+  clearSession(c);
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/auth/me — hard-purge the caller's account and every row tied
+// to it. Documented to users on /data-deletion. Requires re-typing username
+// and password as a guardrail against accidental clicks.
+//
+// Cascade behaviour:
+// - chat_sessions.user_id ON DELETE CASCADE → chat_messages cascade through
+//   the session FK, chat_attachments cascade through the user FK
+// - forum_posts.author_user_id ON DELETE CASCADE → forum_comments cascade
+//   through post FK, forum_likes / forum_comment_replies cascade similarly
+// - password_resets / usage_log: CASCADE
+// - audit_log: SET NULL (deliberately preserved for moderation history)
+//
+// One thing the schema does NOT cascade-delete: forum_comments where the
+// user was a *commenter* (author_user_id is SET NULL there). For a true
+// purge we override that with an explicit DELETE inside the transaction.
+// ---------------------------------------------------------------------------
+authRoute.delete('/me', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { password?: string; confirmUsername?: string }
+    | null;
+  if (!body?.password) return c.json({ error: 'password required' }, 400);
+  if (body.confirmUsername !== user.username) {
+    return c.json({ error: 'username confirmation does not match' }, 400);
+  }
+
+  const userRow = userStmts.findById.get(user.id) as UserRow | undefined;
+  if (!userRow) return c.json({ error: 'user not found' }, 404);
+  const ok = await verifyPassword(body.password, userRow.password_hash);
+  if (!ok) return c.json({ error: 'invalid password' }, 401);
+
+  // Snapshot file paths BEFORE the row deletes — once the rows are gone
+  // we lose the ability to look up where the binary content lived.
+  const attachments = db
+    .prepare('SELECT path FROM chat_attachments WHERE user_id = ?')
+    .all(user.id) as Array<{ path: string }>;
+  const avatarPath = userRow.avatar_path;
+
+  const purge = db.transaction(() => {
+    // Override the SET NULL FK on forum_comments so the user's commentary
+    // on OTHER people's posts (which would otherwise survive as orphan
+    // anonymous rows) gets hard-deleted too.
+    db.prepare('DELETE FROM forum_comments WHERE author_user_id = ?').run(
+      user.id,
+    );
+    // Everything else (chat_sessions, chat_messages, chat_attachments,
+    // forum_posts and their cascaded children, forum_likes,
+    // forum_comment_replies, password_resets, usage_log, AI peer-rating
+    // rows tied to this user) drops via the user FK cascade.
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  });
+  purge();
+
+  // Best-effort filesystem cleanup. Don't fail the request if a single
+  // unlink errors — the DB rows are already gone so the data is logically
+  // deleted from the user's perspective.
+  for (const a of attachments) {
+    try {
+      unlinkSync(a.path);
+    } catch {
+      // file may already be missing; ignore
+    }
+  }
+  if (avatarPath) {
+    try {
+      unlinkSync(avatarPath);
+    } catch {
+      // ignore
+    }
+  }
+
   clearSession(c);
   return c.json({ ok: true });
 });

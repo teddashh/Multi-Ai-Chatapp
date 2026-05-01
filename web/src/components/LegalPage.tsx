@@ -13,7 +13,7 @@ import type { Lang } from '../i18n';
 import LangToggle from './LangToggle';
 
 interface Props {
-  kind: 'terms' | 'privacy';
+  kind: 'terms' | 'privacy' | 'data-deletion';
   navigate: (path: string) => void;
   lang: Lang;
   onLangChange: (l: Lang) => void;
@@ -22,7 +22,7 @@ interface Props {
 const COPY = {
   'zh-TW': {
     backToHome: '← 回首頁',
-    lastUpdated: '最後更新日期：2026-04-30',
+    lastUpdated: '最後更新日期：2026-05-01',
     contact: '如有疑問請聯絡：hello@ai-sister.com',
     terms: {
       title: '使用條款',
@@ -73,7 +73,18 @@ const COPY = {
         },
         {
           h: '10. 準據法與管轄',
-          p: '本條款之解釋與適用，以及因本服務所生之一切爭議，**適用中華民國法律**，並以**臺灣臺北地方法院**為第一審專屬管轄法院。',
+          p: '本條款之解釋與適用，以及因本服務所生之一切爭議，**適用中華民國法律**，並以**臺灣高雄地方法院**為第一審專屬管轄法院。如您居住於美國或其他法域，請另見第 11 條之仲裁條款。',
+        },
+        {
+          h: '11. 仲裁與集體訴訟豁免（適用於美國居民及其他適用法域）',
+          p: '若您為美國居民或居住於要求消費者爭議須以仲裁方式解決之法域，您與我們同意以下機制：',
+          list: [
+            '**強制仲裁**：任何因本服務所生之爭議，將以**美國仲裁協會（American Arbitration Association, AAA）** 之消費者仲裁規則，於**美國新澤西州（New Jersey）** 進行最終且具拘束力之仲裁。仲裁優先於前述第 10 條之台灣管轄條款。',
+            '**集體訴訟豁免**：您同意僅能以**個人名義**提出主張，不得以集體訴訟、代表訴訟、或合併訴訟之方式參與或發動任何訴訟。',
+            '**30 天退出窗口**：您可於註冊後 **30 天內**，以電子郵件寄送至 hello@ai-sister.com 之方式書面通知我們選擇退出本仲裁與集體訴訟豁免條款，且不影響本條款其他部分之效力。',
+            '**例外情形**：小額訴訟法院之請求、智慧財產權侵害之臨時禁令請求，得不適用本仲裁條款。',
+            '若本條任何部分被認定無效或無法執行，其餘部分繼續有效；若**集體訴訟豁免**被認定無效，則本條全部無效，全案改適用第 10 條之台灣管轄。',
+          ],
         },
       ],
     },
@@ -114,7 +125,7 @@ const COPY = {
         },
         {
           h: '5. 資料保留與刪除',
-          p: '我們保留您的帳號資料直到您主動要求刪除，或帳號超過 24 個月未使用為止。寄送至 hello@ai-sister.com 的刪除請求我們將於合理時間內處理（通常 7 個工作天內）。請注意，已被其他使用者引用、轉貼、快取或備份的公開內容可能無法完全清除。',
+          p: '我們保留您的帳號資料直到您主動要求刪除，或帳號超過 24 個月未使用為止。您可在「個人檔案 → 危險區」**自助永久刪除（Purge）** 您的帳號與所有相關資料；無法登入時可寄送至 hello@ai-sister.com，我們將於 5 至 7 個工作天內處理。詳細請見 [資料刪除說明頁](/data-deletion)。請注意，已被其他使用者引用、轉貼、快取或備份的公開內容可能無法完全清除。',
         },
         {
           h: '6. 資料安全',
@@ -126,18 +137,96 @@ const COPY = {
         },
         {
           h: '8. 國際傳輸',
-          p: '由於我們使用的部分第三方服務位於其他國家或地區，您的資料可能會被傳送至中華民國以外處理。',
+          p: '由於我們使用的部分第三方服務位於其他國家或地區（含美國、歐盟），您的資料可能會被傳送至中華民國以外處理。',
         },
         {
           h: '9. 政策修訂',
           p: '我們得隨時修訂本政策；修訂後的版本將公告於本頁面，自公告當日起生效。建議您定期查看以了解最新內容。',
+        },
+        {
+          h: '10. 加州居民隱私權利（CCPA / CPRA）',
+          p: '若您為**加利福尼亞州居民**，依加州消費者隱私法（CCPA）及隱私權法（CPRA），您享有下列權利：',
+          list: [
+            '**知情權**：要求我們揭露過去 12 個月內所收集、使用、揭露之個人資料類別與來源。',
+            '**刪除權**：要求我們刪除您的個人資料（請見第 5 條與資料刪除說明頁）。',
+            '**更正權**：要求我們更正不正確之個人資料。',
+            '**選擇退出資料販售或分享之權利**：我們**不販售亦不分享**您的個人資料以換取金錢或其他對價，因此目前無此選項可選擇退出。',
+            '**敏感個人資料使用限制權**：您可要求我們限制使用敏感個人資料於特定用途（如登入認證），不用於其他用途。',
+            '**不歧視權**：我們不會因您行使上述權利而拒絕提供服務、降低服務品質、或要求不同價格。',
+          ],
+        },
+        {
+          h: '11. 行使您的權利',
+          p: '欲行使前述任何權利，請寄送 email 至 **hello@ai-sister.com**，主旨註明「Privacy Request」。我們會於收到後 45 天內回覆（必要時可延長一次）。為確認您的身分，我們可能會要求您驗證註冊用 email 或回答帳號相關問題。授權代理人代為提出請求時，須附上書面授權文件。',
+        },
+      ],
+    },
+    'data-deletion': {
+      title: '資料刪除',
+      intro:
+        '本頁面說明如何永久刪除您在 AI Sister 的帳號與所有相關資料。我們提供兩種方式，依您是否能正常登入而定。',
+      sections: [
+        {
+          h: '方式一：在應用程式內自助刪除（建議）',
+          p: '若您能正常登入，請依下列步驟操作：',
+          list: [
+            '登入您的帳號。',
+            '點選右上角頭像 → 進入「個人檔案」。',
+            '捲到最下方的「**危險區（Danger Zone）**」。',
+            '點選「**永久刪除帳號（Purge Account）**」按鈕。',
+            '依指示輸入您的**使用者名稱**與**密碼**作為確認，並完成最終確認。',
+            '系統會立即執行刪除並登出。完成後，您的帳號與下列所列資料將**無法復原**。',
+          ],
+        },
+        {
+          h: '方式二：來信申請（無法登入時使用）',
+          p: '若您忘記密碼或無法登入，請寄送 email 至 **hello@ai-sister.com**，主旨註明「Account Deletion Request」，並提供下列資訊以利身分驗證：',
+          list: [
+            '註冊時使用的 email 地址。',
+            '您的使用者名稱（若記得）。',
+            '帳號相關之輔助驗證（例如最後一次登入大致日期、最近的論壇貼文標題、註冊時的暱稱等其中之一）。',
+            '欲刪除帳號的明確聲明（例：「我請求永久刪除我的 AI Sister 帳號與所有相關資料」）。',
+          ],
+        },
+        {
+          h: '處理時程',
+          p: '**自助刪除**：點下確認後**立即執行**。**email 申請**：通常於 **5 至 7 個工作天內**處理完成；遇假期或大量請求時可能延長，惟最遲不超過 30 天。',
+        },
+        {
+          h: '會被刪除的內容',
+          list: [
+            '您的帳號資料（使用者名稱、email、密碼雜湊、暱稱、頭像、語言偏好、生日、星座、MBTI、自介等所有個人欄位）。',
+            '您的所有聊天會話（chat sessions）與訊息（包含上傳的附件、圖片、PDF 等）。',
+            '您發表至論壇的貼文（forum posts）與其下所有留言（包括其他人的留言，因為它們依附於該貼文）。',
+            '您在他人貼文下的留言（forum comments）與所有推噓回應（forum replies）。',
+            '您對其他貼文／留言的推（讚、❤）紀錄（forum likes）。',
+            '您的密碼重設 token、登入 session 等技術紀錄。',
+            '您頭像的實體檔案。',
+          ],
+        },
+        {
+          h: '可能無法刪除的內容',
+          list: [
+            '已被其他使用者**引用、轉貼、複製**到他們自己的內容中的部分（這些屬於對方的內容，我們無權擅自修改）。',
+            '已被搜尋引擎、社群網站、第三方網站**快取或備份**的公開內容。',
+            '系統技術紀錄（如錯誤日誌、伺服器存取紀錄等），但這些紀錄會以**匿名形式**保留至多 90 天，之後自動清除。',
+            '法律強制要求保留的紀錄（如本服務未來如有金流，依稅法須保留之交易紀錄）。目前 AI Sister 為免費服務，**無強制保留之金流資料**。',
+          ],
+        },
+        {
+          h: '不可逆警告',
+          p: '**永久刪除是不可復原的操作**。我們無法在事後幫您恢復任何資料。請務必先備份重要對話與貼文（您可在個人檔案匯出聊天紀錄）。',
+        },
+        {
+          h: '替代方案：登出 vs 暫時不使用',
+          p: '若您只是想暫時休息或保留資料但不再使用，您可選擇單純**登出**並停止使用，您的資料將保留直到您主動刪除或帳號超過 24 個月未使用為止。如本服務未來提供「停權（disable）」選項，亦會在此頁面公告。',
         },
       ],
     },
   },
   en: {
     backToHome: '← Back to home',
-    lastUpdated: 'Last updated: 2026-04-30',
+    lastUpdated: 'Last updated: 2026-05-01',
     contact: 'Questions? Email hello@ai-sister.com',
     terms: {
       title: 'Terms of Service',
@@ -188,7 +277,18 @@ const COPY = {
         },
         {
           h: '10. Governing law & venue',
-          p: 'These terms are governed by the **laws of the Republic of China (Taiwan)**. Any dispute will be heard exclusively by the **Taipei District Court** as the court of first instance.',
+          p: 'These terms are governed by the **laws of the Republic of China (Taiwan)**. Any dispute will be heard exclusively by the **Kaohsiung District Court** as the court of first instance. If you reside in the United States or another jurisdiction that requires arbitration of consumer disputes, please see the arbitration clause in section 11.',
+        },
+        {
+          h: '11. Arbitration & class-action waiver (US residents and other applicable jurisdictions)',
+          p: 'If you are a resident of the United States, or live in any jurisdiction that requires consumer disputes to be arbitrated, you and we agree as follows:',
+          list: [
+            '**Mandatory arbitration**: Any dispute arising out of or relating to the Service will be finally resolved by binding arbitration administered by the **American Arbitration Association (AAA)** under its Consumer Arbitration Rules, seated in **New Jersey, USA**. This arbitration agreement supersedes section 10 (Taiwan venue) where applicable.',
+            '**Class-action waiver**: You agree to bring claims **only in your individual capacity**, and not as a plaintiff or class member in any class, collective, representative, or consolidated proceeding.',
+            '**30-day opt-out**: You may opt out of this arbitration and class-action waiver clause within **30 days of account registration** by sending written notice to hello@ai-sister.com. Opting out does not affect any other part of these terms.',
+            '**Exceptions**: Small-claims-court actions and emergency injunctive relief for IP infringement are not subject to this arbitration clause.',
+            'If any portion of this section is held unenforceable, the rest survives. If the **class-action waiver** itself is held unenforceable, this entire section is void and section 10 (Taiwan venue) governs.',
+          ],
         },
       ],
     },
@@ -229,7 +329,7 @@ const COPY = {
         },
         {
           h: '5. Retention & deletion',
-          p: 'We keep your account data until you ask us to delete it or your account is inactive for 24 months. Email deletion requests to hello@ai-sister.com; we typically process them within 7 business days. Note that public content cited, reposted, cached, or backed up by other users may not be fully removable.',
+          p: 'We keep your account data until you ask us to delete it or your account is inactive for 24 months. You can **permanently delete (Purge)** your account and all associated data yourself from "Profile → Danger Zone". If you cannot log in, email hello@ai-sister.com — we typically process the request within 5–7 business days. See the [Data Deletion page](/data-deletion) for the full procedure. Public content cited, reposted, cached, or backed up by other users may not be fully removable.',
         },
         {
           h: '6. Security',
@@ -241,11 +341,89 @@ const COPY = {
         },
         {
           h: '8. International transfers',
-          p: 'Some of our third-party providers operate outside Taiwan, so your data may be transferred internationally for processing.',
+          p: 'Some of our third-party providers operate outside Taiwan (including the US and EU), so your data may be transferred internationally for processing.',
         },
         {
           h: '9. Changes to this policy',
           p: 'We may update this policy at any time. The updated version will be posted here and is effective from posting. Please review periodically.',
+        },
+        {
+          h: '10. California residents (CCPA / CPRA)',
+          p: 'If you are a **California resident**, the California Consumer Privacy Act (CCPA) as amended by the CPRA gives you the following rights:',
+          list: [
+            '**Right to know**: request disclosure of categories and sources of personal information collected, used, or shared in the past 12 months.',
+            '**Right to delete**: request that we delete your personal information (see §5 and the Data Deletion page).',
+            '**Right to correct**: request that we correct inaccurate personal information.',
+            '**Right to opt out of sale or sharing**: we **do not sell or share** your personal information for monetary or other valuable consideration, so there is currently nothing to opt out of.',
+            '**Right to limit use of sensitive personal information**: you may ask us to use sensitive personal information only for permitted purposes (e.g. authentication).',
+            '**Right to non-discrimination**: we will not deny service, charge a different price, or provide a lower quality of service because you exercised a CCPA/CPRA right.',
+          ],
+        },
+        {
+          h: '11. Exercising your rights',
+          p: 'To exercise any of the rights above, email **hello@ai-sister.com** with subject "Privacy Request". We will respond within 45 days of receipt (extendable once if needed). To verify your identity we may ask you to confirm the registration email or answer account-related questions. Authorised agents must include written authorisation.',
+        },
+      ],
+    },
+    'data-deletion': {
+      title: 'Data Deletion',
+      intro:
+        'This page explains how to permanently delete your AI Sister account and all associated data. We offer two methods, depending on whether you can still log in.',
+      sections: [
+        {
+          h: 'Method 1: Self-service delete (recommended)',
+          p: 'If you can log in, follow these steps:',
+          list: [
+            'Sign in to your account.',
+            'Click the avatar in the top-right corner → open "Profile".',
+            'Scroll to the **Danger Zone** at the bottom.',
+            'Click **Permanently delete account (Purge Account)**.',
+            'Type your **username** and **password** to confirm, then complete the final confirmation prompt.',
+            'The deletion runs immediately and you are signed out. Once complete, your account and the data listed below are **not recoverable**.',
+          ],
+        },
+        {
+          h: 'Method 2: Email request (if you cannot log in)',
+          p: 'If you have lost your password or cannot log in, email **hello@ai-sister.com** with subject "Account Deletion Request" and include the following so we can verify it is really you:',
+          list: [
+            'The email address you used to register.',
+            'Your username (if you remember it).',
+            'Identity verification details — for example, the approximate date of your last login, the title of a recent forum post you made, or your registration nickname.',
+            'A clear deletion request, e.g. "I request permanent deletion of my AI Sister account and all associated data."',
+          ],
+        },
+        {
+          h: 'Processing time',
+          p: '**Self-service**: runs **immediately** after you confirm. **Email request**: typically processed within **5–7 business days**; may be longer during holidays or high-volume periods, but no later than 30 days.',
+        },
+        {
+          h: 'What gets deleted',
+          list: [
+            'Your account data (username, email, password hash, nickname, avatar, language preference, birthday, astrology fields, MBTI, bio, and all other personal fields).',
+            'All your chat sessions and messages, including uploaded attachments (images, PDFs, etc.).',
+            'Forum posts you authored — including all comments under those posts (because the comments depend on the post).',
+            'Comments and replies (推/噓/→) you made on other users\' posts.',
+            'Your likes/votes on other posts and comments.',
+            'Password-reset tokens and login session records.',
+            'Avatar files on disk.',
+          ],
+        },
+        {
+          h: 'What may not be deletable',
+          list: [
+            'Content other users have **quoted, reposted, or copied** into their own content (that belongs to them; we cannot edit it on your behalf).',
+            'Public content **cached or backed up** by search engines, social platforms, or third-party sites.',
+            'System technical logs (error logs, server access logs); these are kept in **anonymised form** for up to 90 days and then automatically purged.',
+            'Records that applicable law requires us to retain (e.g. transaction records under tax law if we ever charge for the Service). AI Sister is currently free, so **no mandatory financial records exist**.',
+          ],
+        },
+        {
+          h: 'Irreversibility warning',
+          p: '**Deletion is permanent and cannot be undone.** We cannot restore your data after the fact. Please back up anything important first (you can export your chat history from your profile page).',
+        },
+        {
+          h: 'Alternative: just sign out',
+          p: 'If you only want to take a break and keep your data, simply sign out and stop using the Service. Your data is retained until you actively delete it or until 24 months of inactivity. If we add a "disable" option in the future, it will be announced on this page.',
         },
       ],
     },

@@ -414,6 +414,16 @@ export default function App() {
     setMessages([]);
   };
 
+  // Permanent account purge: server-side has already cleared the cookie
+  // and deleted everything tied to this user. Mirror the same in-memory
+  // state-clearing as logout, then bounce to the public landing page.
+  const handlePurged = useCallback(() => {
+    setUser(null);
+    setMessages([]);
+    setShowProfile(false);
+    navigate('/');
+  }, [navigate]);
+
   const handleProfileUpdate = useCallback(
     (updated: User) => {
       setUser(updated);
@@ -751,12 +761,22 @@ export default function App() {
         onLangChange={handleLangToggle}
       />
     );
-  } else if (pathname === '/terms' || pathname === '/privacy') {
+  } else if (
+    pathname === '/terms' ||
+    pathname === '/privacy' ||
+    pathname === '/data-deletion'
+  ) {
     // Static legal pages — public, no auth gate. Footer of LandingPage
     // links here; we keep them shallow so search engines can crawl them.
+    const legalKind: 'terms' | 'privacy' | 'data-deletion' =
+      pathname === '/terms'
+        ? 'terms'
+        : pathname === '/privacy'
+          ? 'privacy'
+          : 'data-deletion';
     content = (
       <LegalPage
-        kind={pathname === '/terms' ? 'terms' : 'privacy'}
+        kind={legalKind}
         navigate={navigate}
         lang={lang}
         onLangChange={handleLangToggle}
@@ -790,6 +810,7 @@ export default function App() {
               setShowProfile(false);
               navigate(`/forum/user/${user.username}`);
             }}
+            onPurged={handlePurged}
           />
         )}
       </div>
@@ -958,6 +979,7 @@ export default function App() {
               setShowProfile(false);
               navigate(`/forum/user/${user.username}`);
             }}
+            onPurged={handlePurged}
           />
 
           <ShareToForumModal

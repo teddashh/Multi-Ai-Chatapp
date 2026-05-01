@@ -53,6 +53,7 @@ interface LandingDict {
   footerForum: string;
   footerTerms: string;
   footerPrivacy: string;
+  footerDataDeletion: string;
   footerCopyright: string;
 }
 
@@ -95,6 +96,7 @@ const DICT: Record<Lang, LandingDict> = {
     footerForum: '討論區',
     footerTerms: '使用條款',
     footerPrivacy: '隱私政策',
+    footerDataDeletion: '資料刪除',
     footerCopyright: '© 2026 AI Sister · 由 Anthropic Claude、OpenAI、Google、xAI 提供模型',
   },
   en: {
@@ -131,6 +133,7 @@ const DICT: Record<Lang, LandingDict> = {
     footerForum: 'Forum',
     footerTerms: 'Terms',
     footerPrivacy: 'Privacy',
+    footerDataDeletion: 'Data deletion',
     footerCopyright: '© 2026 AI Sister · Powered by Anthropic Claude, OpenAI, Google, xAI',
   },
 };
@@ -390,6 +393,12 @@ export default function LandingPage({ navigate, lang, onLangChange }: Props) {
               className="hover:text-white"
             >
               {t.footerPrivacy}
+            </button>
+            <button
+              onClick={() => navigate('/data-deletion')}
+              className="hover:text-white"
+            >
+              {t.footerDataDeletion}
             </button>
             <a href="mailto:hello@ai-sister.com" className="hover:text-white">
               {t.footerContact}: hello@ai-sister.com
