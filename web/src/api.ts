@@ -685,6 +685,51 @@ export interface ForumComment {
   thumbsCount: number;
   createdAt: number;
   liked: boolean;
+  replies: ForumCommentReply[];
+}
+
+// PTT-style reply attached to a comment. vote='up' = 推 (+1 ❤), 'down'
+// = 噓 (-1 ❤), 'none' = → (just text). Multiple 'none' replies allowed
+// per user; ±-votes are gated to one per user per parent comment.
+export interface ForumCommentReply {
+  id: number;
+  vote: 'up' | 'down' | 'none';
+  body: string;
+  createdAt: number;
+  authorUsername: string;
+  authorDisplay: string;
+  authorAvatarPath: string | null;
+}
+
+export async function postCommentReply(
+  commentId: number,
+  body: { vote: 'up' | 'down' | 'none'; body: string },
+): Promise<{ ok: true; replyId: number }> {
+  const res = await fetch(`/api/forum/comments/${commentId}/replies`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json() as Promise<{ ok: true; replyId: number }>;
+}
+
+export async function deleteCommentReply(
+  commentId: number,
+  replyId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/forum/comments/${commentId}/replies/${replyId}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
 }
 
 export interface AIProfileResponse {
@@ -824,6 +869,9 @@ export async function listForumCategories(): Promise<ForumCategoryCount[]> {
 
 export async function listForumPosts(opts: {
   category?: string;
+  // Filter by source chat mode (free/debate/consult/coding/...)
+  // Backs the breadcrumb's "多方諮詢" link on the post detail page.
+  mode?: string;
   page?: number;
   // 'latest' default — 'trending' is global only (server ignores it
   // when category is set so the per-看板 list stays chronological).
@@ -834,6 +882,7 @@ export async function listForumPosts(opts: {
 }): Promise<{ posts: ForumPostSummary[]; page: number; pageSize: number }> {
   const params = new URLSearchParams();
   if (opts.category) params.set('category', opts.category);
+  if (opts.mode) params.set('mode', opts.mode);
   if (opts.page) params.set('page', String(opts.page));
   if (opts.sort) params.set('sort', opts.sort);
   if (opts.limit) params.set('limit', String(opts.limit));

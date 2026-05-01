@@ -118,6 +118,21 @@ db.exec(`
     PRIMARY KEY (user_id, target_type, target_id)
   );
   CREATE INDEX IF NOT EXISTS idx_forum_likes_target ON forum_likes(target_type, target_id);
+
+  -- PTT-style replies under a forum comment. vote='up' = 推 (+1
+  -- thumbs_count on the parent comment), vote='down' = 噓 (-1),
+  -- vote='none' = → (just a one-liner, no ± on the parent). Each
+  -- user may post multiple 'none' replies but only one 'up'-or-'down'
+  -- vote per parent comment (enforced in the route handler).
+  CREATE TABLE IF NOT EXISTS forum_comment_replies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    comment_id INTEGER NOT NULL REFERENCES forum_comments(id) ON DELETE CASCADE,
+    author_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    vote TEXT NOT NULL CHECK (vote IN ('up','down','none')),
+    body TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_comment_replies ON forum_comment_replies(comment_id, id);
 `);
 
 // One-shot, idempotent column additions for existing DBs.
@@ -990,6 +1005,43 @@ export const forumStmts = {
      WHERE c.post_id = ?
      ORDER BY c.created_at, c.id`,
   ),
+  // PTT-style replies (推/噓/→) attached to a forum comment.
+  insertReply: db.prepare<[
+    number,
+    number,
+    'up' | 'down' | 'none',
+    string,
+  ]>(
+    `INSERT INTO forum_comment_replies (comment_id, author_user_id, vote, body)
+     VALUES (?, ?, ?, ?)`,
+  ),
+  // Has the user already cast a 推 / 噓 vote on this comment? (Used
+  // to enforce one ±-vote per user per parent.) Multiple 'none'
+  // replies are always allowed.
+  findUserVoteOnComment: db.prepare<[number, number]>(
+    `SELECT id, vote FROM forum_comment_replies
+     WHERE comment_id = ? AND author_user_id = ? AND vote IN ('up', 'down')
+     LIMIT 1`,
+  ),
+  findReplyById: db.prepare<[number]>(
+    `SELECT * FROM forum_comment_replies WHERE id = ?`,
+  ),
+  deleteReply: db.prepare<[number, number]>(
+    `DELETE FROM forum_comment_replies WHERE id = ? AND author_user_id = ?`,
+  ),
+  // All replies on every comment of one post — joined with users
+  // for author info. Caller groups by comment_id in JS.
+  listRepliesForPost: db.prepare<[number]>(
+    `SELECT r.id, r.comment_id, r.vote, r.body, r.created_at,
+            u.username AS author_username, u.nickname AS author_nickname,
+            u.avatar_path AS author_avatar
+     FROM forum_comment_replies r
+     JOIN forum_comments c ON c.id = r.comment_id
+     JOIN users u ON u.id = r.author_user_id
+     WHERE c.post_id = ?
+     ORDER BY r.id`,
+  ),
+
   // Likes — toggle-style. Caller checks findLike first, then either
   // insertLike+inc<*>Thumbs or deleteLike+dec<*>Thumbs.
   findLike: db.prepare<[number, string, number]>(

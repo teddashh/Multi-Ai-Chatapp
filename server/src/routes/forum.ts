@@ -167,6 +167,7 @@ forumRoute.get('/categories', (c) => {
 // ---------------------------------------------------------------------------
 forumRoute.get('/', (c) => {
   const category = c.req.query('category');
+  const mode = c.req.query('mode');
   const sort = c.req.query('sort') === 'trending' ? 'trending' : 'latest';
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1', 10) || 1);
   // ?limit=N — clamped [1, 50]. Defaults to PAGE_SIZE so old callers
@@ -181,6 +182,53 @@ forumRoute.get('/', (c) => {
 
   if (category && !FORUM_CATEGORIES.includes(category as ForumCategory)) {
     return c.json({ error: 'invalid category' }, 400);
+  }
+
+  // ?mode=<chat-mode> path: filter by source_mode. Used by the
+  // breadcrumb's "多方諮詢" link. Implemented here as a dynamic
+  // query since the combination space (category × mode × sort) is
+  // bigger than what makes sense to hand-write as prepared stmts.
+  if (mode) {
+    const validModes = new Set([
+      'free',
+      'debate',
+      'consult',
+      'coding',
+      'roundtable',
+      'personal',
+      'profession',
+      'reasoning',
+      'image',
+    ]);
+    if (!validModes.has(mode)) {
+      return c.json({ error: 'invalid mode' }, 400);
+    }
+    const where: string[] = [`p.source_mode = ?`];
+    const params: unknown[] = [mode];
+    if (category) {
+      where.push(`p.category = ?`);
+      params.push(category);
+    }
+    const orderBy =
+      sort === 'trending'
+        ? '(p.thumbs_count + p.comment_count * 2) DESC, p.created_at DESC'
+        : 'p.created_at DESC';
+    const sql = `
+      SELECT p.*, u.username AS author_username, u.nickname AS author_nickname
+      FROM forum_posts p
+      JOIN users u ON u.id = p.author_user_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY ${orderBy}
+      LIMIT ? OFFSET ?
+    `;
+    const rows = db
+      .prepare(sql)
+      .all(...params, limit, offset) as PostListRow[];
+    return c.json({
+      posts: rows.map(formatPostSummary),
+      page,
+      pageSize: limit,
+    });
   }
 
   // Category filtering always uses the latest-first sort. Trending
@@ -358,6 +406,41 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     };
   }
 
+  // PTT-style replies under each comment, fetched in one query and
+  // bucketed by comment_id so every CommentRow can render its replies
+  // inline without an extra round-trip.
+  const replyRows = forumStmts.listRepliesForPost.all(postId) as Array<{
+    id: number;
+    comment_id: number;
+    vote: 'up' | 'down' | 'none';
+    body: string;
+    created_at: number;
+    author_username: string;
+    author_nickname: string | null;
+    author_avatar: string | null;
+  }>;
+  const repliesByComment: Record<number, Array<{
+    id: number;
+    vote: 'up' | 'down' | 'none';
+    body: string;
+    createdAt: number;
+    authorUsername: string;
+    authorDisplay: string;
+    authorAvatarPath: string | null;
+  }>> = {};
+  for (const r of replyRows) {
+    const arr = repliesByComment[r.comment_id] ?? (repliesByComment[r.comment_id] = []);
+    arr.push({
+      id: r.id,
+      vote: r.vote,
+      body: r.body,
+      createdAt: r.created_at * 1000,
+      authorUsername: r.author_username,
+      authorDisplay: r.author_nickname || r.author_username,
+      authorAvatarPath: r.author_avatar,
+    });
+  }
+
   return c.json({
     post: formatPostDetail(
       {
@@ -367,10 +450,110 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
       },
       likedPost,
     ),
-    comments: commentRows.map((r) => formatComment(r, likedCommentIds.has(r.id))),
+    comments: commentRows.map((r) => ({
+      ...formatComment(r, likedCommentIds.has(r.id)),
+      replies: repliesByComment[r.id] ?? [],
+    })),
     aiStats,
     userStats,
   });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/forum/comments/:id/replies — create a PTT-style reply.
+// Body: { vote: 'up' | 'down' | 'none', body: string }
+// 'up' / 'down' bumps the parent's thumbs_count by ±1 and is gated to
+// at most one ±-vote per user per comment (multiple 'none' replies
+// are fine).
+// ---------------------------------------------------------------------------
+const MAX_REPLY_LEN = 200;
+
+forumRoute.post('/comments/:id/replies', requireAuth, async (c) => {
+  const user = c.get('user');
+  const commentId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(commentId) || commentId <= 0) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const body = (await c.req.json().catch(() => null)) as
+    | { vote?: string; body?: string }
+    | null;
+  if (!body) return c.json({ error: 'invalid body' }, 400);
+  const vote =
+    body.vote === 'up' || body.vote === 'down' || body.vote === 'none'
+      ? body.vote
+      : null;
+  if (!vote) return c.json({ error: 'invalid vote' }, 400);
+  const text = body.body?.trim() ?? '';
+  if (!text) return c.json({ error: 'body required' }, 400);
+  if (text.length > MAX_REPLY_LEN) {
+    return c.json({ error: 'too long (max 200 chars)' }, 400);
+  }
+
+  const comment = forumStmts.findCommentById.get(commentId) as
+    | ForumCommentRow
+    | undefined;
+  if (!comment) return c.json({ error: 'comment not found' }, 404);
+
+  const reply = db.transaction(() => {
+    if (vote !== 'none') {
+      // One ±-vote per user per comment. If they want to switch from
+      // 推 to 噓 they need to delete first (UI offers that as 取消).
+      const prior = forumStmts.findUserVoteOnComment.get(commentId, user.id) as
+        | { id: number; vote: 'up' | 'down' }
+        | undefined;
+      if (prior) {
+        throw new Error(
+          prior.vote === vote
+            ? '你已經對這則留言投過了'
+            : '請先取消上一個推/噓',
+        );
+      }
+    }
+    const result = forumStmts.insertReply.run(commentId, user.id, vote, text);
+    if (vote === 'up') forumStmts.incCommentThumbs.run(commentId);
+    else if (vote === 'down') forumStmts.decCommentThumbs.run(commentId);
+    return Number(result.lastInsertRowid);
+  });
+
+  try {
+    const replyId = reply();
+    return c.json({ ok: true, replyId });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/forum/comments/:id/replies/:replyId — author-only delete.
+// Reverses the parent's thumbs_count if the reply carried a vote.
+// ---------------------------------------------------------------------------
+forumRoute.delete('/comments/:id/replies/:replyId', requireAuth, (c) => {
+  const user = c.get('user');
+  const commentId = parseInt(c.req.param('id') ?? '', 10);
+  const replyId = parseInt(c.req.param('replyId') ?? '', 10);
+  if (
+    !Number.isFinite(commentId) ||
+    commentId <= 0 ||
+    !Number.isFinite(replyId) ||
+    replyId <= 0
+  ) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const reply = forumStmts.findReplyById.get(replyId) as
+    | { id: number; comment_id: number; author_user_id: number; vote: 'up' | 'down' | 'none' }
+    | undefined;
+  if (!reply || reply.comment_id !== commentId) {
+    return c.json({ error: 'not found' }, 404);
+  }
+  if (reply.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  db.transaction(() => {
+    forumStmts.deleteReply.run(replyId, user.id);
+    if (reply.vote === 'up') forumStmts.decCommentThumbs.run(commentId);
+    else if (reply.vote === 'down') forumStmts.incCommentThumbs.run(commentId);
+  })();
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------

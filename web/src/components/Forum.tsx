@@ -14,15 +14,18 @@ import {
 import {
   avatarUrl,
   bulkFetchForumPosts,
+  deleteCommentReply,
   getForumPost,
   listForumCategories,
   listForumLikers,
   listForumPosts,
+  postCommentReply,
   postForumComment,
   toggleForumLike,
   type AIStatsMap,
   type ForumCategoryCount,
   type ForumComment,
+  type ForumCommentReply,
   type ForumLiker,
   type ForumPostDetail,
   type ForumPostSummary,
@@ -55,6 +58,9 @@ export default function Forum({ pathname, navigate, user }: Props) {
       {route.kind === 'category' && (
         <ForumCategory category={route.category} navigate={navigate} />
       )}
+      {route.kind === 'mode' && (
+        <ForumModeList mode={route.mode} navigate={navigate} />
+      )}
       {route.kind === 'post' && (
         <ForumPostView postId={route.postId} navigate={navigate} user={user} />
       )}
@@ -70,15 +76,29 @@ export default function Forum({ pathname, navigate, user }: Props) {
 
 interface RouteIndex { kind: 'index' }
 interface RouteCategory { kind: 'category'; category: string }
+interface RouteMode { kind: 'mode'; mode: ChatMode }
 interface RoutePost { kind: 'post'; postId: number }
 interface RouteAI { kind: 'ai'; provider: AIProvider }
 interface RouteUser { kind: 'user'; username: string }
 type ForumRoute =
   | RouteIndex
   | RouteCategory
+  | RouteMode
   | RoutePost
   | RouteAI
   | RouteUser;
+
+const VALID_CHAT_MODES = new Set<string>([
+  'free',
+  'debate',
+  'consult',
+  'coding',
+  'roundtable',
+  'personal',
+  'profession',
+  'reasoning',
+  'image',
+]);
 
 const AI_PROVIDERS_SET = new Set<string>(['claude', 'chatgpt', 'gemini', 'grok']);
 
@@ -86,6 +106,10 @@ function parseForumPath(p: string): ForumRoute {
   if (p.startsWith('/forum/cat/')) {
     const cat = decodeURIComponent(p.slice('/forum/cat/'.length));
     return { kind: 'category', category: cat };
+  }
+  if (p.startsWith('/forum/mode/')) {
+    const m = p.slice('/forum/mode/'.length);
+    if (VALID_CHAT_MODES.has(m)) return { kind: 'mode', mode: m as ChatMode };
   }
   if (p.startsWith('/forum/post/')) {
     const id = parseInt(p.slice('/forum/post/'.length), 10);
@@ -489,12 +513,54 @@ function ForumCategory({
   category: string;
   navigate: (p: string) => void;
 }) {
+  return (
+    <FilteredPostList
+      title={category}
+      filter={{ category }}
+      emptyHint="這個看板還沒有貼文。"
+      navigate={navigate}
+    />
+  );
+}
+
+// Mode-filter view — backs the breadcrumb's "多方諮詢" / "深度思考"
+// links. Same shape as ForumCategory; just calls listForumPosts with
+// `mode` instead of `category`.
+function ForumModeList({
+  mode,
+  navigate,
+}: {
+  mode: ChatMode;
+  navigate: (p: string) => void;
+}) {
+  const label = MODE_LABEL[mode] ?? mode;
+  return (
+    <FilteredPostList
+      title={`${label} 模式`}
+      filter={{ mode }}
+      emptyHint={`還沒有從「${label}」聊出來的貼文。`}
+      navigate={navigate}
+    />
+  );
+}
+
+function FilteredPostList({
+  title,
+  filter,
+  emptyHint,
+  navigate,
+}: {
+  title: string;
+  filter: { category?: string; mode?: ChatMode };
+  emptyHint: string;
+  navigate: (p: string) => void;
+}) {
   const [posts, setPosts] = useState<ForumPostSummary[] | null>(null);
   const [err, setErr] = useState<string>('');
 
   useEffect(() => {
     let alive = true;
-    listForumPosts({ category })
+    listForumPosts({ category: filter.category, mode: filter.mode })
       .then((d) => {
         if (alive) setPosts(d.posts);
       })
@@ -504,16 +570,16 @@ function ForumCategory({
     return () => {
       alive = false;
     };
-  }, [category]);
+  }, [filter.category, filter.mode]);
 
   return (
     <div className="max-w-4xl mx-auto p-4 space-y-3">
-      <h2 className="text-xl font-bold text-gray-100">{category}</h2>
+      <h2 className="text-xl font-bold text-gray-100">{title}</h2>
       {err && <div className="text-red-400 text-sm">{err}</div>}
       {!posts ? (
         <div className="text-gray-500 text-sm">載入中…</div>
       ) : posts.length === 0 ? (
-        <div className="text-gray-500 text-sm">這個看板還沒有貼文。</div>
+        <div className="text-gray-500 text-sm">{emptyHint}</div>
       ) : (
         <div className="space-y-2">
           {posts.map((p) => (
@@ -627,6 +693,15 @@ function ForumPostView({
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
+      {/* Breadcrumb — 主頁 › 看板 › 模式. Each level is a clickable
+          filter so readers can jump from a single thread back to the
+          full feed of that category or chat-mode. */}
+      <Breadcrumb post={post} navigate={navigate} />
+
+      {/* Share row at the TOP — twin of the row at the bottom so users
+          can hit it without scrolling either way. */}
+      <ShareRow post={post} />
+
       {/* Post header */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
         <div className="flex gap-3">
@@ -755,6 +830,8 @@ function ForumPostView({
             onToggleLike={() => toggleCommentLike(c.id)}
             onShowLikers={() => setLikersTarget({ type: 'comment', id: c.id })}
             canLike={!!user}
+            canReply={!!user}
+            onReplyChange={reload}
             navigate={navigate}
           />
         ))}
@@ -769,12 +846,117 @@ function ForumPostView({
         </div>
       )}
 
+      {/* Bottom share row — mirrors the top one so readers who scroll
+          all the way through can share without scrolling back up. */}
+      <ShareRow post={post} />
+
       {likersTarget && (
         <LikersModal
           target={likersTarget}
           onClose={() => setLikersTarget(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Breadcrumb on the post detail page. 主頁 › 看板 › 模式 — each
+// level is a button that jumps to the full filtered list. Skip the
+// 模式 step when the post has no source_mode (rare).
+function Breadcrumb({
+  post,
+  navigate,
+}: {
+  post: ForumPostDetail;
+  navigate: (p: string) => void;
+}) {
+  return (
+    <nav className="flex items-center flex-wrap gap-1.5 text-xs text-gray-500">
+      <button
+        onClick={() => navigate('/forum')}
+        className="hover:text-white"
+      >
+        主頁
+      </button>
+      <span>›</span>
+      <button
+        onClick={() => navigate(`/forum/cat/${encodeURIComponent(post.category)}`)}
+        className="hover:text-white"
+      >
+        {post.category}
+      </button>
+      {post.sourceMode && (
+        <>
+          <span>›</span>
+          <button
+            onClick={() => navigate(`/forum/mode/${post.sourceMode}`)}
+            className="hover:text-white"
+          >
+            {MODE_LABEL[post.sourceMode as ChatMode] ?? post.sourceMode}
+          </button>
+        </>
+      )}
+    </nav>
+  );
+}
+
+// Share row — opens platform-specific intent URLs (Twitter / Facebook
+// / Threads) plus a copy-link fallback that covers Instagram + any
+// app the user wants to paste into. Per-post OG image generation is
+// a future phase; for now Twitter / FB will scrape whatever site-
+// wide meta tags index.html ships with.
+function ShareRow({ post }: { post: ForumPostDetail }) {
+  const [copied, setCopied] = useState(false);
+  const url =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/forum/post/${post.id}`
+      : `/forum/post/${post.id}`;
+  const text = `${post.title}\n\n${post.bodyPreview}`;
+  const encU = encodeURIComponent(url);
+  const encT = encodeURIComponent(text);
+  const targets = [
+    {
+      label: 'X',
+      href: `https://twitter.com/intent/tweet?text=${encT}&url=${encU}`,
+    },
+    {
+      label: 'Facebook',
+      href: `https://www.facebook.com/sharer/sharer.php?u=${encU}`,
+    },
+    {
+      label: 'Threads',
+      href: `https://www.threads.net/intent/post?text=${encT}%0A${encU}`,
+    },
+  ];
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // ignore — older browsers without async clipboard API
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="text-gray-500">分享至：</span>
+      {targets.map((t) => (
+        <a
+          key={t.label}
+          href={t.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+        >
+          {t.label}
+        </a>
+      ))}
+      <button
+        onClick={handleCopy}
+        className="px-2 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300"
+      >
+        {copied ? '✓ 已複製' : '複製連結'}
+      </button>
     </div>
   );
 }
@@ -881,6 +1063,8 @@ function CommentRow({
   onToggleLike,
   onShowLikers,
   canLike,
+  canReply,
+  onReplyChange,
   navigate,
 }: {
   comment: ForumComment;
@@ -895,6 +1079,11 @@ function CommentRow({
   onToggleLike: () => void;
   onShowLikers: () => void;
   canLike: boolean;
+  // True when the viewer is logged in and can post 推/噓/→ replies.
+  canReply: boolean;
+  // Called after a reply is posted or deleted; parent reloads the
+  // post so vote counts and the reply list stay in sync.
+  onReplyChange: () => void;
   navigate: (p: string) => void;
 }) {
   const isAi = comment.authorType === 'ai';
@@ -1025,9 +1214,7 @@ function CommentRow({
             {metaParts.join(' · ')}
           </span>
         </div>
-        <div className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
-          {comment.body}
-        </div>
+        <CollapsibleBody body={comment.body} />
         <div className="mt-2 flex items-center gap-2">
           <LikeButton
             liked={comment.liked}
@@ -1037,7 +1224,175 @@ function CommentRow({
             disabled={!canLike}
           />
         </div>
+        {/* PTT-style replies — 推/噓/→ list + composer underneath. */}
+        <RepliesBlock
+          commentId={comment.id}
+          replies={comment.replies}
+          canReply={canReply}
+          onChange={onReplyChange}
+        />
       </div>
+    </div>
+  );
+}
+
+// Long comments (over ~5 lines or 240 chars) collapse to a clamped
+// preview with a "閱讀更多" toggle. Keeps the post scannable when an
+// AI dumps a 30-line essay reply.
+function CollapsibleBody({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = body.split('\n').length;
+  const isLong = body.length > 240 || lineCount > 5;
+  return (
+    <div>
+      <div
+        className={`text-sm text-gray-200 whitespace-pre-wrap leading-relaxed ${
+          isLong && !expanded ? 'line-clamp-5' : ''
+        }`}
+      >
+        {body}
+      </div>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 text-[11px] text-blue-300 hover:text-blue-200"
+        >
+          {expanded ? '收起' : '閱讀更多 ↓'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// PTT-style reply strip — 推 (vote='up'), 噓 (vote='down'), → (vote=
+// 'none'). 推 / 噓 also bump the parent comment's thumbs_count by ±1
+// server-side; 'none' is just an inline reply.
+function RepliesBlock({
+  commentId,
+  replies,
+  canReply,
+  onChange,
+}: {
+  commentId: number;
+  replies: ForumCommentReply[];
+  canReply: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <div className="mt-2 pt-2 border-t border-gray-800/60 space-y-1">
+      {replies.length === 0 && !canReply ? null : (
+        <>
+          {replies.map((r) => (
+            <ReplyRow key={r.id} reply={r} />
+          ))}
+          {canReply && (
+            <ReplyComposer commentId={commentId} onPosted={onChange} />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const VOTE_GLYPH: Record<'up' | 'down' | 'none', string> = {
+  up: '推',
+  down: '噓',
+  none: '→',
+};
+const VOTE_COLOR: Record<'up' | 'down' | 'none', string> = {
+  up: 'text-rose-300',
+  down: 'text-sky-300',
+  none: 'text-gray-500',
+};
+
+function ReplyRow({ reply }: { reply: ForumCommentReply }) {
+  return (
+    <div className="flex items-baseline gap-2 text-[11px]">
+      <span className={`font-bold w-6 flex-none ${VOTE_COLOR[reply.vote]}`}>
+        {VOTE_GLYPH[reply.vote]}
+      </span>
+      <span className="text-gray-300 font-medium whitespace-nowrap">
+        {reply.authorDisplay}
+      </span>
+      <span className="text-gray-500">：</span>
+      <span className="text-gray-200 flex-1 break-words">{reply.body}</span>
+      <span className="text-gray-600 whitespace-nowrap">
+        {relativeTime(reply.createdAt)}
+      </span>
+    </div>
+  );
+}
+
+function ReplyComposer({
+  commentId,
+  onPosted,
+}: {
+  commentId: number;
+  onPosted: () => void;
+}) {
+  const [vote, setVote] = useState<'up' | 'down' | 'none'>('none');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async () => {
+    const text = body.trim();
+    if (!text) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await postCommentReply(commentId, { vote, body: text });
+      setBody('');
+      setVote('none');
+      onPosted();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 pt-1">
+      <div className="flex rounded border border-gray-700 overflow-hidden text-[11px]">
+        {(['up', 'down', 'none'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => setVote(v)}
+            disabled={busy}
+            className={`px-2 py-0.5 ${
+              vote === v
+                ? `${VOTE_COLOR[v]} bg-gray-700`
+                : 'text-gray-500 hover:bg-gray-800'
+            }`}
+            title={
+              v === 'up' ? '推 — +1 ❤' : v === 'down' ? '噓 — -1 ❤' : '→ 不投票'
+            }
+          >
+            {VOTE_GLYPH[v]}
+          </button>
+        ))}
+      </div>
+      <input
+        type="text"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="留一行..."
+        maxLength={200}
+        disabled={busy}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') submit();
+        }}
+        className="flex-1 min-w-0 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-[11px] text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+      />
+      <button
+        onClick={submit}
+        disabled={busy || !body.trim()}
+        className="px-2 py-0.5 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-[11px]"
+      >
+        送出
+      </button>
+      {err && <div className="w-full text-[11px] text-red-300">{err}</div>}
     </div>
   );
 }
