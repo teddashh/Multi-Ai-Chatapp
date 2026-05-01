@@ -6,21 +6,32 @@
 import React, { useEffect, useState } from 'react';
 import type { AIProvider } from '../shared/types';
 import {
+  adminDeleteAIMedia,
+  adminUploadAIMedia,
   getAIProfile,
   type AIProfileResponse,
+  type User,
 } from '../api';
 import { AI_BIOS, AI_PROVIDERS, aiLevel } from '../shared/constants';
+import { MediaUploader } from './Forum';
 import ProviderAvatar from './ProviderAvatar';
 import { AstroSection } from './UserProfile';
 
 interface Props {
   provider: AIProvider;
   navigate: (path: string) => void;
+  // Optional viewer — admin sees an upload form on the AI's media
+  // library + delete buttons on each tile.
+  viewer?: User | null;
 }
 
-export default function AIProfile({ provider, navigate }: Props) {
+export default function AIProfile({ provider, navigate, viewer }: Props) {
   const [data, setData] = useState<AIProfileResponse | null>(null);
   const [err, setErr] = useState<string>('');
+  const isAdmin = viewer?.tier === 'admin';
+  const reload = () => {
+    getAIProfile(provider).then(setData).catch((e: Error) => setErr(e.message));
+  };
   const bio = AI_BIOS[provider];
   const meta = AI_PROVIDERS[provider];
   const level = data
@@ -131,40 +142,78 @@ export default function AIProfile({ provider, navigate }: Props) {
         />
       </div>
 
-      {/* Media library — admin-curated images for this AI persona. */}
-      {data && data.media.length > 0 && (
+      {/* Media library — admin-curated images for this AI persona.
+          Visible to everyone when populated; admin always sees the
+          section (with the upload form) even when empty. */}
+      {data && (data.media.length > 0 || isAdmin) && (
         <section>
           <h2 className="text-sm uppercase tracking-wider text-gray-500 mb-2">
             媒體庫
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {data.media.map((m) => (
-              <a
-                key={m.id}
-                href={m.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="relative block aspect-square rounded-md overflow-hidden bg-gray-800 hover:ring-2 transition-all"
-                style={{
-                  // hover ring follows the persona's brand colour
-                  ['--tw-ring-color' as string]: `${meta.color}99`,
-                }}
-                title={m.caption ?? '查看原圖'}
-              >
-                <img
-                  src={m.url}
-                  alt={m.caption ?? ''}
-                  loading="lazy"
-                  className="w-full h-full object-cover"
-                />
-                {m.caption && (
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2">
-                    {m.caption}
-                  </div>
-                )}
-              </a>
-            ))}
-          </div>
+          {isAdmin && (
+            <div className="mb-3">
+              <MediaUploader
+                onUploaded={reload}
+                onUpload={(file) =>
+                  adminUploadAIMedia(provider, file).then(() => {})
+                }
+                hint="JPG/PNG/WebP，最大 8 MB"
+              />
+            </div>
+          )}
+          {data.media.length === 0 ? (
+            <div className="text-gray-500 text-xs">還沒有圖。</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {data.media.map((m) => (
+                <div
+                  key={m.id}
+                  className="relative aspect-square rounded-md overflow-hidden bg-gray-800 group"
+                >
+                  <a
+                    href={m.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full h-full hover:ring-2 transition-all"
+                    style={{
+                      ['--tw-ring-color' as string]: `${meta.color}99`,
+                    }}
+                    title={m.caption ?? '查看原圖'}
+                  >
+                    <img
+                      src={m.url}
+                      alt={m.caption ?? ''}
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                    />
+                  </a>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!confirm('刪除這張圖？')) return;
+                        try {
+                          await adminDeleteAIMedia(provider, m.id);
+                          reload();
+                        } catch (e) {
+                          alert((e as Error).message);
+                        }
+                      }}
+                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 hover:bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="刪除"
+                    >
+                      ×
+                    </button>
+                  )}
+                  {m.caption && (
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2 pointer-events-none">
+                      {m.caption}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       )}
 

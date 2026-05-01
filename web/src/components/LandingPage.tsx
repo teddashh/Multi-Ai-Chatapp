@@ -350,6 +350,14 @@ export default function LandingPage({ navigate, lang, onLangChange, user }: Prop
                     <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
                       {p.category}
                     </span>
+                    {p.nsfw && (
+                      <span
+                        className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
+                        title="18+ 內容"
+                      >
+                        🔞 18+
+                      </span>
+                    )}
                     <span>·</span>
                     <span className="truncate">{p.authorDisplay}</span>
                   </div>

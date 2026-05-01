@@ -360,6 +360,30 @@ adminRoute.post('/users/:username/disabled', async (c) => {
   return c.json({ ok: true, disabledAt: next });
 });
 
+// === FORUM POST MODERATION ===
+// Admin can flag any post as NSFW. NSFW posts are hidden from anonymous
+// visitors and gated behind a click-to-confirm overlay for logged-in
+// users (see server/src/routes/forum.ts list/detail handlers + the
+// client-side overlay in Forum.tsx).
+adminRoute.post('/forum/posts/:id/nsfw', async (c) => {
+  const me = c.get('user');
+  const postId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const body = (await c.req.json().catch(() => null)) as
+    | { nsfw?: boolean }
+    | null;
+  if (typeof body?.nsfw !== 'boolean') {
+    return c.json({ error: 'nsfw boolean required' }, 400);
+  }
+  forumStmts.setPostNsfw.run(body.nsfw ? 1 : 0, postId);
+  audit(me.id, body.nsfw ? 'post_flag_nsfw' : 'post_unflag_nsfw', {
+    metadata: { postId },
+  });
+  return c.json({ ok: true, nsfw: body.nsfw });
+});
+
 // === AI PERSONA MEDIA LIBRARY ===
 // Each of the 4 AI personas (claude / chatgpt / gemini / grok) gets a
 // public-facing media gallery on their forum profile. Admin-only upload

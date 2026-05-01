@@ -722,6 +722,10 @@ export interface ForumPostSummary {
   commentCount: number;
   createdAt: number;
   updatedAt: number;
+  // NSFW flag — anonymous viewers never see flagged posts (server hides
+  // them); logged-in viewers see the post with a 🔞 badge in lists and
+  // a click-to-confirm overlay on the detail page.
+  nsfw: boolean;
 }
 
 export interface ForumPostDetail extends ForumPostSummary {
@@ -1084,6 +1088,57 @@ export async function deletePostMedia(
     credentials: 'include',
   });
   if (!res.ok) throw new Error(`${res.status}`);
+}
+
+// Admin-only: upload an image into an AI persona's media library.
+export async function adminUploadAIMedia(
+  provider: 'claude' | 'chatgpt' | 'gemini' | 'grok',
+  file: File,
+  opts: { caption?: string; isThumbnail?: boolean } = {},
+): Promise<void> {
+  const fd = new FormData();
+  fd.append('file', file);
+  if (opts.caption) fd.append('caption', opts.caption);
+  if (opts.isThumbnail) fd.append('isThumbnail', '1');
+  const res = await fetch(`/api/admin/ai-personas/${provider}/media`, {
+    method: 'POST',
+    credentials: 'include',
+    body: fd,
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+}
+
+export async function adminDeleteAIMedia(
+  provider: 'claude' | 'chatgpt' | 'gemini' | 'grok',
+  mediaId: number,
+): Promise<void> {
+  const res = await fetch(
+    `/api/admin/ai-personas/${provider}/media/${mediaId}`,
+    { method: 'DELETE', credentials: 'include' },
+  );
+  if (!res.ok) throw new Error(`${res.status}`);
+}
+
+// Admin-only: flag / unflag a post as NSFW. Anonymous viewers stop
+// seeing flagged posts entirely; logged-in viewers see the badge + an
+// 18+ confirm overlay before the body renders.
+export async function adminSetPostNsfw(
+  postId: number,
+  nsfw: boolean,
+): Promise<void> {
+  const res = await fetch(`/api/admin/forum/posts/${postId}/nsfw`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nsfw }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
 }
 
 export async function shareSessionToForum(body: {

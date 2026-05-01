@@ -110,6 +110,7 @@ function formatPostSummary(r: PostListRow) {
     commentCount: r.comment_count,
     createdAt: r.created_at * 1000,
     updatedAt: r.updated_at * 1000,
+    nsfw: !!r.nsfw,
   };
 }
 
@@ -173,7 +174,13 @@ forumRoute.get('/categories', (c) => {
 // ---------------------------------------------------------------------------
 // GET /api/forum?category=xxx&page=N — public post list.
 // ---------------------------------------------------------------------------
-forumRoute.get('/', (c) => {
+forumRoute.get('/', optionalAuth, (c) => {
+  // NSFW posts are hidden from anonymous viewers (filtered out below);
+  // logged-in users see them in lists with a 🔞 badge and a click-to-
+  // confirm gate before content displays. The login bar is the simplest
+  // age-verification proxy we can ship before a paid tier exists.
+  const viewer = c.get('user') as SessionUser | undefined;
+  const showNsfw = !!viewer;
   const category = c.req.query('category');
   const mode = c.req.query('mode');
   const sort = c.req.query('sort') === 'trending' ? 'trending' : 'latest';
@@ -232,8 +239,9 @@ forumRoute.get('/', (c) => {
     const rows = db
       .prepare(sql)
       .all(...params, limit, offset) as PostListRow[];
+    const visible = showNsfw ? rows : rows.filter((r) => !r.nsfw);
     return c.json({
-      posts: rows.map(formatPostSummary),
+      posts: visible.map(formatPostSummary),
       page,
       pageSize: limit,
     });
@@ -248,9 +256,10 @@ forumRoute.get('/', (c) => {
         ? forumStmts.listByTrending.all(limit, offset)
         : forumStmts.listAll.all(limit, offset)
   ) as PostListRow[];
+  const visible = showNsfw ? rows : rows.filter((r) => !r.nsfw);
 
   return c.json({
-    posts: rows.map(formatPostSummary),
+    posts: visible.map(formatPostSummary),
     page,
     pageSize: limit,
   });
@@ -261,7 +270,9 @@ forumRoute.get('/', (c) => {
 // posts the requester listed but the server doesn't have just drop
 // out). Backs the homepage "你剛看過" row, which keeps a localStorage
 // list of recently-viewed post ids.
-forumRoute.get('/bulk', (c) => {
+forumRoute.get('/bulk', optionalAuth, (c) => {
+  const viewer = c.get('user') as SessionUser | undefined;
+  const showNsfw = !!viewer;
   const raw = c.req.query('ids') ?? '';
   const ids = raw
     .split(',')
@@ -277,9 +288,10 @@ forumRoute.get('/bulk', (c) => {
     WHERE p.id IN (${placeholders})
   `;
   const rows = db.prepare(sql).all(...ids) as PostListRow[];
+  const visible = showNsfw ? rows : rows.filter((r) => !r.nsfw);
   // SQLite's IN doesn't preserve query order — sort in JS so the
   // client gets posts back in the recency order they sent.
-  const byId = new Map(rows.map((r) => [r.id, r]));
+  const byId = new Map(visible.map((r) => [r.id, r]));
   const ordered = ids.map((id) => byId.get(id)).filter(Boolean) as PostListRow[];
   return c.json({ posts: ordered.map(formatPostSummary) });
 });
@@ -299,6 +311,15 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     | undefined;
   if (!postRow) return c.json({ error: 'not found' }, 404);
 
+  // optionalAuth may or may not have set user; cast to undefined-safe.
+  const user = c.get('user') as SessionUser | undefined;
+  // NSFW posts are hidden from anonymous viewers entirely. Logged-in
+  // users get the post back and the SPA shows an age-confirmation
+  // overlay before rendering content.
+  if (postRow.nsfw && !user) {
+    return c.json({ error: 'not found' }, 404);
+  }
+
   // findPostById doesn't join users — fetch the author row separately.
   const author =
     (db
@@ -308,9 +329,6 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
       | undefined) ?? { username: '?', nickname: null };
 
   const commentRows = forumStmts.listComments.all(postId) as CommentListRow[];
-
-  // optionalAuth may or may not have set user; cast to undefined-safe.
-  const user = c.get('user') as SessionUser | undefined;
   let likedPost = false;
   let likedCommentIds = new Set<number>();
   if (user) {

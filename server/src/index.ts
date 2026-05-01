@@ -77,17 +77,22 @@ if (existsSync(webDist)) {
       | {
           title: string;
           body: string;
+          nsfw: number;
         }
       | null = null;
     try {
       post = forumStmts.findPostById.get(id) as
-        | { title: string; body: string }
+        | { title: string; body: string; nsfw: number }
         | undefined
         ?? null;
     } catch {
       post = null;
     }
     if (!post) return c.html(html);
+    // Don't leak NSFW post titles / bodies via og:title / og:description
+    // to social-media crawlers (they never carry our session cookie).
+    // Serve the SPA shell with the site-wide defaults instead.
+    if (post.nsfw) return c.html(html);
 
     const publicUrl = process.env.PUBLIC_URL ?? '';
     const baseUrl = publicUrl ? publicUrl.replace(/\/+$/, '') : '';

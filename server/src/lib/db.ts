@@ -201,6 +201,11 @@ addColumnIfMissing('users', 'show_birth_time', 'INTEGER NOT NULL DEFAULT 0');
 // purge (DELETE /api/auth/me) which removes the row entirely. NULL =
 // active. Set to current epoch when disabled.
 addColumnIfMissing('users', 'disabled_at', 'INTEGER');
+// Forum content gating: posts flagged as NSFW are hidden from anonymous
+// visitors entirely (404 on detail, filtered out of list endpoints) and
+// surfaced to logged-in users with a click-to-confirm 18+ overlay on
+// the post detail page. Default 0 (safe).
+addColumnIfMissing('forum_posts', 'nsfw', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Birth year is the most personal field — split off from show_birthday
@@ -973,6 +978,7 @@ export interface ForumPostRow {
   created_at: number;
   updated_at: number;
   ai_persona: string | null;
+  nsfw: number;
 }
 
 export interface ForumCommentRow {
@@ -1014,6 +1020,9 @@ export const forumStmts = {
   ),
   setCommentCount: db.prepare<[number, number]>(
     `UPDATE forum_posts SET comment_count = ?, updated_at = strftime('%s','now') WHERE id = ?`,
+  ),
+  setPostNsfw: db.prepare<[number, number]>(
+    `UPDATE forum_posts SET nsfw = ? WHERE id = ?`,
   ),
   bumpCommentCount: db.prepare<[number, number]>(
     `UPDATE forum_posts SET comment_count = comment_count + ?, updated_at = strftime('%s','now') WHERE id = ?`,

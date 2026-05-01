@@ -14,8 +14,10 @@ import {
   type ChatMode,
 } from '../shared/types';
 import {
+  adminSetPostNsfw,
   avatarUrl,
   bulkFetchForumPosts,
+  deletePostMedia,
   deleteCommentReply,
   getForumPost,
   listForumCategories,
@@ -24,6 +26,7 @@ import {
   postCommentReply,
   postForumComment,
   toggleForumLike,
+  uploadPostMedia,
   type AIStatsMap,
   type ForumCategoryCount,
   type ForumComment,
@@ -68,7 +71,11 @@ export default function Forum({ pathname, navigate, user }: Props) {
         <ForumPostView postId={route.postId} navigate={navigate} user={user} />
       )}
       {route.kind === 'ai' && (
-        <AIProfile provider={route.provider} navigate={navigate} />
+        <AIProfile
+          provider={route.provider}
+          navigate={navigate}
+          viewer={user}
+        />
       )}
       {route.kind === 'user' && (
         <UserProfile username={route.username} navigate={navigate} />
@@ -626,6 +633,30 @@ function ForumPostView({
   const scrollToComposer = useCallback(() => {
     composerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
+  // NSFW gate — once the user confirms 18+ on any post, the
+  // acknowledgement persists in localStorage so they don't get
+  // re-prompted on every flagged post. Per discussion: in the absence
+  // of a paid tier today, "logged-in + click-confirm" is the working
+  // age check.
+  const [nsfwAcked, setNsfwAcked] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('nsfw-acknowledged') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const ackNsfw = () => {
+    try {
+      localStorage.setItem('nsfw-acknowledged', '1');
+    } catch {
+      // ignore — private browsing
+    }
+    setNsfwAcked(true);
+  };
+  const isAdmin = user?.tier === 'admin';
+  const isAuthor = !!user && data?.post.authorUsername === user.username;
+  const canModerate = isAdmin;
+  const canUploadMedia = isAdmin || isAuthor;
 
   const reload = useCallback(() => {
     setErr('');
@@ -633,6 +664,23 @@ function ForumPostView({
       .then(setData)
       .catch((e: Error) => setErr(e.message));
   }, [postId]);
+
+  const toggleNsfw = useCallback(async () => {
+    if (!data) return;
+    const next = !data.post.nsfw;
+    if (
+      next &&
+      !confirm('將這篇文章標為 18+ 後，匿名訪客將完全看不到，登入用戶會看到 18+ 確認頁。確定？')
+    ) {
+      return;
+    }
+    try {
+      await adminSetPostNsfw(data.post.id, next);
+      reload();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }, [data, reload]);
 
   useEffect(() => {
     reload();
@@ -701,6 +749,42 @@ function ForumPostView({
   if (!data) return <div className="p-4 text-gray-500 text-sm">載入中…</div>;
   const { post, comments } = data;
 
+  // 18+ confirmation gate — NSFW posts are blocked behind a confirm
+  // before content renders. The acknowledgement persists in
+  // localStorage so subsequent NSFW posts in the same browser don't
+  // re-prompt. Anonymous viewers can never reach this branch (server
+  // already 404s).
+  if (post.nsfw && !nsfwAcked) {
+    return (
+      <div className="max-w-md mx-auto p-4 space-y-4">
+        <Breadcrumb post={post} navigate={navigate} />
+        <div className="rounded-xl border border-red-700/50 bg-red-950/30 p-6 space-y-4 text-center">
+          <div className="text-4xl">🔞</div>
+          <h2 className="text-lg font-bold text-red-200">此貼文標記為 18+ 內容</h2>
+          <p className="text-sm text-red-100/80 leading-relaxed">
+            內容可能包含成人主題（性、暴力或敏感議題）。
+            點下「我已年滿 18 歲」即表示您聲明已成年並理解
+            內容性質。本次確認會記在這個瀏覽器，往後同類貼文不再重複詢問。
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 pt-2">
+            <button
+              onClick={() => navigate('/forum')}
+              className="flex-1 px-4 py-2 rounded-lg border border-gray-700 hover:bg-gray-800 text-sm text-gray-300"
+            >
+              返回討論區
+            </button>
+            <button
+              onClick={ackNsfw}
+              className="flex-1 px-4 py-2 rounded-lg bg-red-700 hover:bg-red-600 text-sm text-white font-medium"
+            >
+              我已年滿 18 歲
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4">
       {/* Breadcrumb — 主頁 › 看板 › 模式. Each level is a clickable
@@ -714,6 +798,14 @@ function ForumPostView({
       <div className="space-y-2">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-100 leading-snug">
           {post.title}
+          {post.nsfw && (
+            <span
+              className="ml-3 inline-block align-middle px-2 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 text-xs font-semibold"
+              title="18+ 內容"
+            >
+              🔞 18+
+            </span>
+          )}
         </h1>
         <div className="flex flex-wrap items-center gap-3">
           <ShareRow post={post} variant="compact" />
@@ -723,6 +815,19 @@ function ForumPostView({
           >
             ↓ 回復
           </button>
+          {canModerate && (
+            <button
+              onClick={toggleNsfw}
+              className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium border ${
+                post.nsfw
+                  ? 'border-red-700/40 bg-red-950/40 text-red-200 hover:bg-red-900/40'
+                  : 'border-gray-700 text-gray-300 hover:bg-gray-800'
+              }`}
+              title="僅管理員可見"
+            >
+              {post.nsfw ? '取消 18+ 標記' : '🔞 標記為 18+'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -857,11 +962,40 @@ function ForumPostView({
         ))}
       </div>
 
-      {/* Media library — admin-curated images attached to this post.
-          Empty array hides the section. The thumbnail (is_thumbnail=1)
-          is also what the server serves as og:image for share previews,
-          so the gallery doubles as the social-card source of truth. */}
-      {data.media.length > 0 && <MediaGallery media={data.media} />}
+      {/* Media library — images attached to this post. The thumbnail
+          (is_thumbnail=1) doubles as the og:image for share previews,
+          so the gallery is the social-card source of truth. Post
+          author + admin see an upload form and per-tile delete; other
+          viewers see read-only. Empty + non-uploadable hides the
+          section entirely. */}
+      {(data.media.length > 0 || canUploadMedia) && (
+        <MediaGallery
+          media={data.media}
+          onDelete={
+            canUploadMedia
+              ? async (mediaId) => {
+                  try {
+                    await deletePostMedia(post.id, mediaId);
+                    reload();
+                  } catch (e) {
+                    alert((e as Error).message);
+                  }
+                }
+              : undefined
+          }
+          uploader={
+            canUploadMedia ? (
+              <MediaUploader
+                onUploaded={reload}
+                onUpload={(file, isThumbnail) =>
+                  uploadPostMedia(post.id, file, { isThumbnail }).then(() => {})
+                }
+                hint="JPG/PNG/WebP，最大 8 MB"
+              />
+            ) : undefined
+          }
+        />
+      )}
 
       {/* Composer — composerRef anchors the 回復 jump button at the
           top of the page so readers can scroll straight here. */}
@@ -954,52 +1088,147 @@ const IconLink = ({ className = 'w-4 h-4' }: { className?: string }) => (
   </svg>
 );
 
+// Inline image uploader for the media library. Renders an "+ 上傳圖片"
+// button + a hidden file input + a "set as share thumbnail" toggle.
+// The actual API call is wired by the caller through `onUpload`, which
+// gets the chosen File + the thumbnail intent and is responsible for
+// calling either uploadPostMedia or adminUploadAIMedia.
+export function MediaUploader({
+  onUploaded,
+  onUpload,
+  hint,
+}: {
+  onUploaded: () => void;
+  onUpload: (file: File, isThumbnail: boolean) => Promise<void>;
+  hint?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [asThumbnail, setAsThumbnail] = useState(false);
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await onUpload(file, asThumbnail);
+      setAsThumbnail(false);
+      onUploaded();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-xs">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+        className="hidden"
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={busy}
+        className="px-3 py-1.5 rounded bg-pink-600 hover:bg-pink-500 disabled:opacity-50 text-white font-medium"
+      >
+        {busy ? '上傳中…' : '+ 上傳圖片'}
+      </button>
+      <label className="flex items-center gap-1.5 text-gray-300 select-none cursor-pointer">
+        <input
+          type="checkbox"
+          checked={asThumbnail}
+          onChange={(e) => setAsThumbnail(e.target.checked)}
+          disabled={busy}
+        />
+        <span>設為社群分享封面</span>
+      </label>
+      {hint && <span className="text-gray-500">{hint}</span>}
+      {err && <span className="text-red-300">{err}</span>}
+    </div>
+  );
+}
+
 // Media gallery — surfaces the post's image library as a horizontal
 // thumbnail row. Click a tile to open the image in a new tab (full
 // resolution). The thumbnail flag (★) is purely informational — server
 // already used it for the og:image; on the page itself every image is
-// equally browsable.
-export function MediaGallery({ media }: { media: MediaItem[] }) {
+// equally browsable. Optional `onDelete` enables an X button per tile
+// for the post author / admin.
+export function MediaGallery({
+  media,
+  onDelete,
+  uploader,
+}: {
+  media: MediaItem[];
+  onDelete?: (mediaId: number) => void | Promise<void>;
+  uploader?: React.ReactNode;
+}) {
   return (
-    <section className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-      <h3 className="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">
-        <span>媒體庫</span>
-        <span className="text-[11px] text-gray-500 font-normal">
-          {media.length} 張圖
-        </span>
-      </h3>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-        {media.map((m) => (
-          <a
-            key={m.id}
-            href={m.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="relative block aspect-square rounded-md overflow-hidden bg-gray-800 hover:ring-2 hover:ring-pink-400/60 transition-all"
-            title={m.caption ?? '查看原圖'}
-          >
-            <img
-              src={m.url}
-              alt={m.caption ?? ''}
-              loading="lazy"
-              className="w-full h-full object-cover"
-            />
-            {m.isThumbnail && (
-              <span
-                className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-yellow-300 text-[10px]"
-                title="社群分享封面"
-              >
-                ★ 封面
-              </span>
-            )}
-            {m.caption && (
-              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2">
-                {m.caption}
-              </div>
-            )}
-          </a>
-        ))}
+    <section className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
+          <span>媒體庫</span>
+          <span className="text-[11px] text-gray-500 font-normal">
+            {media.length} 張圖
+          </span>
+        </h3>
       </div>
+      {uploader}
+      {media.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {media.map((m) => (
+            <div
+              key={m.id}
+              className="relative aspect-square rounded-md overflow-hidden bg-gray-800 group"
+            >
+              <a
+                href={m.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full h-full hover:ring-2 hover:ring-pink-400/60 transition-all"
+                title={m.caption ?? '查看原圖'}
+              >
+                <img
+                  src={m.url}
+                  alt={m.caption ?? ''}
+                  loading="lazy"
+                  className="w-full h-full object-cover"
+                />
+              </a>
+              {m.isThumbnail && (
+                <span
+                  className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-yellow-300 text-[10px] pointer-events-none"
+                  title="社群分享封面"
+                >
+                  ★ 封面
+                </span>
+              )}
+              {onDelete && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('刪除這張圖？')) onDelete(m.id);
+                  }}
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/70 hover:bg-red-600 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="刪除"
+                >
+                  ×
+                </button>
+              )}
+              {m.caption && (
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 py-1 text-[11px] text-gray-100 line-clamp-2 pointer-events-none">
+                  {m.caption}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -1111,6 +1340,14 @@ function PostTile({
           {post.category}
         </span>
         {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
+        {post.nsfw && (
+          <span
+            className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
+            title="18+ 內容"
+          >
+            🔞 18+
+          </span>
+        )}
         <span className="text-gray-500 ml-auto">
           {relativeTime(post.createdAt)}
         </span>
@@ -1161,6 +1398,14 @@ function PostCard({
           {post.category}
         </span>
         {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
+        {post.nsfw && (
+          <span
+            className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 text-[10px] font-semibold"
+            title="18+ 內容"
+          >
+            🔞 18+
+          </span>
+        )}
         <span className="text-gray-500">·</span>
         <span className="text-gray-400">{post.authorDisplay}</span>
         <span className="text-gray-500">·</span>
