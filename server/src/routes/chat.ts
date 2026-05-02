@@ -500,8 +500,22 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           Math.floor(Date.now() / 1000),
           msgId,
         );
+        // Same provenance stamp as the orchestrator path — without
+        // this, regenerated messages on resumed sessions had a blank
+        // model annotation in the admin header even though the data
+        // existed elsewhere. The regen path doesn't do staged
+        // fallback, so requested == answered (always 'cli' stage).
+        messageStmts.setAnswered.run('cli', model, model, msgId);
         sessionStmts.touch.run(sessionId);
-        send({ type: 'done', provider, text: result.text, messageId: msgId });
+        send({
+          type: 'done',
+          provider,
+          text: result.text,
+          messageId: msgId,
+          answeredStage: 'cli',
+          answeredModel: model,
+          requestedModel: model,
+        });
         send({ type: 'finish' });
       } catch (err) {
         send({
@@ -642,11 +656,21 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
           Math.floor(Date.now() / 1000),
         );
         persistedId = Number(ins.lastInsertRowid);
+        // Stamp provenance so the admin header shows the model on the
+        // regenerated message. Without this, a successfully resumed
+        // workflow's later turns lacked the answered_model column.
+        // Regen path doesn't do staged fallback so requested == answered.
+        if (!stepFailed) {
+          messageStmts.setAnswered.run('cli', model, model, persistedId);
+        }
         send({
           type: 'done',
           provider: step.provider,
           text: stepText,
           messageId: persistedId,
+          answeredStage: stepFailed ? undefined : 'cli',
+          answeredModel: stepFailed ? undefined : model,
+          requestedModel: model,
         });
         history.push({
           provider: step.provider,

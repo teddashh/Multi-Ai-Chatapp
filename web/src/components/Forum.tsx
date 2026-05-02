@@ -1081,9 +1081,19 @@ function ForumPostView({
                 }
                 disabled={!user}
               />
-              <span className="text-xs text-gray-500">
-                {post.commentCount} 則回應
-              </span>
+              {post.commentCount > 0 && (
+                <button
+                  onClick={() =>
+                    document
+                      .getElementById('forum-comments-anchor')
+                      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                  }
+                  className="text-xs text-gray-500 hover:text-blue-300 hover:underline"
+                  title="跳到留言"
+                >
+                  ↓ {post.commentCount} 樓
+                </button>
+              )}
             </div>
 
             {/* PTT-style replies on the OP itself — same shape as the
@@ -1134,11 +1144,12 @@ function ForumPostView({
       )}
 
       {/* Comments */}
-      <div className="space-y-2">
-        {comments.map((c) => (
+      <div id="forum-comments-anchor" className="space-y-2">
+        {comments.map((c, i) => (
           <CommentRow
             key={c.id}
             comment={c}
+            floor={i + 1}
             aiPersona={post.aiPersona}
             aiStats={data.aiStats}
             userStats={data.userStats}
@@ -1271,6 +1282,11 @@ const IconFacebook = ({ className = 'w-4 h-4' }: { className?: string }) => (
 const IconThreads = ({ className = 'w-4 h-4' }: { className?: string }) => (
   <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
     <path d="M12.186 2C6.62 2 3 5.6 3 11.93 3 18.42 6.74 22 12.13 22h.06c5.36 0 8.81-3.38 8.81-8.62 0-3.05-1.18-5.27-3.32-6.45l-.18-.1-.04-.2c-.6-3.04-2.86-4.72-5.28-4.63zm.07 1.94c1.84 0 3.36 1.16 3.86 3.06l.1.4-.4.05c-.78.1-1.5.27-2.16.5l-.55.2-.18-.55c-.32-1-.93-1.5-1.96-1.5-1.4 0-2.5.93-2.5 2.34 0 1.5 1.34 2.34 2.84 2.34 1.46 0 2.6-.5 3.46-1.4l.27-.28.32.2c.6.4 1.05.95 1.36 1.62l.16.34-.3.22c-1.32 1-3.03 1.5-5.06 1.5-3.13 0-5.46-1.94-5.46-5.16 0-3.04 2.36-5.18 5.7-5.18zm.86 7.62c-.04 1.74-.42 2.84-1.94 3.96l-.36.26.36.26c1.96 1.4 4.72 1.18 5.06-1.06.18-1.2-.46-2.5-1.94-3.04l-.4-.14-.1.4c-.18.7-.46 1.18-.86 1.5l-.18.13.32-.27c.94-.78 1.04-1.66 1.04-1.86l.04-.34h-1.04z" />
+  </svg>
+);
+const IconLine = ({ className = 'w-4 h-4' }: { className?: string }) => (
+  <svg viewBox="0 0 24 24" aria-hidden className={className} fill="currentColor">
+    <path d="M19.365 9.89c.41 0 .74.33.74.74 0 .41-.33.74-.74.74h-2.06v1.32h2.06c.41 0 .74.34.74.74 0 .41-.33.74-.74.74h-2.8a.74.74 0 0 1-.73-.74V8.59c0-.4.33-.74.74-.74h2.79c.41 0 .74.34.74.75 0 .4-.33.73-.74.73h-2.05v1.32h2.05V9.89zm-4.18 3.28a.74.74 0 0 1-.51.7.7.7 0 0 1-.23.04.74.74 0 0 1-.6-.3l-2.85-3.88v3.45c0 .4-.34.74-.74.74-.41 0-.74-.34-.74-.74V8.59c0-.32.2-.6.51-.7.07-.02.15-.03.22-.03.23 0 .45.11.59.3l2.87 3.88V8.59c0-.4.33-.74.74-.74.4 0 .74.34.74.74v4.58zm-6.66 0c0 .4-.33.74-.74.74-.4 0-.74-.34-.74-.74V8.59c0-.4.34-.74.74-.74.41 0 .74.34.74.74v4.58zM6.61 13.91h-2.8a.74.74 0 0 1-.74-.74V8.59c0-.4.34-.74.74-.74.41 0 .74.34.74.74v3.84h2.06c.41 0 .74.34.74.74 0 .41-.33.74-.74.74M22.5 10.34C22.5 5.61 17.78 1.77 12 1.77S1.5 5.61 1.5 10.34c0 4.24 3.74 7.79 8.79 8.46.34.07.81.23.93.52.1.27.07.7.03.96l-.15.91c-.05.27-.21 1.06.93.58 1.14-.48 6.16-3.62 8.4-6.21 1.55-1.7 2.07-3.43 2.07-5.22" />
   </svg>
 );
 const IconLink = ({ className = 'w-4 h-4' }: { className?: string }) => (
@@ -1464,6 +1480,14 @@ function ShareRow({
       Icon: IconThreads,
       href: `https://www.threads.net/intent/post?text=${encT}%0A${encU}`,
     },
+    {
+      key: 'line',
+      label: 'LINE',
+      Icon: IconLine,
+      // Classic LINE share intent. Mobile LINE app deeplinks straight
+      // into the chat picker; desktop shows the LINE web share UI.
+      href: `https://social-plugins.line.me/lineit/share?url=${encU}&text=${encT}`,
+    },
   ];
   const handleCopy = async () => {
     try {
@@ -1620,6 +1644,7 @@ function PostCard({
 
 function CommentRow({
   comment,
+  floor,
   aiPersona,
   aiStats,
   userStats,
@@ -1633,6 +1658,9 @@ function CommentRow({
   onModerateDelete,
 }: {
   comment: ForumComment;
+  // 1-indexed position of this comment in the post (1 樓, 2 樓, …).
+  // Cumulative across pagination if/when we paginate.
+  floor: number;
   aiPersona: string | null;
   // Per-provider cumulative stats — used for the avatar mini-badge
   // (Lv X · ❤ N) and the hover card. Same map for every comment.
@@ -1660,7 +1688,7 @@ function CommentRow({
   const primaryName = isAi && provider
     ? capitalize(provider)
     : comment.authorDisplay;
-  const metaParts: string[] = [];
+  const metaParts: string[] = [`${floor} 樓`];
   if (comment.isImported) metaParts.push('來自原對話');
   metaParts.push(relativeTime(comment.createdAt));
   // Clicking the avatar / name jumps to the author's profile page.
@@ -1919,16 +1947,33 @@ function MarkdownBody({
   );
 }
 
+// Inline mask-image fade for the bottom of a clamped body. Beats a
+// background-gradient overlay because (a) it's theme-agnostic — the
+// content itself fades to transparent regardless of card colour, and
+// (b) it works in older WebViews like the LINE in-app browser where
+// CSS custom-property gradients (Tailwind's `via-*/N` syntax) render
+// as a solid block. Both `mask-image` and `-webkit-mask-image` set
+// for full coverage.
+const FADE_MASK_STYLE: React.CSSProperties = {
+  WebkitMaskImage:
+    'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+  maskImage:
+    'linear-gradient(to bottom, black 0%, black 70%, transparent 100%)',
+};
+
 // Long comments (over ~5 lines or 240 chars) collapse to a clamped
-// preview with a "閱讀更多" toggle. Keeps the post scannable when an
-// AI dumps a 30-line essay reply.
+// preview with a "閱讀更多" toggle. Keeps the thread scannable when
+// an AI dumps a 30-line essay reply.
 function CollapsibleBody({ body }: { body: string }) {
   const [expanded, setExpanded] = useState(false);
   const lineCount = body.split('\n').length;
   const isLong = body.length > 240 || lineCount > 5;
   return (
     <div>
-      <div className={isLong && !expanded ? 'line-clamp-5 overflow-hidden' : ''}>
+      <div
+        className={isLong && !expanded ? 'max-h-[10rem] overflow-hidden' : ''}
+        style={isLong && !expanded ? FADE_MASK_STYLE : undefined}
+      >
         <MarkdownBody body={body} />
       </div>
       {isLong && (
@@ -1951,27 +1996,15 @@ function CollapsiblePostBody({ body }: { body: string }) {
   const [expanded, setExpanded] = useState(false);
   const lineCount = body.split('\n').length;
   const isLong = body.length > 800 || lineCount > 12;
-  // Earlier impl used line-clamp-[12]; that reliably misbehaved with
-  // multi-paragraph markdown on narrow viewports (paragraph elements
-  // would visually overlap when -webkit-line-clamp tried to span
-  // across <p> boundaries). max-h + a bottom fade gradient is a
-  // simpler, paragraph-agnostic clamp that's safe at any width.
   return (
     <div className="mt-2">
       <div
         className={
-          isLong && !expanded
-            ? 'relative max-h-[26rem] overflow-hidden'
-            : ''
+          isLong && !expanded ? 'max-h-[26rem] overflow-hidden' : ''
         }
+        style={isLong && !expanded ? FADE_MASK_STYLE : undefined}
       >
         <MarkdownBody body={body} className="text-base" />
-        {isLong && !expanded && (
-          <div
-            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-gray-900 via-gray-900/85 to-transparent pointer-events-none"
-            aria-hidden
-          />
-        )}
       </div>
       {isLong && (
         <button
