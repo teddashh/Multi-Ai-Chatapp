@@ -776,7 +776,15 @@ async function generateShareSummary(postId: number): Promise<string | null> {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: sys }] },
         contents: [{ role: 'user', parts: [{ text: articleBlob }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 400 },
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 800,
+          // Gemini 3 Flash defaults to thinking-on, which eats most of
+          // the output budget before any visible text gets emitted.
+          // For a 2-sentence summary task we want zero deliberation,
+          // just a direct write.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     });
     if (!res.ok) {
