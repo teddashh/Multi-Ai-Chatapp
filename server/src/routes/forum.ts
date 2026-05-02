@@ -818,11 +818,10 @@ async function generateShareSummary(postId: number): Promise<string | null> {
 }
 
 // Character reference images live next to the compiled server at
-// `<repo>/server/persona-refs/`. Resolve once on startup so each
-// generation just reads from disk.
+// `<repo>/server/persona-refs/`. From dist/routes/forum.js that's
+// two `..` up to `server/`, then into `persona-refs/`.
 const PERSONA_REFS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
-  '..',
   '..',
   '..',
   'persona-refs',
