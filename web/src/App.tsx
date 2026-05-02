@@ -254,6 +254,12 @@ export default function App() {
           content: m.content,
           timestamp: m.timestamp,
           attachments: m.attachments,
+          // Same fix as handleSelectSession — admin model annotation
+          // was being dropped on every reload (visibilitychange,
+          // SSE recovery, etc).
+          answeredStage: m.answeredStage,
+          answeredModel: m.answeredModel,
+          requestedModel: m.requestedModel,
         })),
       );
     } catch {
@@ -263,6 +269,27 @@ export default function App() {
 
   const abortRef = useRef<AbortController | null>(null);
   const pendingRolesRef = useRef<Record<string, string>>({});
+
+  // Mobile Safari (and to a lesser extent iOS Chrome) suspends the
+  // SSE stream when the tab is backgrounded — the fetch reader stops
+  // getting bytes but no error/close fires, so the in-flight workflow
+  // looks frozen forever when the user comes back. On every visibility
+  // return we re-pull the session from the DB; if we were mid-workflow
+  // we also raise the connection-lost banner so the user sees the
+  // existing 重試 affordance (orchestrator keeps running server-side
+  // even after SSE drops, so messages catch up cleanly).
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!activeSessionId) return;
+      void reloadActiveSession();
+      if (isProcessing) {
+        setConnectionLost(true);
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [activeSessionId, isProcessing, reloadActiveSession]);
 
   useEffect(() => {
     me().then((u) => {
