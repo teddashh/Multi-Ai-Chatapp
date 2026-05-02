@@ -1465,7 +1465,7 @@ export function MediaGallery({
             }}
             disabled={generating}
             className="px-2 py-1 rounded border border-pink-500/50 text-pink-200 hover:bg-pink-900/30 disabled:opacity-50 text-xs font-medium"
-            title="用 Gemini Flash Image 重新畫一張文章宣傳圖（約 30 秒）"
+            title="用 gpt-image-2 重新畫一張文章宣傳圖（約 30-60 秒）"
           >
             {generating ? '生成中…約 30 秒' : '✨ AI 生成宣傳圖'}
           </button>

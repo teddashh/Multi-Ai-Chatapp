@@ -35,7 +35,6 @@ import {
   readForumMedia,
   saveForumMedia,
 } from '../lib/uploads.js';
-import { runGeminiImage } from '../lib/providers/gemini-image.js';
 import { runOpenAIImageEdit } from '../lib/providers/openai-image.js';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -739,15 +738,16 @@ forumRoute.post('/posts/:id/replies', requireAuth, async (c) => {
 // to clear (server normalises to NULL → falls back to body excerpt).
 const MAX_SHARE_SUMMARY_LEN = 280;
 
-// Auto-summary generator. Calls OpenAI chat completions directly
-// (no streaming, no tools) with a hook+conclusion brief, then writes
-// share_summary. Fire-and-forget from /share for new posts; also
-// callable from the /generate endpoint below for owner-triggered
-// retries. Never throws — errors are logged and swallowed.
+// Auto-summary generator. One-shot Gemini 3 Flash generateContent
+// call with a hook+conclusion brief, then writes share_summary.
+// Fire-and-forget from /share for new posts; also callable from
+// the /generate endpoint below for owner-triggered retries. Never
+// throws — errors are logged and swallowed.
+const SUMMARY_MODEL = 'gemini-3-flash-preview';
 async function generateShareSummary(postId: number): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('[forum] generateShareSummary: OPENAI_API_KEY missing');
+    console.warn('[forum] generateShareSummary: GEMINI_API_KEY missing');
     return null;
   }
   const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
@@ -767,20 +767,16 @@ async function generateShareSummary(postId: number): Promise<string | null> {
     '不要使用 emoji、引號、井字標籤，不要重複標題，不要寫「本文」「這篇文章」這類元敘述。' +
     '只回覆摘要本身，不要其他文字。';
   try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models/${SUMMARY_MODEL}` +
+      `:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: sys },
-          { role: 'user', content: articleBlob },
-        ],
-        temperature: 0.7,
-        max_tokens: 220,
+        systemInstruction: { parts: [{ text: sys }] },
+        contents: [{ role: 'user', parts: [{ text: articleBlob }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 400 },
       }),
     });
     if (!res.ok) {
@@ -790,9 +786,14 @@ async function generateShareSummary(postId: number): Promise<string | null> {
       return null;
     }
     const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
     };
-    let summary = data.choices?.[0]?.message?.content?.trim() ?? '';
+    let summary = (data.candidates?.[0]?.content?.parts ?? [])
+      .map((p) => p.text ?? '')
+      .join('')
+      .trim();
     if (!summary) return null;
     if (summary.length > MAX_SHARE_SUMMARY_LEN) {
       summary = summary.slice(0, MAX_SHARE_SUMMARY_LEN).trim();
@@ -856,10 +857,10 @@ function buildInfographicPrompt(post: ForumPostRow): string {
 }
 
 // Generate the promo infographic for a post and stash it as the
-// post's thumbnail (forum_media row with is_thumbnail=1). Tries
-// Gemini Flash Image first (cheap + fast), falls back to OpenAI
-// gpt-image-1 edits if Gemini fails. Returns the new media id on
-// success or null if both providers failed.
+// post's thumbnail (forum_media row with is_thumbnail=1). Always uses
+// gpt-image-2 — only model that renders Chinese text legibly inside
+// the generated image. Returns the new media id on success or null
+// on failure.
 //
 // Skip rules:
 //   - post must exist and have body text
@@ -886,33 +887,22 @@ async function generateInfographic(
   }
   const prompt = buildInfographicPrompt(post);
 
-  let bytes: Buffer | null = null;
+  let bytes: Buffer;
   try {
-    const r = await runGeminiImage({ prompt, references: refs });
+    const r = await runOpenAIImageEdit({
+      prompt,
+      references: refs,
+      model: 'gpt-image-2',
+      size: '1536x1024',
+      quality: 'medium',
+    });
     bytes = r.bytes;
   } catch (err) {
     console.warn(
-      `[forum] generateInfographic: Gemini failed for post ${postId}:`,
+      `[forum] generateInfographic: gpt-image-2 failed for post ${postId}:`,
       (err as Error).message,
     );
-  }
-
-  if (!bytes) {
-    try {
-      const r = await runOpenAIImageEdit({
-        prompt,
-        references: refs,
-        size: '1536x1024',
-        quality: 'low',
-      });
-      bytes = r.bytes;
-    } catch (err) {
-      console.warn(
-        `[forum] generateInfographic: OpenAI fallback failed for post ${postId}:`,
-        (err as Error).message,
-      );
-      return null;
-    }
+    return null;
   }
 
   try {

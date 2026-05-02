@@ -98,11 +98,13 @@ export async function runOpenAIImage(args: {
 }
 
 // Reference-image variant via /v1/images/edits — the only OpenAI image
-// endpoint that accepts input images. Used as the fallback path for
-// forum infographic gen when Gemini fails. Always uses gpt-image-1.
+// endpoint that accepts input images. Used by the forum infographic
+// generator (gpt-image-2 specifically — the only model that renders
+// Chinese text legibly).
 export async function runOpenAIImageEdit(args: {
   prompt: string;
   references: Array<{ bytes: Buffer; mimeType: string; filename: string }>;
+  model?: 'gpt-image-1' | 'gpt-image-2';
   size?: '1024x1024' | '1024x1536' | '1536x1024';
   quality?: 'low' | 'medium' | 'high';
   signal?: AbortSignal;
@@ -110,11 +112,13 @@ export async function runOpenAIImageEdit(args: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
 
+  const model = args.model ?? 'gpt-image-2';
+  const quality = args.quality ?? 'medium';
   const form = new FormData();
-  form.append('model', 'gpt-image-1');
+  form.append('model', model);
   form.append('prompt', args.prompt);
   form.append('size', args.size ?? '1024x1024');
-  form.append('quality', args.quality ?? 'low');
+  form.append('quality', quality);
   form.append('n', '1');
   for (const ref of args.references) {
     form.append(
@@ -147,6 +151,6 @@ export async function runOpenAIImageEdit(args: {
   return {
     bytes: Buffer.from(b64, 'base64'),
     mimeType: 'image/png',
-    modelUsed: `gpt-image-1-${args.quality ?? 'low'}`,
+    modelUsed: `${model}-${quality}`,
   };
 }
