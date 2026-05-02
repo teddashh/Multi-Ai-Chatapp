@@ -381,6 +381,7 @@ export default function LandingPage({ navigate, lang, onLangChange, user }: Prop
                     <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
                       <span>❤ {p.thumbsCount}</span>
                       <span>💬 {p.commentCount}</span>
+                      <span>👀 {p.viewCount}</span>
                     </div>
                   </div>
                 </button>

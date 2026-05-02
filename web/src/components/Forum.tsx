@@ -1168,6 +1168,12 @@ function ForumPostView({
                   ↓ {post.commentCount} 樓
                 </button>
               )}
+              <span
+                className="ml-auto text-xs text-gray-500"
+                title="人氣 — 累計被打開的次數"
+              >
+                👀 {post.viewCount.toLocaleString()} 人氣
+              </span>
             </div>
 
             {/* PTT-style replies on the OP itself — same shape as the
@@ -1705,7 +1711,7 @@ function PostTile({
           <TileAuthorAvatar post={post} />
           <span className="truncate flex-1">{post.authorDisplay}</span>
           <span className="whitespace-nowrap">
-            👍 {post.thumbsCount} · 💬 {post.commentCount}
+            👍 {post.thumbsCount} · 💬 {post.commentCount} · 👀 {post.viewCount}
           </span>
         </div>
       </div>
@@ -1771,6 +1777,7 @@ function PostCard({
         <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
           <span>👍 {post.thumbsCount}</span>
           <span>💬 {post.commentCount}</span>
+          <span>👀 {post.viewCount}</span>
         </div>
       </div>
     </button>

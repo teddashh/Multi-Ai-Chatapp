@@ -736,6 +736,9 @@ export interface ForumPostSummary {
   // Curated 2-sentence summary (`forum_posts.share_summary`). Null
   // when not set — UI falls back to bodyPreview.
   summary: string | null;
+  // 人氣 — bumped on every GET /api/forum/:id (excluding the author's
+  // own visits). No de-dupe; refreshes count too.
+  viewCount: number;
 }
 
 export interface ForumPostDetail extends ForumPostSummary {

@@ -152,6 +152,7 @@ function formatPostSummary(
     // Lead text on tiles uses the curated share_summary if set, else
     // falls back to the body preview the field already provides.
     summary: r.share_summary ?? null,
+    viewCount: r.view_count ?? 0,
   };
 }
 
@@ -365,6 +366,14 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
   // overlay before rendering content.
   if (postRow.nsfw && !user) {
     return c.json({ error: 'not found' }, 404);
+  }
+
+  // Bump 人氣 — every fetch counts (including refreshes). Skip when
+  // the viewer is the author so they don't inflate their own number
+  // by editing the post.
+  if (!user || user.id !== postRow.author_user_id) {
+    forumStmts.incPostViewCount.run(postId);
+    postRow.view_count = (postRow.view_count ?? 0) + 1;
   }
 
   // findPostById doesn't join users — fetch the author row separately.

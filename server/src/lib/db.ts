@@ -225,6 +225,10 @@ addColumnIfMissing('forum_posts', 'nsfw', 'INTEGER NOT NULL DEFAULT 0');
 // the body — fine, but mid-sentence cuts can look off. Set explicitly
 // from the post detail page (post author or admin) for a clean hook.
 addColumnIfMissing('forum_posts', 'share_summary', 'TEXT');
+// 人氣 / view count. Bumped on every GET /api/forum/:id (no de-dupe —
+// "人氣" reads as popularity, refreshes counting is fine for a small
+// forum). Anonymous bots count too; not worth the UA-sniff complexity.
+addColumnIfMissing('forum_posts', 'view_count', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Birth year is the most personal field — split off from show_birthday
@@ -999,6 +1003,7 @@ export interface ForumPostRow {
   ai_persona: string | null;
   nsfw: number;
   share_summary: string | null;
+  view_count: number;
 }
 
 export interface ForumCommentRow {
@@ -1046,6 +1051,9 @@ export const forumStmts = {
   ),
   setPostShareSummary: db.prepare<[string | null, number]>(
     `UPDATE forum_posts SET share_summary = ? WHERE id = ?`,
+  ),
+  incPostViewCount: db.prepare<[number]>(
+    `UPDATE forum_posts SET view_count = view_count + 1 WHERE id = ?`,
   ),
   // Admin moderation — single comment delete. Caller is responsible for
   // decrementing forum_posts.comment_count and cleaning forum_likes
