@@ -20,3 +20,8 @@ server/data/
 # logs
 *.log
 npm-debug.log*
+
+# OpenClaw agent runtime state (bootstrap markdown stays in repo)
+.openclaw-ws/.openclaw/
+.openclaw-ws/memory/
+.openclaw-ws/*.bak
