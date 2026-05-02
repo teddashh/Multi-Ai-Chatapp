@@ -730,6 +730,12 @@ export interface ForumPostSummary {
   // them); logged-in viewers see the post with a 🔞 badge in lists and
   // a click-to-confirm overlay on the detail page.
   nsfw: boolean;
+  // Thumbnail URL (the post's flagged is_thumbnail media, or first
+  // media if none flagged). Null when the post has no media.
+  thumbnailUrl: string | null;
+  // Curated 2-sentence summary (`forum_posts.share_summary`). Null
+  // when not set — UI falls back to bodyPreview.
+  summary: string | null;
 }
 
 export interface ForumPostDetail extends ForumPostSummary {
@@ -1181,6 +1187,25 @@ export async function setPostShareSummary(
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(data.error || `${res.status}`);
   }
+}
+
+// LLM-driven regenerate of the share-card summary. Returns the freshly
+// written summary so the editor can drop it straight in.
+export async function generatePostShareSummary(
+  postId: number,
+): Promise<string> {
+  const res = await fetch(
+    `/api/forum/posts/${postId}/share-summary/generate`,
+    { method: 'POST', credentials: 'include' },
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    summary?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.summary) {
+    throw new Error(data.error || `${res.status}`);
+  }
+  return data.summary;
 }
 
 // Admin-only: hard-delete a single forum comment. Cleans up the

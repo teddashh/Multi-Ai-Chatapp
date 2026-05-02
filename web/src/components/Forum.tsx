@@ -28,6 +28,7 @@ import {
   postForumComment,
   postPostReply,
   setPostShareSummary,
+  generatePostShareSummary,
   toggleForumLike,
   uploadPostMedia,
   type AIStatsMap,
@@ -729,6 +730,7 @@ function ForumPostView({
   const [editingSummary, setEditingSummary] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState('');
   const [savingSummary, setSavingSummary] = useState(false);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
 
   const reload = useCallback(() => {
     setErr('');
@@ -936,18 +938,37 @@ function ForumPostView({
               className="w-full px-2 py-1.5 bg-gray-900 border border-gray-700 rounded text-sm text-gray-100 placeholder-gray-600 focus:outline-none focus:border-blue-500 resize-none"
               disabled={savingSummary}
             />
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-[11px] text-gray-500">
                 {summaryDraft.length} / 280
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setGeneratingSummary(true);
+                    try {
+                      const next = await generatePostShareSummary(post.id);
+                      setSummaryDraft(next);
+                    } catch (e) {
+                      alert((e as Error).message);
+                    } finally {
+                      setGeneratingSummary(false);
+                    }
+                  }}
+                  disabled={savingSummary || generatingSummary}
+                  className="px-3 py-1 rounded border border-pink-500/50 text-pink-200 hover:bg-pink-900/30 disabled:opacity-50 text-xs font-medium"
+                  title="讓 AI 重新寫一份 hook + 結論的兩句摘要"
+                >
+                  {generatingSummary ? '生成中…' : '✨ AI 生成'}
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setEditingSummary(false);
                     setSummaryDraft('');
                   }}
-                  disabled={savingSummary}
+                  disabled={savingSummary || generatingSummary}
                   className="px-3 py-1 rounded border border-gray-700 hover:bg-gray-800 text-xs text-gray-300"
                 >
                   取消
@@ -966,7 +987,7 @@ function ForumPostView({
                       setSavingSummary(false);
                     }
                   }}
-                  disabled={savingSummary}
+                  disabled={savingSummary || generatingSummary}
                   className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-xs text-white font-medium"
                 >
                   {savingSummary ? '儲存中…' : '儲存'}
@@ -976,6 +997,50 @@ function ForumPostView({
           </div>
         )}
       </div>
+
+      {/* Promotional header — share_summary + media gallery shown
+          ABOVE the body so social-share-driven readers get the hook
+          and the cover art before the long-form discussion. Renders
+          when there's something to show; the upload form is included
+          for the post author / admin even on empty posts so they can
+          get content up there. */}
+      {(post.shareSummary || data.media.length > 0 || canUploadMedia) && (
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
+          {post.shareSummary && (
+            <p className="text-sm md:text-base text-gray-200 leading-relaxed italic border-l-2 border-pink-400/60 pl-3">
+              {post.shareSummary}
+            </p>
+          )}
+          {(data.media.length > 0 || canUploadMedia) && (
+            <MediaGallery
+              media={data.media}
+              onDelete={
+                canUploadMedia
+                  ? async (mediaId) => {
+                      try {
+                        await deletePostMedia(post.id, mediaId);
+                        reload();
+                      } catch (e) {
+                        alert((e as Error).message);
+                      }
+                    }
+                  : undefined
+              }
+              uploader={
+                canUploadMedia ? (
+                  <MediaUploader
+                    onUploaded={reload}
+                    onUpload={(file, isThumbnail) =>
+                      uploadPostMedia(post.id, file, { isThumbnail }).then(() => {})
+                    }
+                    hint="JPG/PNG/WebP，最大 8 MB"
+                  />
+                ) : undefined
+              }
+            />
+          )}
+        </div>
+      )}
 
       {/* Post header */}
       <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
@@ -1108,40 +1173,6 @@ function ForumPostView({
           </div>
         </div>
       </div>
-
-      {/* Media library — images attached to this post. Sits above the
-          comments so authors / admins can find the uploader without
-          scrolling past a long comment thread. The thumbnail
-          (is_thumbnail=1) doubles as the og:image for share previews,
-          so the gallery is the social-card source of truth. */}
-      {(data.media.length > 0 || canUploadMedia) && (
-        <MediaGallery
-          media={data.media}
-          onDelete={
-            canUploadMedia
-              ? async (mediaId) => {
-                  try {
-                    await deletePostMedia(post.id, mediaId);
-                    reload();
-                  } catch (e) {
-                    alert((e as Error).message);
-                  }
-                }
-              : undefined
-          }
-          uploader={
-            canUploadMedia ? (
-              <MediaUploader
-                onUploaded={reload}
-                onUpload={(file, isThumbnail) =>
-                  uploadPostMedia(post.id, file, { isThumbnail }).then(() => {})
-                }
-                hint="JPG/PNG/WebP，最大 8 MB"
-              />
-            ) : undefined
-          }
-        />
-      )}
 
       {/* Comments */}
       <div id="forum-comments-anchor" className="space-y-2">
@@ -1376,6 +1407,20 @@ export function MediaGallery({
   onDelete?: (mediaId: number) => void | Promise<void>;
   uploader?: React.ReactNode;
 }) {
+  // Inline lightbox — clicking a tile expands the image in a fullscreen
+  // overlay instead of opening a new tab (felt jarring per Ted). Click
+  // anywhere on the overlay (or hit Escape) to close.
+  const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  useEffect(() => {
+    if (lightboxIdx === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxIdx(null);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [lightboxIdx]);
+  const lightboxItem = lightboxIdx !== null ? media[lightboxIdx] : null;
+
   return (
     <section className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -1389,17 +1434,16 @@ export function MediaGallery({
       {uploader}
       {media.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {media.map((m) => (
+          {media.map((m, i) => (
             <div
               key={m.id}
               className="relative aspect-square rounded-md overflow-hidden bg-gray-800 group"
             >
-              <a
-                href={m.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full h-full hover:ring-2 hover:ring-pink-400/60 transition-all"
-                title={m.caption ?? '查看原圖'}
+              <button
+                type="button"
+                onClick={() => setLightboxIdx(i)}
+                className="block w-full h-full hover:ring-2 hover:ring-pink-400/60 transition-all cursor-zoom-in"
+                title={m.caption ?? '放大檢視'}
               >
                 <img
                   src={m.url}
@@ -1407,7 +1451,7 @@ export function MediaGallery({
                   loading="lazy"
                   className="w-full h-full object-cover"
                 />
-              </a>
+              </button>
               {m.isThumbnail && (
                 <span
                   className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/70 text-yellow-300 text-[10px] pointer-events-none"
@@ -1435,6 +1479,36 @@ export function MediaGallery({
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {lightboxItem && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxIdx(null)}
+        >
+          <img
+            src={lightboxItem.url}
+            alt={lightboxItem.caption ?? ''}
+            className="max-w-full max-h-full object-contain rounded"
+            onClick={(e) => e.stopPropagation()}
+          />
+          {lightboxItem.caption && (
+            <div className="absolute bottom-4 inset-x-0 mx-auto max-w-2xl text-center text-sm text-gray-100 bg-black/60 rounded p-2 mx-4">
+              {lightboxItem.caption}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setLightboxIdx(null);
+            }}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/70 hover:bg-black text-white text-xl"
+            aria-label="關閉"
+          >
+            ×
+          </button>
         </div>
       )}
     </section>
@@ -1546,40 +1620,54 @@ function PostTile({
   post: ForumPostSummary;
   navigate: (p: string) => void;
 }) {
+  // Tile lead text — curated share_summary wins, body excerpt fallback.
+  const lead = post.summary || post.bodyPreview;
   return (
     <button
       onClick={() => navigate(`/forum/post/${post.id}`)}
-      className="flex flex-col gap-2 bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg p-3 text-left transition-colors h-full"
+      className="flex flex-col gap-2 bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg overflow-hidden text-left transition-colors h-full"
     >
-      <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
-        <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
-          {post.category}
-        </span>
-        {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
-        {post.nsfw && (
-          <span
-            className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
-            title="18+ 內容"
-          >
-            🔞 18+
+      {post.thumbnailUrl && (
+        <div className="aspect-video w-full bg-gray-800 overflow-hidden">
+          <img
+            src={post.thumbnailUrl}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+      <div className="flex flex-col gap-2 p-3 flex-1">
+        <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
+          <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+            {post.category}
           </span>
-        )}
-        <span className="text-gray-500 ml-auto">
-          {relativeTime(post.createdAt)}
-        </span>
-      </div>
-      <div className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
-        {post.title}
-      </div>
-      <div className="text-xs text-gray-400 line-clamp-3 flex-1 leading-relaxed">
-        {post.bodyPreview}
-      </div>
-      <div className="flex items-center gap-2 text-[11px] text-gray-500 pt-1 border-t border-gray-800">
-        <TileAuthorAvatar post={post} />
-        <span className="truncate flex-1">{post.authorDisplay}</span>
-        <span className="whitespace-nowrap">
-          👍 {post.thumbsCount} · 💬 {post.commentCount}
-        </span>
+          {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
+          {post.nsfw && (
+            <span
+              className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
+              title="18+ 內容"
+            >
+              🔞 18+
+            </span>
+          )}
+          <span className="text-gray-500 ml-auto">
+            {relativeTime(post.createdAt)}
+          </span>
+        </div>
+        <div className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
+          {post.title}
+        </div>
+        <div className="text-xs text-gray-400 line-clamp-3 flex-1 leading-relaxed">
+          {lead}
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-gray-500 pt-1 border-t border-gray-800">
+          <TileAuthorAvatar post={post} />
+          <span className="truncate flex-1">{post.authorDisplay}</span>
+          <span className="whitespace-nowrap">
+            👍 {post.thumbsCount} · 💬 {post.commentCount}
+          </span>
+        </div>
       </div>
     </button>
   );
@@ -1603,40 +1691,47 @@ function PostCard({
   post: ForumPostSummary;
   navigate: (p: string) => void;
 }) {
+  const lead = post.summary || post.bodyPreview;
   return (
     <button
       onClick={() => navigate(`/forum/post/${post.id}`)}
-      className="block w-full bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg p-3 text-left transition-colors"
-      style={{ background: undefined }}
+      className="block w-full bg-gray-900 hover:bg-gray-850 border border-gray-800 rounded-lg overflow-hidden text-left transition-colors"
     >
-      <div className="flex items-center gap-2 text-xs mb-1">
-        <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
-          {post.category}
-        </span>
-        {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
-        {post.nsfw && (
-          <span
-            className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 text-[10px] font-semibold"
-            title="18+ 內容"
-          >
-            🔞 18+
+      {post.thumbnailUrl && (
+        <div className="aspect-video w-full bg-gray-800 overflow-hidden">
+          <img
+            src={post.thumbnailUrl}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover"
+          />
+        </div>
+      )}
+      <div className="p-3">
+        <div className="flex items-center gap-2 text-xs mb-1 flex-wrap">
+          <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">
+            {post.category}
           </span>
-        )}
-        <span className="text-gray-500">·</span>
-        <span className="text-gray-400">{post.authorDisplay}</span>
-        <span className="text-gray-500">·</span>
-        <span className="text-gray-500">{relativeTime(post.createdAt)}</span>
-      </div>
-      {/* PostCard has the entire card as a button — clicking the
-          author would also navigate into the post. We deliberately
-          don't add a separate author link inside the card to avoid
-          nested clickable hierarchies. The post-detail page is where
-          you click through to the user profile. */}
-      <div className="text-base font-semibold text-gray-100 mb-1">{post.title}</div>
-      <div className="text-sm text-gray-400 line-clamp-2">{post.bodyPreview}</div>
-      <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
-        <span>👍 {post.thumbsCount}</span>
-        <span>💬 {post.commentCount}</span>
+          {post.sourceMode && <ModePill mode={post.sourceMode as ChatMode} />}
+          {post.nsfw && (
+            <span
+              className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 text-[10px] font-semibold"
+              title="18+ 內容"
+            >
+              🔞 18+
+            </span>
+          )}
+          <span className="text-gray-500">·</span>
+          <span className="text-gray-400">{post.authorDisplay}</span>
+          <span className="text-gray-500">·</span>
+          <span className="text-gray-500">{relativeTime(post.createdAt)}</span>
+        </div>
+        <div className="text-base font-semibold text-gray-100 mb-1">{post.title}</div>
+        <div className="text-sm text-gray-400 line-clamp-2">{lead}</div>
+        <div className="mt-2 flex items-center gap-3 text-xs text-gray-500">
+          <span>👍 {post.thumbsCount}</span>
+          <span>💬 {post.commentCount}</span>
+        </div>
       </div>
     </button>
   );

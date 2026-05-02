@@ -344,32 +344,44 @@ export default function LandingPage({ navigate, lang, onLangChange, user }: Prop
                 <button
                   key={p.id}
                   onClick={() => navigate(`/forum/post/${p.id}`)}
-                  className="text-left rounded-lg border border-gray-800 bg-gray-900/60 p-4 hover:border-pink-400/60 hover:bg-gray-900 transition-all"
+                  className="text-left rounded-lg border border-gray-800 bg-gray-900/60 hover:border-pink-400/60 hover:bg-gray-900 transition-all overflow-hidden flex flex-col"
                 >
-                  <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-1.5">
-                    <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
-                      {p.category}
-                    </span>
-                    {p.nsfw && (
-                      <span
-                        className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
-                        title="18+ 內容"
-                      >
-                        🔞 18+
+                  {p.thumbnailUrl && (
+                    <div className="aspect-video w-full bg-gray-800 overflow-hidden">
+                      <img
+                        src={p.thumbnailUrl}
+                        alt=""
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  )}
+                  <div className="p-4 flex-1">
+                    <div className="flex items-center gap-2 text-[11px] text-gray-500 mb-1.5 flex-wrap">
+                      <span className="px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                        {p.category}
                       </span>
-                    )}
-                    <span>·</span>
-                    <span className="truncate">{p.authorDisplay}</span>
-                  </div>
-                  <h3 className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
-                    {p.title}
-                  </h3>
-                  <p className="mt-1.5 text-xs text-gray-400 line-clamp-2 leading-relaxed">
-                    {p.bodyPreview}
-                  </p>
-                  <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
-                    <span>❤ {p.thumbsCount}</span>
-                    <span>💬 {p.commentCount}</span>
+                      {p.nsfw && (
+                        <span
+                          className="px-1.5 py-0.5 rounded bg-red-900/50 text-red-200 border border-red-700/40 font-semibold"
+                          title="18+ 內容"
+                        >
+                          🔞 18+
+                        </span>
+                      )}
+                      <span>·</span>
+                      <span className="truncate">{p.authorDisplay}</span>
+                    </div>
+                    <h3 className="text-sm font-semibold text-gray-100 line-clamp-2 leading-snug">
+                      {p.title}
+                    </h3>
+                    <p className="mt-1.5 text-xs text-gray-400 line-clamp-2 leading-relaxed">
+                      {p.summary || p.bodyPreview}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-[11px] text-gray-500">
+                      <span>❤ {p.thumbsCount}</span>
+                      <span>💬 {p.commentCount}</span>
+                    </div>
                   </div>
                 </button>
               ))}

@@ -96,7 +96,39 @@ function userDisplay(
   return nickname || username || '?';
 }
 
-function formatPostSummary(r: PostListRow) {
+// Build a Map<postId, thumbnailMediaId> via a single query so list
+// rendering doesn't N+1 across forum_media. Returns empty when there
+// are no posts.
+function thumbnailMapFor(postIds: number[]): Map<number, number> {
+  if (postIds.length === 0) return new Map();
+  const placeholders = postIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT post_id, MIN(id) AS media_id FROM forum_media
+       WHERE post_id IN (${placeholders})
+       GROUP BY post_id
+       HAVING MAX(is_thumbnail) = 1 OR COUNT(*) > 0`,
+    )
+    .all(...postIds) as Array<{ post_id: number; media_id: number }>;
+  // Prefer thumbnail flagged rows; the GROUP BY MIN(id) above gives us
+  // a candidate per post but ignores is_thumbnail ordering. Re-query
+  // for thumbnail-flagged ones and let those win.
+  const out = new Map<number, number>();
+  for (const r of rows) out.set(r.post_id, r.media_id);
+  const tRows = db
+    .prepare(
+      `SELECT post_id, id AS media_id FROM forum_media
+       WHERE post_id IN (${placeholders}) AND is_thumbnail = 1`,
+    )
+    .all(...postIds) as Array<{ post_id: number; media_id: number }>;
+  for (const r of tRows) out.set(r.post_id, r.media_id);
+  return out;
+}
+
+function formatPostSummary(
+  r: PostListRow,
+  thumbMediaId?: number,
+) {
   return {
     id: r.id,
     category: r.category,
@@ -111,6 +143,10 @@ function formatPostSummary(r: PostListRow) {
     createdAt: r.created_at * 1000,
     updatedAt: r.updated_at * 1000,
     nsfw: !!r.nsfw,
+    thumbnailUrl: thumbMediaId ? `/api/forum/media/${thumbMediaId}` : null,
+    // Lead text on tiles uses the curated share_summary if set, else
+    // falls back to the body preview the field already provides.
+    summary: r.share_summary ?? null,
   };
 }
 
@@ -241,8 +277,9 @@ forumRoute.get('/', optionalAuth, (c) => {
       .prepare(sql)
       .all(...params, limit, offset) as PostListRow[];
     const visible = showNsfw ? rows : rows.filter((r) => !r.nsfw);
+    const thumbs = thumbnailMapFor(visible.map((r) => r.id));
     return c.json({
-      posts: visible.map(formatPostSummary),
+      posts: visible.map((r) => formatPostSummary(r, thumbs.get(r.id))),
       page,
       pageSize: limit,
     });
@@ -258,9 +295,10 @@ forumRoute.get('/', optionalAuth, (c) => {
         : forumStmts.listAll.all(limit, offset)
   ) as PostListRow[];
   const visible = showNsfw ? rows : rows.filter((r) => !r.nsfw);
+  const thumbs = thumbnailMapFor(visible.map((r) => r.id));
 
   return c.json({
-    posts: visible.map(formatPostSummary),
+    posts: visible.map((r) => formatPostSummary(r, thumbs.get(r.id))),
     page,
     pageSize: limit,
   });
@@ -294,7 +332,10 @@ forumRoute.get('/bulk', optionalAuth, (c) => {
   // client gets posts back in the recency order they sent.
   const byId = new Map(visible.map((r) => [r.id, r]));
   const ordered = ids.map((id) => byId.get(id)).filter(Boolean) as PostListRow[];
-  return c.json({ posts: ordered.map(formatPostSummary) });
+  const thumbs = thumbnailMapFor(ordered.map((r) => r.id));
+  return c.json({
+    posts: ordered.map((r) => formatPostSummary(r, thumbs.get(r.id))),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -692,6 +733,76 @@ forumRoute.post('/posts/:id/replies', requireAuth, async (c) => {
 // Either the post author or an admin can set it; pass an empty string
 // to clear (server normalises to NULL → falls back to body excerpt).
 const MAX_SHARE_SUMMARY_LEN = 280;
+
+// Auto-summary generator. Calls OpenAI chat completions directly
+// (no streaming, no tools) with a hook+conclusion brief, then writes
+// share_summary. Fire-and-forget from /share for new posts; also
+// callable from the /generate endpoint below for owner-triggered
+// retries. Never throws — errors are logged and swallowed.
+async function generateShareSummary(postId: number): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn('[forum] generateShareSummary: OPENAI_API_KEY missing');
+    return null;
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return null;
+  const comments = forumStmts.listComments.all(postId) as ForumCommentRow[];
+  const sample = comments.slice(0, 10).map((c) => {
+    const who = c.author_type === 'ai' ? (c.author_ai_provider ?? 'ai') : 'user';
+    return `[${who}] ${c.body.slice(0, 600)}`;
+  });
+  const articleBlob =
+    `標題：${post.title}\n\n正文：\n${post.body.slice(0, 2400)}\n\n` +
+    (sample.length > 0 ? `對話節錄：\n${sample.join('\n')}\n` : '');
+  const sys =
+    '你是繁體中文社群論壇的編輯。為一篇文章寫一段「分享摘要」用於社群分享 (og:description)，' +
+    '長度不超過 140 個字，必須是兩句話：第一句是 hook（吊胃口、製造好奇），' +
+    '第二句是 conclusion（點出文章帶給讀者的價值或結論）。語氣輕鬆但不浮誇，' +
+    '不要使用 emoji、引號、井字標籤，不要重複標題，不要寫「本文」「這篇文章」這類元敘述。' +
+    '只回覆摘要本身，不要其他文字。';
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: sys },
+          { role: 'user', content: articleBlob },
+        ],
+        temperature: 0.7,
+        max_tokens: 220,
+      }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[forum] generateShareSummary: HTTP ${res.status} for post ${postId}`,
+      );
+      return null;
+    }
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    let summary = data.choices?.[0]?.message?.content?.trim() ?? '';
+    if (!summary) return null;
+    if (summary.length > MAX_SHARE_SUMMARY_LEN) {
+      summary = summary.slice(0, MAX_SHARE_SUMMARY_LEN).trim();
+    }
+    forumStmts.setPostShareSummary.run(summary, postId);
+    return summary;
+  } catch (err) {
+    console.warn(
+      `[forum] generateShareSummary failed for post ${postId}:`,
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 forumRoute.post('/posts/:id/share-summary', requireAuth, async (c) => {
   const user = c.get('user');
   const postId = parseInt(c.req.param('id') ?? '', 10);
@@ -715,6 +826,27 @@ forumRoute.post('/posts/:id/share-summary', requireAuth, async (c) => {
   }
   forumStmts.setPostShareSummary.run(raw || null, postId);
   return c.json({ ok: true, summary: raw || null });
+});
+
+// LLM-driven regeneration of the share summary. Same auth gate as the
+// manual setter above. Returns the freshly written summary so the
+// client can update without a second round-trip.
+forumRoute.post('/posts/:id/share-summary/generate', requireAuth, async (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid post id' }, 400);
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  const summary = await generateShareSummary(postId);
+  if (!summary) {
+    return c.json({ error: 'generation failed' }, 502);
+  }
+  return c.json({ ok: true, summary });
 });
 
 forumRoute.delete('/posts/:postId/replies/:replyId', requireAuth, (c) => {
@@ -996,6 +1128,11 @@ forumRoute.post('/share', requireAuth, async (c) => {
     forumStmts.setCommentCount.run(rest.length, postId);
   });
   tx();
+
+  // Fire-and-forget LLM summary generation. Don't block the response —
+  // the post is already visible, the summary just shows up on the
+  // next page load (and the manual editor can still override it).
+  void generateShareSummary(postId);
 
   return c.json({ postId, appended: rest.length, isNew: true });
 });
