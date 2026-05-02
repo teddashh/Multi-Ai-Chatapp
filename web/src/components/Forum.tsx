@@ -14,6 +14,7 @@ import {
   type ChatMode,
 } from '../shared/types';
 import {
+  adminDeleteForumComment,
   adminSetPostNsfw,
   avatarUrl,
   bulkFetchForumPosts,
@@ -179,6 +180,67 @@ function getViewedIds(): number[] {
   } catch {
     return [];
   }
+}
+
+// Export a forum post + its comments as a standalone .md file. Mirrors
+// the format of the imported chat-extension exports (👤 User / 🤖
+// Provider blocks separated by ---) so the round-trip lines up if Ted
+// ever wants to re-import. Triggers a browser download via Blob URL —
+// no server hit required since the post detail GET already loaded
+// everything.
+function exportPostAsMarkdown(
+  post: ForumPostDetail,
+  comments: ForumComment[],
+): void {
+  const lines: string[] = [];
+  lines.push(`# ${post.title}`);
+  const meta: string[] = [`分類：${post.category}`];
+  if (post.sourceMode) {
+    meta.push(`模式：${MODE_LABEL[post.sourceMode as ChatMode] ?? post.sourceMode}`);
+  }
+  meta.push(`作者：${post.authorDisplay}`);
+  meta.push(`時間：${new Date(post.createdAt).toISOString().slice(0, 19).replace('T', ' ')}`);
+  lines.push(`> ${meta.join(' · ')}`);
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+  lines.push(`## 👤 ${post.authorDisplay}（原 PO）`);
+  lines.push('');
+  lines.push(post.body);
+  lines.push('');
+  for (const c of comments) {
+    lines.push('---');
+    lines.push('');
+    if (c.authorType === 'ai') {
+      const provider = c.authorAiProvider
+        ? c.authorAiProvider.charAt(0).toUpperCase() + c.authorAiProvider.slice(1)
+        : 'AI';
+      lines.push(`## 🤖 ${provider}`);
+    } else {
+      lines.push(`## 👤 ${c.authorDisplay}`);
+    }
+    lines.push('');
+    lines.push(c.body);
+    lines.push('');
+  }
+  const md = lines.join('\n');
+
+  // Filename: <title-slug>-<id>.md. Browser-safe slug strips the rough
+  // characters so Windows / macOS / Linux all accept it.
+  const slug = post.title
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '-')
+    .slice(0, 60);
+  const filename = `${slug || `post-${post.id}`}-${post.id}.md`;
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // View mode for the forum index — 'tile' is the modern default
@@ -850,6 +912,13 @@ function ForumPostView({
               ✏ {post.shareSummary ? '編輯分享摘要' : '設定分享摘要'}
             </button>
           )}
+          <button
+            onClick={() => exportPostAsMarkdown(post, comments)}
+            className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-gray-700 text-gray-300 hover:bg-gray-800 text-xs font-medium"
+            title="把整篇 post + 留言下載為 .md"
+          >
+            ⬇ 匯出 MD
+          </button>
         </div>
 
         {editingSummary && (
@@ -1079,6 +1148,15 @@ function ForumPostView({
             canReply={!!user}
             onReplyChange={reload}
             navigate={navigate}
+            canModerate={canModerate}
+            onModerateDelete={async (commentId) => {
+              try {
+                await adminDeleteForumComment(commentId);
+                reload();
+              } catch (e) {
+                alert((e as Error).message);
+              }
+            }}
           />
         ))}
       </div>
@@ -1551,6 +1629,8 @@ function CommentRow({
   canReply,
   onReplyChange,
   navigate,
+  canModerate,
+  onModerateDelete,
 }: {
   comment: ForumComment;
   aiPersona: string | null;
@@ -1570,6 +1650,10 @@ function CommentRow({
   // post so vote counts and the reply list stay in sync.
   onReplyChange: () => void;
   navigate: (p: string) => void;
+  // Admin moderation — when true, render a small × delete button on
+  // the comment header. onModerateDelete fires the actual API call.
+  canModerate: boolean;
+  onModerateDelete: (commentId: number) => void | Promise<void>;
 }) {
   const isAi = comment.authorType === 'ai';
   const provider = comment.authorAiProvider;
@@ -1698,6 +1782,23 @@ function CommentRow({
           <span className="text-[11px] text-gray-500">
             {metaParts.join(' · ')}
           </span>
+          {canModerate && (
+            <button
+              onClick={() => {
+                if (
+                  confirm(
+                    `刪除這則 ${primaryName} 的留言？\n（不可復原；底下推噓也會跟著刪除）`,
+                  )
+                ) {
+                  onModerateDelete(comment.id);
+                }
+              }}
+              className="ml-auto text-[11px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded hover:bg-red-900/20"
+              title="管理員：刪除此留言"
+            >
+              ✕ 刪除
+            </button>
+          )}
         </div>
         <CollapsibleBody body={comment.body} />
         <div className="mt-2 flex items-center gap-2">
@@ -1850,10 +1951,27 @@ function CollapsiblePostBody({ body }: { body: string }) {
   const [expanded, setExpanded] = useState(false);
   const lineCount = body.split('\n').length;
   const isLong = body.length > 800 || lineCount > 12;
+  // Earlier impl used line-clamp-[12]; that reliably misbehaved with
+  // multi-paragraph markdown on narrow viewports (paragraph elements
+  // would visually overlap when -webkit-line-clamp tried to span
+  // across <p> boundaries). max-h + a bottom fade gradient is a
+  // simpler, paragraph-agnostic clamp that's safe at any width.
   return (
     <div className="mt-2">
-      <div className={isLong && !expanded ? 'line-clamp-[12] overflow-hidden' : ''}>
+      <div
+        className={
+          isLong && !expanded
+            ? 'relative max-h-[26rem] overflow-hidden'
+            : ''
+        }
+      >
         <MarkdownBody body={body} className="text-base" />
+        {isLong && !expanded && (
+          <div
+            className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-gray-900 via-gray-900/85 to-transparent pointer-events-none"
+            aria-hidden
+          />
+        )}
       </div>
       {isLong && (
         <button

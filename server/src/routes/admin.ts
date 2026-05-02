@@ -8,6 +8,7 @@ import {
 import {
   attachmentStmts,
   auditStmts,
+  db,
   forumStmts,
   messageStmts,
   resetStmts,
@@ -358,6 +359,37 @@ adminRoute.post('/users/:username/disabled', async (c) => {
     metadata: { username },
   });
   return c.json({ ok: true, disabledAt: next });
+});
+
+// === FORUM COMMENT MODERATION ===
+// Single-comment delete — admin only. Cleans up the per-comment
+// likes (forum_likes has no FK so it won't cascade) and decrements
+// the parent post's comment_count. Replies under the comment cascade
+// via the schema FK.
+adminRoute.delete('/forum/comments/:id', (c) => {
+  const me = c.get('user');
+  const commentId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(commentId) || commentId <= 0) {
+    return c.json({ error: 'invalid id' }, 400);
+  }
+  const row = forumStmts.findCommentById.get(commentId) as
+    | { id: number; post_id: number; author_user_id: number | null; author_type: string }
+    | undefined;
+  if (!row) return c.json({ error: 'not found' }, 404);
+  db.transaction(() => {
+    forumStmts.deleteCommentLikes.run(commentId);
+    forumStmts.deleteCommentById.run(commentId);
+    forumStmts.bumpCommentCount.run(-1, row.post_id);
+  })();
+  audit(me.id, 'delete_forum_comment', {
+    targetUserId: row.author_user_id,
+    metadata: {
+      commentId,
+      postId: row.post_id,
+      authorType: row.author_type,
+    },
+  });
+  return c.json({ ok: true });
 });
 
 // === FORUM POST MODERATION ===

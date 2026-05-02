@@ -1047,6 +1047,16 @@ export const forumStmts = {
   setPostShareSummary: db.prepare<[string | null, number]>(
     `UPDATE forum_posts SET share_summary = ? WHERE id = ?`,
   ),
+  // Admin moderation — single comment delete. Caller is responsible for
+  // decrementing forum_posts.comment_count and cleaning forum_likes
+  // rows for the comment (forum_likes has no FK so it won't cascade).
+  // forum_comment_replies cascade via the comment_id FK.
+  deleteCommentById: db.prepare<[number]>(
+    `DELETE FROM forum_comments WHERE id = ?`,
+  ),
+  deleteCommentLikes: db.prepare<[number]>(
+    `DELETE FROM forum_likes WHERE target_type = 'comment' AND target_id = ?`,
+  ),
   bumpCommentCount: db.prepare<[number, number]>(
     `UPDATE forum_posts SET comment_count = comment_count + ?, updated_at = strftime('%s','now') WHERE id = ?`,
   ),

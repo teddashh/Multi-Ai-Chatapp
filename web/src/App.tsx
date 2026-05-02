@@ -371,6 +371,12 @@ export default function App() {
             content: msg.content,
             timestamp: msg.timestamp,
             attachments: msg.attachments,
+            // Admin provenance — was being dropped on session load,
+            // making the model name disappear from the per-message
+            // header until you sent a fresh turn. Carry it through.
+            answeredStage: msg.answeredStage,
+            answeredModel: msg.answeredModel,
+            requestedModel: msg.requestedModel,
           })),
         );
       } catch (err) {
@@ -661,7 +667,16 @@ export default function App() {
 
   const handleRegenerate = useCallback(
     async (messageId: string) => {
-      if (regeneratingId || isProcessing) return;
+      if (regeneratingId) return;
+      // If a workflow is in flight (common after one AI bailed out with
+      // a "我現在狀況不太好…請按重試" fallback but the orchestrator is
+      // still on the next round), cancel first so the server stops
+      // cleanly before the retry kicks in. Previously this branch
+      // returned silently and 重試 felt unresponsive.
+      if (isProcessing) {
+        handleCancel();
+        await new Promise((r) => setTimeout(r, 200));
+      }
       const isSequential = mode !== 'free';
 
       if (isSequential) {
@@ -723,6 +738,7 @@ export default function App() {
       modelOverrides,
       handleEvent,
       reloadActiveSession,
+      handleCancel,
     ],
   );
 

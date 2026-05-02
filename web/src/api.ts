@@ -465,6 +465,10 @@ export interface SessionDetail {
     content: string;
     timestamp: number;
     attachments?: MessageAttachment[];
+    // Admin-only provenance — server returns undefined for non-admins.
+    answeredStage?: string;
+    answeredModel?: string;
+    requestedModel?: string;
   }>;
 }
 
@@ -1172,6 +1176,22 @@ export async function setPostShareSummary(
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ summary }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || `${res.status}`);
+  }
+}
+
+// Admin-only: hard-delete a single forum comment. Cleans up the
+// per-comment likes + decrements the parent post's comment_count
+// + cascades replies. Use to nuke an off-topic AI reply.
+export async function adminDeleteForumComment(
+  commentId: number,
+): Promise<void> {
+  const res = await fetch(`/api/admin/forum/comments/${commentId}`, {
+    method: 'DELETE',
+    credentials: 'include',
   });
   if (!res.ok) {
     const data = (await res.json().catch(() => ({}))) as { error?: string };
