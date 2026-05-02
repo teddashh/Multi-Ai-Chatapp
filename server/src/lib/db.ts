@@ -1085,15 +1085,17 @@ export const forumStmts = {
      ORDER BY p.created_at DESC
      LIMIT ? OFFSET ?`,
   ),
-  // Trending = thumbs + comments × 2, with the comment count weighted
-  // higher because a 留言 represents more engagement than a one-click
-  // ❤. Time decay isn't applied yet; we'll layer that in via the
+  // Trending = views + thumbs × 10 + comments × 20. Each engagement
+  // tier is roughly 10× heavier than the next: 10 views ≈ 1 thumb,
+  // 2 thumbs ≈ 1 comment. Integer math so SQLite sorts cleanly.
+  // Time decay isn't applied yet; we'll layer that in via the
   // reserved trending_score column when the cron lands.
   listByTrending: db.prepare<[number, number]>(
     `SELECT p.*, u.username AS author_username, u.nickname AS author_nickname
      FROM forum_posts p
      JOIN users u ON u.id = p.author_user_id
-     ORDER BY (p.thumbs_count + p.comment_count * 2) DESC, p.created_at DESC
+     ORDER BY (p.view_count + p.thumbs_count * 10 + p.comment_count * 20) DESC,
+              p.created_at DESC
      LIMIT ? OFFSET ?`,
   ),
   countByCategory: db.prepare(

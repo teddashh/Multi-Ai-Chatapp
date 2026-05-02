@@ -368,13 +368,11 @@ forumRoute.get('/:postId', optionalAuth, (c) => {
     return c.json({ error: 'not found' }, 404);
   }
 
-  // Bump 人氣 — every fetch counts (including refreshes). Skip when
-  // the viewer is the author so they don't inflate their own number
-  // by editing the post.
-  if (!user || user.id !== postRow.author_user_id) {
-    forumStmts.incPostViewCount.run(postId);
-    postRow.view_count = (postRow.view_count ?? 0) + 1;
-  }
+  // Bump 人氣 — every fetch counts (including refreshes + author's
+  // own visits). Numbers are small enough that excluding self-views
+  // would just make the dial feel even more dead.
+  forumStmts.incPostViewCount.run(postId);
+  postRow.view_count = (postRow.view_count ?? 0) + 1;
 
   // findPostById doesn't join users — fetch the author row separately.
   const author =
