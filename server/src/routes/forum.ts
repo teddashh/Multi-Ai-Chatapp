@@ -35,6 +35,11 @@ import {
   readForumMedia,
   saveForumMedia,
 } from '../lib/uploads.js';
+import { runGeminiImage } from '../lib/providers/gemini-image.js';
+import { runOpenAIImageEdit } from '../lib/providers/openai-image.js';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 interface UsageRollup {
   totalTokens: number;
@@ -803,6 +808,137 @@ async function generateShareSummary(postId: number): Promise<string | null> {
   }
 }
 
+// Character reference images live next to the compiled server at
+// `<repo>/server/persona-refs/`. Resolve once on startup so each
+// generation just reads from disk.
+const PERSONA_REFS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'persona-refs',
+);
+const PERSONA_REF_FILES = ['Claude.png', 'Codex.png', 'Gemini.png', 'Grok.png'];
+
+function loadPersonaRefs(): Array<{
+  bytes: Buffer;
+  mimeType: string;
+  filename: string;
+}> {
+  const out: Array<{ bytes: Buffer; mimeType: string; filename: string }> = [];
+  for (const name of PERSONA_REF_FILES) {
+    try {
+      const bytes = readFileSync(join(PERSONA_REFS_DIR, name));
+      out.push({ bytes, mimeType: 'image/png', filename: name });
+    } catch (err) {
+      console.warn(
+        `[forum] persona ref ${name} missing — skipping:`,
+        (err as Error).message,
+      );
+    }
+  }
+  return out;
+}
+
+function buildInfographicPrompt(post: ForumPostRow): string {
+  const title = post.title.slice(0, 120);
+  const summary = (post.share_summary ?? post.body).slice(0, 600);
+  return [
+    '請用所附 4 張參考圖一致的可愛 Q 版 (chibi) 略帶性感風格，畫一張橫式 16:9 文章宣傳 infographic。',
+    '主角是這四個 AI 少女：Grok 少女、Codex 少女、Gemini 少女、Claude (Opus) 少女，以參考圖為角色設計的固定人設，請保持髮色 / 配色 / 服裝特徵一致。',
+    '畫面是論壇文章的 promotional banner — 含一個搶眼的中文大標題 (繁體)、文字必須清晰可讀、配色鮮明、構圖飽滿。',
+    '主題與標題：',
+    `「${title}」`,
+    '文章重點：',
+    summary,
+    '不要塞太多文字，標題 + 1-2 個關鍵字就好；女孩們以可愛姿勢呈現主題的情緒或反差。',
+  ].join('\n\n');
+}
+
+// Generate the promo infographic for a post and stash it as the
+// post's thumbnail (forum_media row with is_thumbnail=1). Tries
+// Gemini Flash Image first (cheap + fast), falls back to OpenAI
+// gpt-image-1 edits if Gemini fails. Returns the new media id on
+// success or null if both providers failed.
+//
+// Skip rules:
+//   - post must exist and have body text
+//   - if `force` is false (the auto-trigger path) we skip when the
+//     post already has any media — so author uploads + earlier
+//     auto-gens aren't overwritten
+async function generateInfographic(
+  postId: number,
+  opts: { force?: boolean; uploadedByUserId?: number | null } = {},
+): Promise<number | null> {
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return null;
+  if (!post.body || post.body.trim().length < 10) return null;
+
+  if (!opts.force) {
+    const existing = forumStmts.listMediaForPost.all(postId) as MediaRow[];
+    if (existing.length > 0) return null;
+  }
+
+  const refs = loadPersonaRefs();
+  if (refs.length === 0) {
+    console.warn('[forum] generateInfographic: no persona refs loaded');
+    return null;
+  }
+  const prompt = buildInfographicPrompt(post);
+
+  let bytes: Buffer | null = null;
+  try {
+    const r = await runGeminiImage({ prompt, references: refs });
+    bytes = r.bytes;
+  } catch (err) {
+    console.warn(
+      `[forum] generateInfographic: Gemini failed for post ${postId}:`,
+      (err as Error).message,
+    );
+  }
+
+  if (!bytes) {
+    try {
+      const r = await runOpenAIImageEdit({
+        prompt,
+        references: refs,
+        size: '1536x1024',
+        quality: 'low',
+      });
+      bytes = r.bytes;
+    } catch (err) {
+      console.warn(
+        `[forum] generateInfographic: OpenAI fallback failed for post ${postId}:`,
+        (err as Error).message,
+      );
+      return null;
+    }
+  }
+
+  try {
+    const path = saveForumMedia('image/png', bytes);
+    const result = forumStmts.insertPostMedia.run(
+      postId,
+      path,
+      'image/png',
+      bytes.length,
+      'AI 生成的文章宣傳圖',
+      1, // is_thumbnail
+      -1, // position — sort before user uploads
+      opts.uploadedByUserId ?? null,
+    );
+    const mediaId = Number(result.lastInsertRowid);
+    forumStmts.clearPostThumbnailExcept.run(postId, mediaId);
+    return mediaId;
+  } catch (err) {
+    console.warn(
+      `[forum] generateInfographic: save/insert failed for post ${postId}:`,
+      (err as Error).message,
+    );
+    return null;
+  }
+}
+
 forumRoute.post('/posts/:id/share-summary', requireAuth, async (c) => {
   const user = c.get('user');
   const postId = parseInt(c.req.param('id') ?? '', 10);
@@ -847,6 +983,30 @@ forumRoute.post('/posts/:id/share-summary/generate', requireAuth, async (c) => {
     return c.json({ error: 'generation failed' }, 502);
   }
   return c.json({ ok: true, summary });
+});
+
+// LLM-driven infographic regeneration. Owner / admin only. Always
+// runs in `force` mode (overwrites prior auto-gen), and any prior
+// thumbnail-flagged media is automatically demoted by the helper.
+forumRoute.post('/posts/:id/infographic/generate', requireAuth, async (c) => {
+  const user = c.get('user');
+  const postId = parseInt(c.req.param('id') ?? '', 10);
+  if (!Number.isFinite(postId) || postId <= 0) {
+    return c.json({ error: 'invalid post id' }, 400);
+  }
+  const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
+  if (!post) return c.json({ error: 'post not found' }, 404);
+  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+    return c.json({ error: 'forbidden' }, 403);
+  }
+  const mediaId = await generateInfographic(postId, {
+    force: true,
+    uploadedByUserId: user.id,
+  });
+  if (!mediaId) {
+    return c.json({ error: 'generation failed' }, 502);
+  }
+  return c.json({ ok: true, mediaId, url: `/api/forum/media/${mediaId}` });
 });
 
 forumRoute.delete('/posts/:postId/replies/:replyId', requireAuth, (c) => {
@@ -1132,7 +1292,12 @@ forumRoute.post('/share', requireAuth, async (c) => {
   // Fire-and-forget LLM summary generation. Don't block the response —
   // the post is already visible, the summary just shows up on the
   // next page load (and the manual editor can still override it).
-  void generateShareSummary(postId);
+  // The infographic runs *after* the summary so the prompt can pick
+  // up the freshly-written hook + conclusion as the visual brief.
+  void (async () => {
+    await generateShareSummary(postId);
+    await generateInfographic(postId, { uploadedByUserId: user.id });
+  })();
 
   return c.json({ postId, appended: rest.length, isNew: true });
 });

@@ -96,3 +96,57 @@ export async function runOpenAIImage(args: {
     modelUsed: args.model,
   };
 }
+
+// Reference-image variant via /v1/images/edits — the only OpenAI image
+// endpoint that accepts input images. Used as the fallback path for
+// forum infographic gen when Gemini fails. Always uses gpt-image-1.
+export async function runOpenAIImageEdit(args: {
+  prompt: string;
+  references: Array<{ bytes: Buffer; mimeType: string; filename: string }>;
+  size?: '1024x1024' | '1024x1536' | '1536x1024';
+  quality?: 'low' | 'medium' | 'high';
+  signal?: AbortSignal;
+}): Promise<ImageGenResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+  const form = new FormData();
+  form.append('model', 'gpt-image-1');
+  form.append('prompt', args.prompt);
+  form.append('size', args.size ?? '1024x1024');
+  form.append('quality', args.quality ?? 'low');
+  form.append('n', '1');
+  for (const ref of args.references) {
+    form.append(
+      'image[]',
+      new Blob([ref.bytes], { type: ref.mimeType }),
+      ref.filename,
+    );
+  }
+
+  const res = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+    signal: args.signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `OpenAI Image Edit ${res.status}: ${text || res.statusText}`,
+    );
+  }
+
+  const json = (await res.json()) as {
+    data?: Array<{ b64_json?: string }>;
+  };
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error('OpenAI Image Edit returned no b64_json');
+
+  return {
+    bytes: Buffer.from(b64, 'base64'),
+    mimeType: 'image/png',
+    modelUsed: `gpt-image-1-${args.quality ?? 'low'}`,
+  };
+}

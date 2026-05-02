@@ -29,6 +29,7 @@ import {
   postPostReply,
   setPostShareSummary,
   generatePostShareSummary,
+  generatePostInfographic,
   toggleForumLike,
   uploadPostMedia,
   type AIStatsMap,
@@ -1037,6 +1038,14 @@ function ForumPostView({
                   />
                 ) : undefined
               }
+              onGenerate={
+                canUploadMedia
+                  ? async () => {
+                      await generatePostInfographic(post.id);
+                      reload();
+                    }
+                  : undefined
+              }
             />
           )}
         </div>
@@ -1402,11 +1411,16 @@ export function MediaGallery({
   media,
   onDelete,
   uploader,
+  onGenerate,
 }: {
   media: MediaItem[];
   onDelete?: (mediaId: number) => void | Promise<void>;
   uploader?: React.ReactNode;
+  // Owner / admin only — triggers an LLM infographic regen. The button
+  // is hidden when null. Returns when the new image has been saved.
+  onGenerate?: () => Promise<void>;
 }) {
+  const [generating, setGenerating] = useState(false);
   // Inline lightbox — clicking a tile expands the image in a fullscreen
   // overlay instead of opening a new tab (felt jarring per Ted). Click
   // anywhere on the overlay (or hit Escape) to close.
@@ -1423,13 +1437,39 @@ export function MediaGallery({
 
   return (
     <section className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h3 className="text-sm font-semibold text-gray-200 flex items-center gap-2">
           <span>媒體庫</span>
           <span className="text-[11px] text-gray-500 font-normal">
             {media.length} 張圖
           </span>
         </h3>
+        {onGenerate && (
+          <button
+            type="button"
+            onClick={async () => {
+              if (
+                media.length > 0 &&
+                !confirm('重新生成會把現在的封面換掉，確定？')
+              ) {
+                return;
+              }
+              setGenerating(true);
+              try {
+                await onGenerate();
+              } catch (e) {
+                alert((e as Error).message);
+              } finally {
+                setGenerating(false);
+              }
+            }}
+            disabled={generating}
+            className="px-2 py-1 rounded border border-pink-500/50 text-pink-200 hover:bg-pink-900/30 disabled:opacity-50 text-xs font-medium"
+            title="用 Gemini Flash Image 重新畫一張文章宣傳圖（約 30 秒）"
+          >
+            {generating ? '生成中…約 30 秒' : '✨ AI 生成宣傳圖'}
+          </button>
+        )}
       </div>
       {uploader}
       {media.length > 0 && (

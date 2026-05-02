@@ -1208,6 +1208,27 @@ export async function generatePostShareSummary(
   return data.summary;
 }
 
+// LLM-driven infographic regeneration. Owner / admin only. Long-running
+// (~30s — Gemini Flash Image, falls back to OpenAI). Returns the new
+// media id so the caller can know the gallery has changed.
+export async function generatePostInfographic(
+  postId: number,
+): Promise<{ mediaId: number; url: string }> {
+  const res = await fetch(
+    `/api/forum/posts/${postId}/infographic/generate`,
+    { method: 'POST', credentials: 'include' },
+  );
+  const data = (await res.json().catch(() => ({}))) as {
+    mediaId?: number;
+    url?: string;
+    error?: string;
+  };
+  if (!res.ok || !data.mediaId || !data.url) {
+    throw new Error(data.error || `${res.status}`);
+  }
+  return { mediaId: data.mediaId, url: data.url };
+}
+
 // Admin-only: hard-delete a single forum comment. Cleans up the
 // per-comment likes + decrements the parent post's comment_count
 // + cascades replies. Use to nuke an off-topic AI reply.
