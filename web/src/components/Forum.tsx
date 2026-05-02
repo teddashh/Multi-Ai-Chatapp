@@ -1039,7 +1039,7 @@ function ForumPostView({
                 ) : undefined
               }
               onGenerate={
-                canUploadMedia
+                isAdmin
                   ? async () => {
                       await generatePostInfographic(post.id);
                       reload();

@@ -18,6 +18,7 @@ import {
   messageStmts,
   sessionStmts,
   userStmts,
+  usageStmts,
   type ForumCommentRow,
   type ForumPostRow,
   type MediaRow,
@@ -744,7 +745,14 @@ const MAX_SHARE_SUMMARY_LEN = 280;
 // the /generate endpoint below for owner-triggered retries. Never
 // throws — errors are logged and swallowed.
 const SUMMARY_MODEL = 'gemini-3-flash-preview';
-async function generateShareSummary(postId: number): Promise<string | null> {
+// `billUserId` controls usage_log billing: pass the requester's id when
+// they manually re-ran the generator, pass null for the auto-trigger
+// from /share (the system gifts the first generation, post-share regens
+// are on the user's quota).
+async function generateShareSummary(
+  postId: number,
+  billUserId: number | null = null,
+): Promise<string | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn('[forum] generateShareSummary: GEMINI_API_KEY missing');
@@ -797,6 +805,10 @@ async function generateShareSummary(postId: number): Promise<string | null> {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
       }>;
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+      };
     };
     let summary = (data.candidates?.[0]?.content?.parts ?? [])
       .map((p) => p.text ?? '')
@@ -807,6 +819,30 @@ async function generateShareSummary(postId: number): Promise<string | null> {
       summary = summary.slice(0, MAX_SHARE_SUMMARY_LEN).trim();
     }
     forumStmts.setPostShareSummary.run(summary, postId);
+
+    if (billUserId !== null) {
+      try {
+        usageStmts.insert.run(
+          billUserId,
+          'gemini',
+          SUMMARY_MODEL,
+          'forum_summary',
+          articleBlob.length,
+          summary.length,
+          data.usageMetadata?.promptTokenCount ?? null,
+          data.usageMetadata?.candidatesTokenCount ?? null,
+          0, // is_estimated — Gemini gave us real counts
+          1, // success
+          null,
+          SUMMARY_MODEL,
+        );
+      } catch (err) {
+        console.warn(
+          '[forum] generateShareSummary: usage_log insert failed:',
+          (err as Error).message,
+        );
+      }
+    }
     return summary;
   } catch (err) {
     console.warn(
@@ -994,16 +1030,18 @@ forumRoute.post('/posts/:id/share-summary/generate', requireAuth, async (c) => {
   if (user.tier !== 'admin' && post.author_user_id !== user.id) {
     return c.json({ error: 'forbidden' }, 403);
   }
-  const summary = await generateShareSummary(postId);
+  // Manual user-triggered regen — bill the requester for the Gemini call.
+  const summary = await generateShareSummary(postId, user.id);
   if (!summary) {
     return c.json({ error: 'generation failed' }, 502);
   }
   return c.json({ ok: true, summary });
 });
 
-// LLM-driven infographic regeneration. Owner / admin only. Always
-// runs in `force` mode (overwrites prior auto-gen), and any prior
-// thumbnail-flagged media is automatically demoted by the helper.
+// LLM-driven infographic regeneration. Admin-only (image gen is the
+// expensive bit and we don't want users spamming gpt-image-* on every
+// share — they can still upload their own images via the gallery).
+// Always runs in `force` mode and demotes any prior thumbnail.
 forumRoute.post('/posts/:id/infographic/generate', requireAuth, async (c) => {
   const user = c.get('user');
   const postId = parseInt(c.req.param('id') ?? '', 10);
@@ -1012,7 +1050,7 @@ forumRoute.post('/posts/:id/infographic/generate', requireAuth, async (c) => {
   }
   const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
   if (!post) return c.json({ error: 'post not found' }, 404);
-  if (user.tier !== 'admin' && post.author_user_id !== user.id) {
+  if (user.tier !== 'admin') {
     return c.json({ error: 'forbidden' }, 403);
   }
   const mediaId = await generateInfographic(postId, {
