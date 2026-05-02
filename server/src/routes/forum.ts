@@ -894,7 +894,7 @@ async function generateInfographic(
   }
   const prompt = buildInfographicPrompt(post);
 
-  let bytes: Buffer;
+  let bytes: Buffer | null = null;
   try {
     const r = await runOpenAIImageEdit({
       prompt,
@@ -905,11 +905,30 @@ async function generateInfographic(
     });
     bytes = r.bytes;
   } catch (err) {
+    // gpt-image-2 needs org verification (one-time, propagates ~15min).
+    // Fall back to gpt-image-1 in the meantime so the feature still
+    // works — quality on Chinese text is worse but rest of the pipeline
+    // is identical.
     console.warn(
-      `[forum] generateInfographic: gpt-image-2 failed for post ${postId}:`,
+      `[forum] generateInfographic: gpt-image-2 failed for post ${postId}, falling back to gpt-image-1:`,
       (err as Error).message,
     );
-    return null;
+    try {
+      const r = await runOpenAIImageEdit({
+        prompt,
+        references: refs,
+        model: 'gpt-image-1',
+        size: '1536x1024',
+        quality: 'medium',
+      });
+      bytes = r.bytes;
+    } catch (err2) {
+      console.warn(
+        `[forum] generateInfographic: gpt-image-1 fallback also failed for post ${postId}:`,
+        (err2 as Error).message,
+      );
+      return null;
+    }
   }
 
   try {
