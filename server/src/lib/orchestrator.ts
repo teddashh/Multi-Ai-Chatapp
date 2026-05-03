@@ -486,12 +486,22 @@ export async function runOne(
   // Outbound safety pass — fast regex pre-filter skips the LLM call
   // for the vast majority of normal prompts (zero added latency).
   // Only suspicious-looking prompts pay for the classifier.
-  const safety = await sanitizeOutboundPromptForSfw(
-    rawFinalPrompt,
-    p.lang,
-    p.userId,
-    p.signal,
-  );
+  //
+  // Admin bypasses entirely. The check feeds on the assembled per-round
+  // prompt (which accumulates the whole debate transcript), so any
+  // single trigger word anywhere in the chain causes every subsequent
+  // round to re-run the classifier — and any classifier hiccup would
+  // cascade into "please rephrase SFW" responses across the rest of
+  // the debate. The operator doesn't need this babysitter.
+  const skipSafety = p.tier === 'admin';
+  const safety = skipSafety
+    ? { prompt: rawFinalPrompt, nsfw: false, source: 'passthrough' as const }
+    : await sanitizeOutboundPromptForSfw(
+        rawFinalPrompt,
+        p.lang,
+        p.userId,
+        p.signal,
+      );
   const finalPrompt = safety.prompt;
   if (safety.nsfw) {
     console.log(

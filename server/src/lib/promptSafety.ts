@@ -73,18 +73,25 @@ function parseSafetyDecision(
   const parsed = extractJsonObject(raw) as
     | { nsfw?: unknown; prompt?: unknown }
     | null;
+  // Fail-open: a malformed / empty classifier response (Gemini sometimes
+  // returns a candidate with no parts, or its own safety filter swallows
+  // the response) used to throw and cascade to the heuristic refusal.
+  // For a chat product that breaks active conversations far worse than
+  // the rare slip-through it'd protect against — provider-side safety is
+  // the real backstop. Treat unknown shape as "safe, pass through".
   if (!parsed || typeof parsed.nsfw !== 'boolean') {
-    throw new Error('classifier returned no usable JSON');
+    return { prompt: original, nsfw: false, promptTokens, completionTokens };
   }
   const nsfw = parsed.nsfw === true;
   const rewritten = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : '';
-  // When classifier says safe, the rewrite is optional — most models
-  // omit the field when there's nothing to change. Use the original
-  // prompt unchanged. Only require a rewrite when nsfw=true.
   if (!nsfw) {
     return { prompt: original, nsfw: false, promptTokens, completionTokens };
   }
-  if (!rewritten) throw new Error('classifier flagged nsfw but returned no rewrite');
+  // nsfw=true but no rewrite text — same fail-open principle. Don't
+  // hand a refusal-instruction down to the answer model.
+  if (!rewritten) {
+    return { prompt: original, nsfw: false, promptTokens, completionTokens };
+  }
   return { prompt: rewritten, nsfw: true, promptTokens, completionTokens };
 }
 
@@ -312,7 +319,10 @@ export async function sanitizeOutboundPromptForSfw(
     );
   }
 
-  // Both classifiers down. Heuristic pre-filter already matched, so
-  // refuse rather than forwarding the raw prompt downstream.
-  return { prompt: heuristicRefusal(lang), nsfw: true, source: 'heuristic' };
+  // Both classifiers down — fail open instead of injecting a refusal
+  // instruction. Provider-side safety is the real backstop and a
+  // cascading "please rephrase SFW" cascade hurts active conversations
+  // far more than the rare miss it'd catch.
+  void heuristicRefusal; // kept for potential future use
+  return { prompt, nsfw: false, source: 'passthrough' };
 }
