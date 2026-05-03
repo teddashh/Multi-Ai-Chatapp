@@ -7,6 +7,7 @@ import { runNvidia } from './providers/nvidia.js';
 import { isOpenAIImageModel, runOpenAIImage } from './providers/openai-image.js';
 import { isXAIImageModel, runXAIImage } from './providers/xai-image.js';
 import { isGoogleImageModel, runGoogleImage } from './providers/google-image.js';
+import { sanitizeOutboundPromptForSfw } from './promptSafety.js';
 import { saveUpload } from './uploads.js';
 import { attachmentStmts, auditStmts, messageStmts, usageStmts } from './db.js';
 import { resolveModel } from '../shared/models.js';
@@ -465,9 +466,36 @@ export async function runOne(
 ): Promise<string> {
   const model = resolveModel(p.tier, provider, p.modelOverrides?.[provider]);
   const attachments = p.attachments ?? [];
-  const finalPrompt = attachments.length > 0
+  const rawFinalPrompt = attachments.length > 0
     ? buildAttachmentPrefix(attachments) + prompt
     : prompt;
+
+  // Outbound safety pass — fast regex pre-filter skips the LLM call
+  // for the vast majority of normal prompts (zero added latency).
+  // Only suspicious-looking prompts pay for the classifier.
+  const safety = await sanitizeOutboundPromptForSfw(
+    rawFinalPrompt,
+    p.lang,
+    p.userId,
+    p.signal,
+  );
+  const finalPrompt = safety.prompt;
+  if (safety.nsfw) {
+    console.log(
+      `[prompt-safety] rewrote NSFW outbound prompt for session ${p.sessionId ?? 'unknown'} via ${safety.source}`,
+    );
+    try {
+      auditStmts.insert.run(
+        p.userId,
+        p.userId,
+        p.sessionId ?? null,
+        'outbound_prompt_sfw_rewrite',
+        JSON.stringify({ provider, mode: p.mode ?? null, source: safety.source }),
+      );
+    } catch (e) {
+      console.error('prompt safety audit insert failed', (e as Error).message);
+    }
+  }
 
   const baseOpts: CLIRunOptions = {
     provider,
