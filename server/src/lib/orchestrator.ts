@@ -487,21 +487,14 @@ export async function runOne(
   // for the vast majority of normal prompts (zero added latency).
   // Only suspicious-looking prompts pay for the classifier.
   //
-  // Admin bypasses entirely. The check feeds on the assembled per-round
-  // prompt (which accumulates the whole debate transcript), so any
-  // single trigger word anywhere in the chain causes every subsequent
-  // round to re-run the classifier — and any classifier hiccup would
-  // cascade into "please rephrase SFW" responses across the rest of
-  // the debate. The operator doesn't need this babysitter.
-  const skipSafety = p.tier === 'admin';
-  const safety = skipSafety
-    ? { prompt: rawFinalPrompt, nsfw: false, source: 'passthrough' as const }
-    : await sanitizeOutboundPromptForSfw(
-        rawFinalPrompt,
-        p.lang,
-        p.userId,
-        p.signal,
-      );
+  // Operator (admin) deliberately runs the same path as everyone else
+  // so user-facing bugs surface for them first.
+  const safety = await sanitizeOutboundPromptForSfw(
+    rawFinalPrompt,
+    p.lang,
+    p.userId,
+    p.signal,
+  );
   const finalPrompt = safety.prompt;
   if (safety.nsfw) {
     console.log(
