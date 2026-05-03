@@ -31,6 +31,7 @@ import {
 } from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
 import { runAutoDebate, resumeAutoDebate, discoverTopic } from '../lib/autoDebate.js';
+import { fireAutoDebateNow } from '../lib/autoDebateScheduler.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
@@ -454,6 +455,16 @@ adminRoute.post('/auto-debate', async (c) => {
     audit(me.id, 'auto_debate_fail', { metadata: { error: message } });
     return c.json({ error: message }, 500);
   }
+});
+
+// Manual fire of one cron iteration (random category → discover →
+// debate). Returns immediately; the debate runs in the background and
+// surfaces in the forum 5-10 min later.
+adminRoute.post('/auto-debate/fire-cron', (c) => {
+  const me = c.get('user');
+  audit(me.id, 'auto_debate_cron_manual_fire', {});
+  fireAutoDebateNow();
+  return c.json({ ok: true, message: 'fired in background' });
 });
 
 // Topic discovery — returns one trending topic + suggested title for

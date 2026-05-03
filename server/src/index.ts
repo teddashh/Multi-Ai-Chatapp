@@ -8,6 +8,7 @@ import { adminRoute } from './routes/admin.js';
 import { sessionsRoute } from './routes/sessions.js';
 import { forumRoute } from './routes/forum.js';
 import { startFallbackDigest } from './lib/fallbackDigest.js';
+import { startAutoDebateScheduler } from './lib/autoDebateScheduler.js';
 import { forumStmts } from './lib/db.js';
 import { resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -178,3 +179,9 @@ serve({ fetch: app.fetch, port, hostname: host });
 // exist and there are events in the last hour. First tick is +1h so a
 // restart doesn't generate a duplicate digest.
 startFallbackDigest();
+
+// Auto-debate cron — every 6h fires one bot-driven 4-AI roundtable in
+// a random category, populating the forum without manual intervention.
+// Prod-only (no-op when PROVIDER_MODE=cli, i.e. dev). First tick after
+// a 5-min boot delay so a restart doesn't fire mid-deploy.
+startAutoDebateScheduler();
