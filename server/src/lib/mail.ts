@@ -42,6 +42,76 @@ function adminBcc(): string | undefined {
   return v && v.includes('@') ? v : undefined;
 }
 
+export interface SelfPurgeNotifyParams {
+  username: string;
+  email: string | null;
+  nickname: string | null;
+  tier: string;
+  createdAt: number;
+  minutesAlive: number;
+}
+
+// Operator notification when a user self-purges (DELETE /api/auth/me).
+// Useful churn signal — especially right after signup, "tried us out for
+// 2 minutes and left" tells you something about onboarding friction.
+// No-op when ADMIN_NOTIFY_EMAIL isn't set or SMTP isn't configured.
+export async function sendSelfPurgeNotification(
+  p: SelfPurgeNotifyParams,
+): Promise<void> {
+  const to = adminBcc();
+  if (!to) return;
+  const transport = getTransport();
+  if (!transport) return;
+
+  const lifeBlurb =
+    p.minutesAlive < 5
+      ? '⚠️ 註冊不到 5 分鐘就刪除（可能是 onboarding 有問題）'
+      : p.minutesAlive < 60
+        ? `${p.minutesAlive} 分鐘後刪除`
+        : p.minutesAlive < 60 * 24
+          ? `${Math.round(p.minutesAlive / 60)} 小時後刪除`
+          : `${Math.round(p.minutesAlive / 60 / 24)} 天後刪除`;
+
+  const created = new Date(p.createdAt * 1000).toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
+  });
+
+  const text = `${BRAND} — 用戶自刪通知
+
+帳號：${p.username}
+暱稱：${p.nickname || '(未設定)'}
+Email：${p.email || '(未設定)'}
+Tier：${p.tier}
+註冊時間：${created} (Asia/Taipei)
+存活時間：${lifeBlurb}
+
+— 自動通知，無需回覆`;
+
+  const html = `<!doctype html>
+<html><body style="font-family:-apple-system,system-ui,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1f2937;">
+  <h3 style="margin:0 0 8px 0;">${BRAND} — 用戶自刪通知</h3>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;">
+    <tbody>
+      <tr><td style="padding:4px 8px;color:#6b7280;">帳號</td><td style="padding:4px 8px;font-family:ui-monospace,monospace;">${p.username}</td></tr>
+      <tr><td style="padding:4px 8px;color:#6b7280;">暱稱</td><td style="padding:4px 8px;">${p.nickname || '(未設定)'}</td></tr>
+      <tr><td style="padding:4px 8px;color:#6b7280;">Email</td><td style="padding:4px 8px;">${p.email || '(未設定)'}</td></tr>
+      <tr><td style="padding:4px 8px;color:#6b7280;">Tier</td><td style="padding:4px 8px;">${p.tier}</td></tr>
+      <tr><td style="padding:4px 8px;color:#6b7280;">註冊時間</td><td style="padding:4px 8px;">${created}</td></tr>
+      <tr><td style="padding:4px 8px;color:#6b7280;">存活時間</td><td style="padding:4px 8px;font-weight:500;">${lifeBlurb}</td></tr>
+    </tbody>
+  </table>
+  <p style="font-size:11px;color:#9ca3af;margin-top:18px;">完整 metadata 留在 audit_log action='user_self_purge'。</p>
+</body></html>`;
+
+  await transport.sendMail({
+    from: fromAddress(),
+    to,
+    subject: `[${BRAND}] 用戶自刪：${p.username}`,
+    text,
+    html,
+  });
+}
+
 const BRAND = 'AI Sister / AI 姐妹';
 const APP_URL = (process.env.PUBLIC_URL || 'https://chat.ted-h.com').replace(/\/$/, '');
 

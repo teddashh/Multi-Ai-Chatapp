@@ -17,7 +17,11 @@ import { formatPriceLabel } from '../shared/prices.js';
 import { SIGN_KEY_SET, sunSignFromEpoch } from '../shared/astrology.js';
 import type { Tier } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
-import { sendResetEmail, sendVerifyEmail } from '../lib/mail.js';
+import {
+  sendResetEmail,
+  sendSelfPurgeNotification,
+  sendVerifyEmail,
+} from '../lib/mail.js';
 import {
   isSupportedAvatarMime,
   MAX_AVATAR_BYTES,
@@ -321,6 +325,28 @@ authRoute.delete('/me', requireAuth, async (c) => {
     .all(user.id) as Array<{ path: string }>;
   const avatarPath = userRow.avatar_path;
 
+  // Snapshot identity into the audit metadata BEFORE the FK SET NULL
+  // cascade scrubs admin_user_id / target_user_id from the audit row.
+  // Without this, the surviving audit entry is just a timestamp with no
+  // way to know who left — which is exactly the signal Ted wants for
+  // signup-to-churn analysis.
+  const purgeSnapshot = {
+    username: userRow.username,
+    email: userRow.email,
+    nickname: userRow.nickname,
+    tier: userRow.tier,
+    createdAt: userRow.created_at,
+    minutesAlive: Math.round(
+      (Date.now() / 1000 - userRow.created_at) / 60,
+    ),
+  };
+  logAudit({
+    actorUserId: user.id,
+    targetUserId: user.id,
+    action: 'user_self_purge',
+    metadata: purgeSnapshot,
+  });
+
   const purge = db.transaction(() => {
     // Override the SET NULL FK on forum_comments so the user's commentary
     // on OTHER people's posts (which would otherwise survive as orphan
@@ -355,6 +381,14 @@ authRoute.delete('/me', requireAuth, async (c) => {
   }
 
   clearSession(c);
+
+  // Operator notification — fires only when ADMIN_NOTIFY_EMAIL is set
+  // (same env as the signup BCC). Failures here don't break the
+  // request — the user is already deleted.
+  void sendSelfPurgeNotification(purgeSnapshot).catch((err) =>
+    console.warn('[self-purge] notify failed:', (err as Error).message),
+  );
+
   return c.json({ ok: true });
 });
 
