@@ -378,6 +378,7 @@ function buildStages(
   baseOpts: CLIRunOptions,
   provider: AIProvider,
   model: string,
+  tier: Tier,
 ): ChainStage[] {
   const cliStage: ChainStage = {
     // Grok has no actual CLI binary — runCLI dispatches to runXAIChat,
@@ -410,10 +411,14 @@ function buildStages(
 
   const stages: ChainStage[] = [];
   if (PROVIDER_MODE === 'api') {
-    // Skip the CLI entirely if a direct API is wired up; otherwise fall
-    // back to CLI as primary so the request still goes through.
+    // Admin (Ted) gets a CLI pre-stage on prod too, so his own chats
+    // route through Codex / Claude Code / Gemini CLI subscriptions
+    // (already paid as flat monthly fees) before touching API quota.
+    // Falls through to API on CLI failure / wrong-machine / no auth.
+    // Other tiers skip CLI — they have no CLI auth on the box.
+    if (tier === 'admin') stages.push(cliStage);
     if (apiStage) stages.push(apiStage);
-    else stages.push(cliStage);
+    else if (tier !== 'admin') stages.push(cliStage);
   } else {
     stages.push(cliStage);
     if (apiStage) stages.push(apiStage);
@@ -511,7 +516,7 @@ export async function runOne(
     reasoningEffort: p.reasoningEffort,
   };
 
-  const stages = buildStages(baseOpts, provider, model);
+  const stages = buildStages(baseOpts, provider, model, p.tier);
   const journey: JourneyEntry[] = [];
   let lastErr: Error | null = null;
 
