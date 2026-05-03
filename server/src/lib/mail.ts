@@ -34,6 +34,14 @@ function fromAddress() {
   };
 }
 
+// Optional BCC for signup-related events so the operator gets a
+// silent copy of every "new user" email. Configured per-instance via
+// ADMIN_NOTIFY_EMAIL — leave unset on dev to avoid mailbox noise.
+function adminBcc(): string | undefined {
+  const v = process.env.ADMIN_NOTIFY_EMAIL?.trim();
+  return v && v.includes('@') ? v : undefined;
+}
+
 const BRAND = 'AI Sister / AI 姐妹';
 const APP_URL = (process.env.PUBLIC_URL || 'https://chat.ted-h.com').replace(/\/$/, '');
 
@@ -108,6 +116,7 @@ export async function sendVerifyEmail(p: VerifyEmailParams): Promise<void> {
   await transport.sendMail({
     from: fromAddress(),
     to: p.to,
+    bcc: adminBcc(),
     subject: `${BRAND} — 請驗證 Email`,
     text,
     html,
