@@ -241,6 +241,11 @@ addColumnIfMissing(
   'image_sensitive',
   'INTEGER NOT NULL DEFAULT 0',
 );
+// JSON-encoded visual brief co-generated with the summary by Gemini:
+// {setting, mood, palette, outfitTheme}. Drives per-post variety in
+// the infographic so every banner doesn't end up the same dark
+// cyberpunk anchor the reference images pull toward.
+addColumnIfMissing('forum_posts', 'image_brief', 'TEXT');
 addColumnIfMissing('users', 'show_mbti', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'show_signs', 'INTEGER NOT NULL DEFAULT 0');
 // Birth year is the most personal field — split off from show_birthday
@@ -1017,6 +1022,7 @@ export interface ForumPostRow {
   share_summary: string | null;
   view_count: number;
   image_sensitive: number;
+  image_brief: string | null;
 }
 
 export interface ForumCommentRow {
@@ -1067,6 +1073,10 @@ export const forumStmts = {
   ),
   setPostShareSummaryWithSensitivity: db.prepare<[string | null, number, number]>(
     `UPDATE forum_posts SET share_summary = ?, image_sensitive = ? WHERE id = ?`,
+  ),
+  setPostShareSummaryWithBrief: db.prepare<[string | null, number, string | null, number]>(
+    `UPDATE forum_posts SET share_summary = ?, image_sensitive = ?, image_brief = ?
+     WHERE id = ?`,
   ),
   incPostViewCount: db.prepare<[number]>(
     `UPDATE forum_posts SET view_count = view_count + 1 WHERE id = ?`,
