@@ -1115,7 +1115,7 @@ async function generateInfographic(
       path,
       'image/png',
       bytes.length,
-      'AI 生成的文章宣傳圖',
+      post.title.slice(0, 200),
       1, // is_thumbnail
       -1, // position — sort before user uploads
       opts.uploadedByUserId ?? null,
