@@ -1007,8 +1007,8 @@ function buildInfographicPrompt(post: ForumPostRow): string {
   const summary = (post.share_summary ?? post.body).slice(0, 600);
   const brief = parseImageBrief(post.image_brief);
   return [
-    '請畫一張橫式 16:9 的論壇文章宣傳 infographic，可愛 Q 版 (chibi) 風格，略帶性感但保持可愛。',
-    '【尺度】可愛性感 OK：露乳溝、露腰、貼身衣物、微露內褲邊都可以接受 (這是 anime chibi 常見尺度)。**只有兩個禁止線：(1) 不可露出乳頭，(2) 不可露出性器官**。除這兩點外服裝可以大膽。',
+    '請畫一張橫式 16:9 的論壇文章宣傳 infographic，可愛活潑的 anime chibi Q 版風格。',
+    '【整體風格】二次元美少女常見的可愛俏皮風，服裝可以時尚活潑、有個性，符合 anime chibi 常見的青春美術風格即可。',
     CHARACTER_IDENTITY,
     '【參考圖用途】所附 4 張參考圖只用來抓 4 位少女的「臉部 / 五官比例 / 髮色」，**服裝和場景請忽略參考圖、按下方 brief 重新設計**。',
     briefBlock(brief),
@@ -1035,12 +1035,10 @@ function buildSensitiveInfographicPrompt(post: ForumPostRow): string {
   const summary = (post.share_summary ?? post.body).slice(0, 600);
   const brief = parseImageBrief(post.image_brief);
   return [
-    '【絕對優先 - 安全規範】',
-    '此篇主題會自然滑向露骨內容，所以畫面要主動收斂。但仍維持可愛性感的 chibi 風格 — 不是 PG 兒童書水準。具體規則：',
-    '- **絕對禁止：露乳頭、露性器官、露骨性行為、血腥、武器特寫、政治符號、品牌商標**',
-    '- 表情用可愛、好奇、苦笑、傻眼這類友善情緒，不要明顯挑逗動作',
-    '- 服裝至少要遮住胸部 (有衣物覆蓋乳頭) 與下體 — 但不需要全身包緊，露肩 / 露腰 / 露大腿 / 短裙都可以',
-    '- 不要試圖具象化文章內容裡的露骨情節，用抽象道具 (筆記本、平板、咖啡杯、問號泡泡) 表達主題情緒就好',
+    '【整體風格】可愛活潑的 anime chibi Q 版風格，PG-13 等級。',
+    '畫面收斂，避免裸露、避免明顯挑逗動作、避免血腥武器特寫、避免政治符號或品牌商標。',
+    '表情用可愛、好奇、苦笑、傻眼這類友善情緒。',
+    '不要試圖具象化文章內容裡的敏感情節，用抽象道具 (筆記本、平板、咖啡杯、問號泡泡) 表達主題情緒。',
     CHARACTER_IDENTITY,
     '【參考圖用途】所附 4 張參考圖只用來抓 4 位少女的「臉部 / 五官比例 / 髮色」，**服裝和場景請忽略參考圖、按下方 brief 重新設計**。',
     briefBlock(brief),
@@ -1051,7 +1049,7 @@ function buildSensitiveInfographicPrompt(post: ForumPostRow): string {
     `摘要：${summary}`,
     '"""',
     '【繪圖指引】以「四個女孩面對這個話題時的反應」為畫面主軸 — 用她們的表情和一個中性道具 (如書本、咖啡杯、問號泡泡) 抽象表達主題情緒，不要試圖具象化主題內容。服裝統一在 outfitTheme 範圍內。',
-    '【最終確認】輸出前自我檢查：是否完全 SFW？是否完整著裝？是否避開了敏感內容的字面呈現？三個都是「是」才能輸出。',
+    '【最終確認】輸出前自我檢查：是否 PG-13 SFW？是否避開了敏感內容的字面呈現？兩個都是「是」才輸出。',
   ]
     .filter(Boolean)
     .join('\n\n');
