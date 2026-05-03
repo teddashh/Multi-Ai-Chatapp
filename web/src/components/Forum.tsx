@@ -764,6 +764,21 @@ function ForumPostView({
     trackViewedPost(postId);
   }, [reload, postId]);
 
+  // Poll for the auto-gen artefacts (share_summary + infographic) that
+  // /share kicked off in the background. Stops as soon as both show
+  // up, or after 2 mins from post creation. Without this users hit a
+  // half-empty page right after sharing and start manually triggering
+  // generation, racing the in-flight background task.
+  const autoGenPending =
+    !!data &&
+    Date.now() - data.post.createdAt < 2 * 60_000 &&
+    (!data.post.shareSummary || data.media.length === 0);
+  useEffect(() => {
+    if (!autoGenPending) return;
+    const timer = setInterval(() => reload(), 5000);
+    return () => clearInterval(timer);
+  }, [autoGenPending, reload]);
+
   const togglePostLike = useCallback(async () => {
     if (!user || !data) return;
     const wasLiked = data.post.liked;
@@ -903,7 +918,15 @@ function ForumPostView({
               {post.nsfw ? '取消 18+ 標記' : '🔞 標記為 18+'}
             </button>
           )}
-          {canEditSummary && !editingSummary && (
+          {canEditSummary && !editingSummary && !post.shareSummary && autoGenPending && (
+            <span
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full border border-pink-700/40 text-pink-300/80 text-xs font-medium"
+              title="AI 正在背景生成摘要，每 5 秒自動重新讀取"
+            >
+              <span className="animate-pulse">✨</span> 摘要生成中…
+            </span>
+          )}
+          {canEditSummary && !editingSummary && !autoGenPending && (
             <button
               onClick={() => {
                 setSummaryDraft(post.shareSummary ?? '');
@@ -1005,12 +1028,23 @@ function ForumPostView({
           when there's something to show; the upload form is included
           for the post author / admin even on empty posts so they can
           get content up there. */}
-      {(post.shareSummary || data.media.length > 0 || canUploadMedia) && (
+      {(post.shareSummary || data.media.length > 0 || canUploadMedia || autoGenPending) && (
         <div className="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-4">
-          {post.shareSummary && (
+          {post.shareSummary ? (
             <p className="text-sm md:text-base text-gray-200 leading-relaxed italic border-l-2 border-pink-400/60 pl-3">
               {post.shareSummary}
             </p>
+          ) : autoGenPending ? (
+            <p className="text-sm text-pink-300/80 leading-relaxed italic border-l-2 border-pink-400/30 pl-3">
+              <span className="animate-pulse">✨</span> 摘要生成中…（每 5 秒自動更新）
+            </p>
+          ) : null}
+          {data.media.length === 0 && autoGenPending && (
+            <div className="aspect-[3/2] w-full rounded-md border border-pink-700/30 bg-gray-800/40 flex flex-col items-center justify-center gap-2 text-pink-300/80">
+              <span className="text-3xl animate-pulse">✨</span>
+              <span className="text-sm">宣傳圖生成中…約 30-60 秒</span>
+              <span className="text-[11px] text-gray-500">請稍候，畫好會自動顯示</span>
+            </div>
           )}
           {(data.media.length > 0 || canUploadMedia) && (
             <MediaGallery
@@ -1039,7 +1073,7 @@ function ForumPostView({
                 ) : undefined
               }
               onGenerate={
-                isAdmin
+                isAdmin && !autoGenPending
                   ? async () => {
                       await generatePostInfographic(post.id);
                       reload();
