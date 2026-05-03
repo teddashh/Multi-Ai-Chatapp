@@ -168,8 +168,8 @@ export async function generateBlogPost(
 }
 
 // Find recent forum posts the given AI hasn'\''t blogged about yet,
-// sorted newest-first. Used by the AI-self-pick path (Phase 5.8 part 2)
-// — it picks one of these and generates the blog.
+// sorted newest-first. Used by the AI-self-pick path — it picks one
+// of these and generates the blog.
 export function uncoveredPostsForProvider(
   aiProvider: AIProvider,
   limit = 20,
@@ -185,4 +185,83 @@ export function uncoveredPostsForProvider(
     )
     .all(...covered, limit) as ForumPostRow[];
   return rows;
+}
+
+// Ask the AI to pick its own most-interesting forum post out of the
+// uncovered list. Returns the chosen sourcePostId, or null if there
+// are no candidates. Lighter LLM call than the full blog gen — uses
+// the same model as the actual blog write so taste is consistent.
+export async function pickInterestingPost(
+  aiProvider: AIProvider,
+  botUserId: number,
+): Promise<number | null> {
+  const candidates = uncoveredPostsForProvider(aiProvider, 15);
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0].id;
+
+  const persona = buildPersonaIntro(aiProvider);
+  const list = candidates.map((p, i) => {
+    const summary = (p.share_summary ?? p.body).slice(0, 120);
+    return `${i + 1}. 【${p.title}】\n   ${summary}`;
+  });
+  const prompt = [
+    persona,
+    '',
+    '以下是論壇上最近的辯論文章（你還沒寫過 blog 的）。請挑一篇你**最想寫 blog 點評**的（最有共鳴或最想吐槽的）：',
+    '',
+    list.join('\n\n'),
+    '',
+    '請只回覆編號數字（1 - ' + candidates.length + '），不要解釋，不要其他文字。',
+  ].join('\n');
+
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 3 * 60_000);
+  try {
+    const text = await runOne(
+      {
+        text: prompt,
+        mode: 'free',
+        tier: 'admin',
+        lang: 'zh-TW',
+        userId: botUserId,
+        modelOverrides: { [aiProvider]: BLOG_MODEL_BY_PROVIDER[aiProvider] },
+        emit: () => {},
+        signal: ctrl.signal,
+      },
+      aiProvider,
+      prompt,
+    );
+    const m = text.match(/\d+/);
+    if (!m) return candidates[0].id; // fallback to newest
+    const idx = parseInt(m[0], 10);
+    if (idx >= 1 && idx <= candidates.length) {
+      return candidates[idx - 1].id;
+    }
+    return candidates[0].id;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// One-AI blog cycle — pick + write. Logs to console so cron can be
+// tailed via journalctl. Returns null if no candidates, the
+// generated blog id otherwise.
+export async function runOneBlogCycle(
+  aiProvider: AIProvider,
+  botUserId: number,
+): Promise<number | null> {
+  console.log(`[blog-cron] ${aiProvider} picking a post…`);
+  const sourcePostId = await pickInterestingPost(aiProvider, botUserId);
+  if (sourcePostId === null) {
+    console.log(`[blog-cron] ${aiProvider} found no uncovered posts`);
+    return null;
+  }
+  console.log(
+    `[blog-cron] ${aiProvider} picked post #${sourcePostId}, generating blog…`,
+  );
+  const result = await generateBlogPost(sourcePostId, aiProvider, botUserId);
+  console.log(
+    `[blog-cron] ${aiProvider} → blog #${result.blogId} "${result.title}" (${result.bodyChars} chars)`,
+  );
+  return result.blogId;
 }
