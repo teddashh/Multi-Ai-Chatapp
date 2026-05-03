@@ -66,16 +66,26 @@ function extractJsonObject(raw: string): unknown | null {
 
 function parseSafetyDecision(
   raw: string,
+  original: string,
   promptTokens: number | null,
   completionTokens: number | null,
 ): SafetyDecision {
   const parsed = extractJsonObject(raw) as
     | { nsfw?: unknown; prompt?: unknown }
     | null;
-  const rewritten = typeof parsed?.prompt === 'string' ? parsed.prompt.trim() : '';
-  const nsfw = parsed?.nsfw === true;
-  if (!rewritten) throw new Error('empty safety rewrite');
-  return { prompt: rewritten, nsfw, promptTokens, completionTokens };
+  if (!parsed || typeof parsed.nsfw !== 'boolean') {
+    throw new Error('classifier returned no usable JSON');
+  }
+  const nsfw = parsed.nsfw === true;
+  const rewritten = typeof parsed.prompt === 'string' ? parsed.prompt.trim() : '';
+  // When classifier says safe, the rewrite is optional — most models
+  // omit the field when there's nothing to change. Use the original
+  // prompt unchanged. Only require a rewrite when nsfw=true.
+  if (!nsfw) {
+    return { prompt: original, nsfw: false, promptTokens, completionTokens };
+  }
+  if (!rewritten) throw new Error('classifier flagged nsfw but returned no rewrite');
+  return { prompt: rewritten, nsfw: true, promptTokens, completionTokens };
 }
 
 function safetySystemPrompt(lang: 'zh-TW' | 'en'): string {
@@ -155,6 +165,7 @@ async function runOpenRouterSafety(
   };
   return parseSafetyDecision(
     json.choices?.[0]?.message?.content ?? '',
+    original,
     json.usage?.prompt_tokens ?? null,
     json.usage?.completion_tokens ?? null,
   );
@@ -214,6 +225,7 @@ async function runGeminiSafety(
     .trim();
   return parseSafetyDecision(
     raw,
+    original,
     json.usageMetadata?.promptTokenCount ?? null,
     json.usageMetadata?.candidatesTokenCount ?? null,
   );
