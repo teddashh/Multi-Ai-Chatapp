@@ -8,7 +8,7 @@
 //      pass through with zero LLM latency. This is the hot path for
 //      99% of messages.
 //   2. If suspicious, run a small LLM classifier/rewriter:
-//      OpenRouter (gpt-4o-mini) → Gemini 3 Flash → heuristic refusal.
+//      Gemini 3 Flash → OpenRouter (gpt-4o-mini) → heuristic refusal.
 //      JSON-structured response: {nsfw: boolean, prompt: string}.
 //   3. Fail-closed: if all classifiers are unavailable, return a SFW
 //      refusal rather than forwarding the original raw prompt.
@@ -271,21 +271,6 @@ export async function sanitizeOutboundPromptForSfw(
   }
 
   try {
-    const decision = await runOpenRouterSafety(original, lang, signal);
-    logSafetyUsage(userId, 'openrouter', decision, original.length);
-    return {
-      prompt: decision.nsfw ? decision.prompt : prompt,
-      nsfw: decision.nsfw,
-      source: 'openrouter',
-    };
-  } catch (err) {
-    console.warn(
-      '[prompt-safety] OpenRouter safety pass failed:',
-      (err as Error).message,
-    );
-  }
-
-  try {
     const decision = await runGeminiSafety(original, lang, signal);
     logSafetyUsage(userId, 'gemini', decision, original.length);
     return {
@@ -296,6 +281,21 @@ export async function sanitizeOutboundPromptForSfw(
   } catch (err) {
     console.warn(
       '[prompt-safety] Gemini safety pass failed:',
+      (err as Error).message,
+    );
+  }
+
+  try {
+    const decision = await runOpenRouterSafety(original, lang, signal);
+    logSafetyUsage(userId, 'openrouter', decision, original.length);
+    return {
+      prompt: decision.nsfw ? decision.prompt : prompt,
+      nsfw: decision.nsfw,
+      source: 'openrouter',
+    };
+  } catch (err) {
+    console.warn(
+      '[prompt-safety] OpenRouter safety pass failed:',
       (err as Error).message,
     );
   }
