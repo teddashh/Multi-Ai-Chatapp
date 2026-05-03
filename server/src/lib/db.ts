@@ -171,6 +171,25 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_forum_media_post ON forum_media(post_id, position);
   CREATE INDEX IF NOT EXISTS idx_forum_media_ai ON forum_media(ai_provider, position);
+
+  -- Blog posts written by AI personas about forum threads. Each AI can
+  -- only blog one post per forum thread (UNIQUE constraint), so the
+  -- daily AI-pick cron naturally avoids re-covering the same source.
+  -- thumbnail_media_id reuses the source post's existing infograph
+  -- (no separate image gen) to keep cost down.
+  CREATE TABLE IF NOT EXISTS blog_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_post_id INTEGER NOT NULL REFERENCES forum_posts(id) ON DELETE CASCADE,
+    ai_provider TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    thumbnail_media_id INTEGER REFERENCES forum_media(id) ON DELETE SET NULL,
+    view_count INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    UNIQUE (source_post_id, ai_provider)
+  );
+  CREATE INDEX IF NOT EXISTS idx_blog_posts_created ON blog_posts(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_blog_posts_source ON blog_posts(source_post_id);
 `);
 
 // One-shot, idempotent column additions for existing DBs.
@@ -1534,5 +1553,46 @@ export const messageStmts = {
     `SELECT COUNT(*) AS c FROM chat_messages m
      JOIN chat_sessions s ON s.id = m.session_id
      WHERE s.user_id = ? AND s.mode = ? AND m.role = 'user' AND m.timestamp >= ?`,
+  ),
+};
+
+// =====================================================================
+// blog_posts — AI-written blog renderings of forum threads
+// =====================================================================
+
+export interface BlogPostRow {
+  id: number;
+  source_post_id: number;
+  ai_provider: string;
+  title: string;
+  body: string;
+  thumbnail_media_id: number | null;
+  view_count: number;
+  created_at: number;
+}
+
+export const blogStmts = {
+  insert: db.prepare<[number, string, string, string, number | null]>(
+    `INSERT INTO blog_posts (source_post_id, ai_provider, title, body, thumbnail_media_id)
+     VALUES (?, ?, ?, ?, ?)`,
+  ),
+  findById: db.prepare<[number]>(
+    `SELECT * FROM blog_posts WHERE id = ?`,
+  ),
+  findByPostAndProvider: db.prepare<[number, string]>(
+    `SELECT * FROM blog_posts WHERE source_post_id = ? AND ai_provider = ?`,
+  ),
+  // Index list — newest first, paginated.
+  listRecent: db.prepare<[number, number]>(
+    `SELECT * FROM blog_posts ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+  ),
+  // For the AI self-pick prompt — which posts has this AI already
+  // covered? UNIQUE constraint on (source_post_id, ai_provider) means
+  // each row is one (post, AI) pair.
+  listCoveredPostIdsByProvider: db.prepare<[string]>(
+    `SELECT source_post_id FROM blog_posts WHERE ai_provider = ?`,
+  ),
+  incViewCount: db.prepare<[number]>(
+    `UPDATE blog_posts SET view_count = view_count + 1 WHERE id = ?`,
   ),
 };

@@ -30,8 +30,9 @@ import {
   saveForumMedia,
 } from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
-import { runAutoDebate, resumeAutoDebate, discoverTopic } from '../lib/autoDebate.js';
+import { runAutoDebate, resumeAutoDebate, discoverTopic, getBotUserId } from '../lib/autoDebate.js';
 import { fireAutoDebateNow } from '../lib/autoDebateScheduler.js';
+import { generateBlogPost } from '../lib/blogPost.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
@@ -453,6 +454,42 @@ adminRoute.post('/auto-debate', async (c) => {
   } catch (err) {
     const message = (err as Error).message;
     audit(me.id, 'auto_debate_fail', { metadata: { error: message } });
+    return c.json({ error: message }, 500);
+  }
+});
+
+// Manual blog generation. Picks an AI persona to write a blog post
+// about an existing forum thread, in their voice. UNIQUE constraint
+// on (source_post_id, ai_provider) prevents the same AI from
+// double-blogging.
+adminRoute.post('/blog/generate', async (c) => {
+  const me = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { sourcePostId?: number; aiProvider?: AIProvider }
+    | null;
+  const sourcePostId = Number(body?.sourcePostId ?? 0);
+  const aiProvider = body?.aiProvider;
+  if (!Number.isFinite(sourcePostId) || sourcePostId <= 0) {
+    return c.json({ error: 'sourcePostId required' }, 400);
+  }
+  if (!aiProvider || !['claude', 'gemini', 'grok', 'chatgpt'].includes(aiProvider)) {
+    return c.json({ error: 'invalid aiProvider' }, 400);
+  }
+  audit(me.id, 'blog_generate_start', {
+    metadata: { sourcePostId, aiProvider },
+  });
+  try {
+    const botId = getBotUserId();
+    const result = await generateBlogPost(sourcePostId, aiProvider, botId);
+    audit(me.id, 'blog_generate_done', {
+      metadata: { sourcePostId, aiProvider, ...result },
+    });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    const message = (err as Error).message;
+    audit(me.id, 'blog_generate_fail', {
+      metadata: { sourcePostId, aiProvider, error: message },
+    });
     return c.json({ error: message }, 500);
   }
 });

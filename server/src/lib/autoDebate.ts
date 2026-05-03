@@ -135,7 +135,7 @@ const NEVER_LOGIN_HASH = '$2b$12$' + 'X'.repeat(53);
 
 let cachedBotUserId: number | null = null;
 
-function getBotUserId(): number {
+export function getBotUserId(): number {
   if (cachedBotUserId !== null) return cachedBotUserId;
 
   const existing = userStmts.findByUsername.get(BOT_USERNAME) as
