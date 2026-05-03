@@ -961,15 +961,15 @@ function loadPersonaRefs(): Array<{
   return out;
 }
 
-// Immutable per-character identity. Only髮色 / 眼瞳 / 招牌配件
+// Immutable per-character identity. Only髮色 / 眼瞳 / 招牌標誌
 // stay locked across all posts so each girl is always recognisable;
 // outfits / scene / palette change per topic via the Gemini brief.
 const CHARACTER_IDENTITY = [
-  '【4 個少女的固定人設 — 髮色/眼瞳/招牌標誌絕對不能變，但服裝按下方主題替換】',
-  '- Claude (Opus) 少女：長棕髮、溫暖琥珀色眼瞳，經常配橘色系飾品（緞帶/絲巾/髮夾），氣質沉穩。',
-  '- Codex 少女：黑色短髮、戴方框眼鏡、灰銀或終端機綠色配件，理性冷靜。',
-  '- Gemini 少女：金髮、髮飾用 Google 多彩 (藍/紅/黃/綠)，活潑表情。',
-  '- Grok 少女：銀白短髮、左眼有 X 標記、紅黑點綴，帶點酷帥反骨感。',
+  '【4 個少女的固定人設 — 髮色/眼瞳/品牌標誌絕對不能變，但服裝按下方主題替換】',
+  '- Claude (Opus) 少女：長棕髮、溫暖琥珀色眼瞳，**髮夾或胸針必須是 Anthropic 橘色八角星 (sunburst) logo**，常配橘色系飾品（緞帶/絲巾），氣質沉穩。',
+  '- Codex 少女：黑色短髮、戴方框眼鏡、**髮夾或胸前必須是 OpenAI 綠色花形 logo**，灰銀或終端機綠色配件，理性冷靜。',
+  '- Gemini 少女：金髮、**髮夾或胸前必須是 Google 多彩四色 G logo (藍/紅/黃/綠)**，活潑表情。',
+  '- Grok 少女：銀白短髮、**左眼上有一個小的 X 形紅色貼紙標記 (像妝點裝飾，不是完整眼罩，眼睛仍露出)**，紅黑點綴，帶點酷帥反骨感。**禁止把 X 標記畫成整片黑色海盜眼罩**。',
 ].join('\n');
 
 interface ImageBrief {
