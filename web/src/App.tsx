@@ -42,6 +42,7 @@ import AdminPage from './components/AdminPage';
 import Sidebar from './components/Sidebar';
 import ProfileModal from './components/ProfileModal';
 import Forum from './components/Forum';
+import Blog from './components/Blog';
 import LandingPage from './components/LandingPage';
 import LegalPage from './components/LegalPage';
 import ShareToForumModal from './components/ShareToForumModal';
@@ -875,6 +876,25 @@ export default function App() {
         lang={lang}
         onLangChange={handleLangToggle}
       />
+    );
+  } else if (pathname.startsWith('/blog')) {
+    // Blog is fully public — anonymous viewers welcome.
+    content = (
+      <div className="flex flex-col h-screen">
+        <TopNav
+          user={user}
+          pathname={pathname}
+          navigate={navigate}
+          lang={lang}
+          onLangChange={handleLangToggle}
+          onProfileClick={() => setShowProfile(true)}
+          onLogout={handleLogout}
+          avatarBust={avatarBust}
+        />
+        <div className="flex-1 min-h-0 overflow-y-auto bg-gray-950">
+          <Blog pathname={pathname} navigate={navigate} />
+        </div>
+      </div>
     );
   } else if (pathname.startsWith('/forum')) {
     // Forum is browseable by anonymous viewers — keep before the !user

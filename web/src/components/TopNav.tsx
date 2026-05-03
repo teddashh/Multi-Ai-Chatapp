@@ -39,9 +39,10 @@ export default function TopNav({
 }: Props) {
   const t = useT();
   const isForum = pathname.startsWith('/forum');
-  // Chat lives at /chat now (was /). Anything that's not forum / admin /
-  // landing falls back to chat (covers nested routes if we add any).
-  const isChat = !isForum && pathname !== '/admin' && pathname !== '/';
+  const isBlog = pathname.startsWith('/blog');
+  // Chat lives at /chat now (was /). Anything that's not forum / blog /
+  // admin / landing falls back to chat (covers nested routes).
+  const isChat = !isForum && !isBlog && pathname !== '/admin' && pathname !== '/';
 
   return (
     <header className="flex-none sticky top-0 z-30 bg-gray-950/95 backdrop-blur border-b border-gray-800">
@@ -83,6 +84,16 @@ export default function TopNav({
               }`}
             >
               {t.navForum}
+            </button>
+            <button
+              onClick={() => navigate('/blog')}
+              className={`px-2 sm:px-2.5 py-1 rounded text-xs whitespace-nowrap transition-colors ${
+                isBlog
+                  ? 'bg-gray-800 text-white'
+                  : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+              }`}
+            >
+              📝 Blog
             </button>
           </nav>
         </div>

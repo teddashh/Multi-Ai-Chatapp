@@ -7,10 +7,11 @@ import { chatRoute } from './routes/chat.js';
 import { adminRoute } from './routes/admin.js';
 import { sessionsRoute } from './routes/sessions.js';
 import { forumRoute } from './routes/forum.js';
+import { blogRoute } from './routes/blog.js';
 import { startFallbackDigest } from './lib/fallbackDigest.js';
 import { startAutoDebateScheduler } from './lib/autoDebateScheduler.js';
 import { startBlogScheduler } from './lib/blogScheduler.js';
-import { forumStmts } from './lib/db.js';
+import { forumStmts, blogStmts, type BlogPostRow } from './lib/db.js';
 import { resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -22,6 +23,7 @@ app.route('/api/chat', chatRoute);
 app.route('/api/admin', adminRoute);
 app.route('/api/sessions', sessionsRoute);
 app.route('/api/forum', forumRoute);
+app.route('/api/blog', blogRoute);
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
@@ -157,6 +159,51 @@ if (existsSync(webDist)) {
       .replace(/\s*<meta\s+name="twitter:description"[^>]*\/?>/gi, '');
     const out = stripped.replace('</head>', `${ogBlock}\n  </head>`);
     return c.html(out);
+  });
+
+  // Same OG-injection treatment for /blog/:id detail pages so social
+  // shares preview the actual blog title + body excerpt + thumbnail.
+  app.get('/blog/:id', (c) => {
+    const html = getIndexHtml();
+    if (!html) return c.text('Not found', 404);
+    const id = parseInt(c.req.param('id') ?? '', 10);
+    if (!Number.isFinite(id) || id <= 0) return c.html(html);
+    let post: BlogPostRow | null = null;
+    try {
+      post = (blogStmts.findById.get(id) as BlogPostRow | undefined) ?? null;
+    } catch {
+      post = null;
+    }
+    if (!post) return c.html(html);
+
+    const publicUrl = process.env.PUBLIC_URL ?? '';
+    const baseUrl = publicUrl ? publicUrl.replace(/\/+$/, '') : '';
+    const url = `${baseUrl}/blog/${id}`;
+    const title = `${post.title} | AI Sister Blog`;
+    const description = trimForOg(post.body);
+    let imageMeta = '';
+    if (post.thumbnail_media_id && baseUrl) {
+      const imgUrl = `${baseUrl}/api/forum/media/${post.thumbnail_media_id}`;
+      imageMeta = `
+    <meta property="og:image" content="${escapeHtml(imgUrl)}" />
+    <meta name="twitter:image" content="${escapeHtml(imgUrl)}" />`;
+    }
+    const ogBlock = `
+    <meta property="og:url" content="${escapeHtml(url)}" />
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content="${escapeHtml(title)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(title)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />${imageMeta}`;
+    const stripped = html
+      .replace(/\s*<meta\s+property="og:type"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+property="og:title"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+property="og:description"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:card"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:title"[^>]*\/?>/gi, '')
+      .replace(/\s*<meta\s+name="twitter:description"[^>]*\/?>/gi, '');
+    return c.html(stripped.replace('</head>', `${ogBlock}\n  </head>`));
   });
 
   app.use(

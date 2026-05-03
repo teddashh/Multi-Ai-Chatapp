@@ -737,6 +737,42 @@ export async function adminDiscoverTopic(
   return data;
 }
 
+// =============================================================
+// BLOG (public)
+// =============================================================
+
+export interface BlogListItem {
+  id: number;
+  title: string;
+  bodyExcerpt: string;
+  aiProvider: string;
+  sourcePostId: number;
+  sourcePostTitle: string;
+  thumbnailUrl: string | null;
+  viewCount: number;
+  createdAt: number;
+}
+
+export interface BlogPostDetail extends BlogListItem {
+  body: string;
+}
+
+export async function listBlogPosts(
+  offset = 0,
+): Promise<{ posts: BlogListItem[]; pageSize: number }> {
+  const res = await fetch(`/api/blog?offset=${offset}`, {
+    credentials: 'include',
+  });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return (await res.json()) as { posts: BlogListItem[]; pageSize: number };
+}
+
+export async function getBlogPost(id: number): Promise<BlogPostDetail> {
+  const res = await fetch(`/api/blog/${id}`, { credentials: 'include' });
+  if (!res.ok) throw new Error(`${res.status}`);
+  return (await res.json()) as BlogPostDetail;
+}
+
 export async function adminGetUsage(): Promise<UsageRow[]> {
   const data = (await adminFetch('/usage')) as { users: UsageRow[] };
   return data.users;
