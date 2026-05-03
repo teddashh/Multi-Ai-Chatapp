@@ -19,7 +19,13 @@ import {
   type MessageRow,
   type UserRow,
 } from './db.js';
-import { runMode, DEFAULT_ROUNDTABLE_ROLES } from './orchestrator.js';
+import {
+  runMode,
+  runOne,
+  buildStepList,
+  DEFAULT_ROUNDTABLE_ROLES,
+  type StepResult,
+} from './orchestrator.js';
 import {
   generateShareSummary,
   generateInfographic,
@@ -167,12 +173,29 @@ export async function runAutoDebate(
   }
   sessionStmts.touch.run(sessionId);
 
-  // Promote session to a forum post (mirrors /share happy path for
-  // a brand-new session). Anonymous so the bot's name doesn't leak.
+  const postId = promoteSessionToForumPost(
+    sessionId,
+    userId,
+    initialTitle,
+    input.category,
+  );
+  return { sessionId, postId, steps: stepCount };
+}
+
+// Shared share-to-forum step. Mirrors the /share happy path for a
+// brand-new session: insert anonymous forum_post with the first user
+// message as body, import every other message as a comment, then
+// fire-and-forget the existing summary + infograph pipeline.
+function promoteSessionToForumPost(
+  sessionId: string,
+  userId: number,
+  title: string,
+  category: ForumCategory,
+): number {
   const messages = messageStmts.listForSession.all(sessionId) as MessageRow[];
   const firstUserIdx = messages.findIndex((m) => m.role === 'user');
   if (firstUserIdx < 0) {
-    throw new Error('auto-debate session ended with no user message');
+    throw new Error('session has no user message to anchor the post');
   }
   const firstUser = messages[firstUserIdx];
   const rest = messages.slice(firstUserIdx + 1);
@@ -180,14 +203,14 @@ export async function runAutoDebate(
   let postId = 0;
   const tx = db.transaction(() => {
     const result = forumStmts.insertPost.run(
-      input.category,
+      category,
       sessionId,
       'roundtable',
-      initialTitle,
+      title,
       firstUser.content,
       userId,
-      1, // is_anonymous
-      null, // ai_persona — roundtable mode has no profession persona
+      1, // is_anonymous — bot identity stays hidden
+      null,
     );
     postId = Number(result.lastInsertRowid);
     for (const m of rest) {
@@ -198,8 +221,8 @@ export async function runAutoDebate(
         m.role === 'ai' ? m.provider : null,
         m.role === 'ai' ? m.answered_model ?? m.requested_model ?? null : null,
         m.content,
-        m.role === 'user' ? 1 : 0, // anonymous flag inherited from post
-        1, // is_imported
+        m.role === 'user' ? 1 : 0,
+        1,
         m.id,
         m.timestamp,
       );
@@ -208,8 +231,6 @@ export async function runAutoDebate(
   });
   tx();
 
-  // Fire-and-forget the existing post-share enrichment pipeline:
-  // Gemini summary → gpt-image-2 infograph. Same as POST /share.
   void (async () => {
     try {
       await generateShareSummary(postId);
@@ -222,10 +243,147 @@ export async function runAutoDebate(
     }
   })();
 
-  // Make sure we don't return the post id before findPostById would
-  // see it (transaction is sync so this is just defensive).
   const post = forumStmts.findPostById.get(postId) as ForumPostRow | undefined;
-  if (!post) throw new Error('auto-debate post insert lost');
+  if (!post) throw new Error('forum post insert lost');
+  return postId;
+}
 
-  return { sessionId, postId, steps: stepCount };
+// Pick up an interrupted bot roundtable session — server restart
+// killed runMode mid-stream, leaving N < 20 AI msgs. Re-runs only the
+// remaining steps using existing msgs as history, then promotes to a
+// forum post the same way a fresh runAutoDebate would.
+//
+// Caller passes (or we look up) the session id; we figure out the
+// first missing step from the AI message count and the deterministic
+// roundtable schedule (5 rounds × 4 speakers in DEFAULT_ROUNDTABLE_ROLES
+// order). Tolerates non-default speaker orderings by reading the
+// session's stored roles_json.
+export interface ResumeResult {
+  sessionId: string;
+  postId: number;
+  resumed: number; // how many steps we re-ran
+  total: number; // how many steps the chain has total (always 20 for roundtable)
+}
+
+export async function resumeAutoDebate(
+  sessionId: string,
+  category: ForumCategory,
+): Promise<ResumeResult> {
+  const session = sessionStmts.findById.get(sessionId) as
+    | { id: string; user_id: number; mode: string; title: string; roles_json: string | null }
+    | undefined;
+  if (!session) throw new Error(`session not found: ${sessionId}`);
+  if (session.mode !== 'roundtable') {
+    throw new Error(`only roundtable can be resumed, got mode=${session.mode}`);
+  }
+
+  // Already promoted to a post? Refuse — caller should pick a different
+  // path (probably noop / surface the existing post id).
+  const existingPost = forumStmts.findPostBySession.get(sessionId) as
+    | ForumPostRow
+    | undefined;
+  if (existingPost) {
+    return {
+      sessionId,
+      postId: existingPost.id,
+      resumed: 0,
+      total: 20,
+    };
+  }
+
+  const roles = (session.roles_json
+    ? (JSON.parse(session.roles_json) as typeof DEFAULT_ROUNDTABLE_ROLES)
+    : DEFAULT_ROUNDTABLE_ROLES);
+  const steps = buildStepList('roundtable', roles, 'zh-TW');
+
+  const messages = messageStmts.listForSession.all(sessionId) as MessageRow[];
+  const userMsg = messages.find((m) => m.role === 'user');
+  if (!userMsg) throw new Error('session has no user message');
+  const aiMsgs = messages.filter((m) => m.role === 'ai');
+  const startFrom = aiMsgs.length; // 0-indexed step to resume at
+
+  if (startFrom >= steps.length) {
+    // Already complete — just promote.
+    const postId = promoteSessionToForumPost(
+      sessionId,
+      session.user_id,
+      session.title,
+      category,
+    );
+    return { sessionId, postId, resumed: 0, total: steps.length };
+  }
+
+  // Build the StepResult history from existing AI msgs so the next
+  // step's buildPrompt sees the same context the original chain had.
+  const history: StepResult[] = aiMsgs.map((m, i) => ({
+    provider: steps[i].provider,
+    modeRole: steps[i].label,
+    text: m.content,
+  }));
+
+  const ctrl = new AbortController();
+  const timeout = setTimeout(() => ctrl.abort(), 30 * 60_000);
+
+  try {
+    for (let i = startFrom; i < steps.length; i++) {
+      if (ctrl.signal.aborted) break;
+      const step = steps[i];
+      const prompt = step.buildPrompt(userMsg.content, history);
+      let text: string;
+      try {
+        text = await runOne(
+          {
+            text: userMsg.content,
+            mode: 'roundtable',
+            roles,
+            tier: 'admin',
+            lang: 'zh-TW',
+            userId: session.user_id,
+            sessionId,
+            emit: () => {},
+            signal: ctrl.signal,
+          },
+          step.provider,
+          prompt,
+        );
+      } catch (err) {
+        if (ctrl.signal.aborted) break;
+        console.error(
+          `[auto-debate] resume step ${i} (${step.provider}/${step.label}) failed:`,
+          (err as Error).message,
+        );
+        text = `[step ${step.label} 失敗：${(err as Error).message}]`;
+      }
+      const ts = Math.floor(Date.now() / 1000);
+      messageStmts.insert.run(
+        sessionId,
+        'ai',
+        step.provider,
+        step.label,
+        text,
+        ts,
+      );
+      history.push({
+        provider: step.provider,
+        modeRole: step.label,
+        text,
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+  sessionStmts.touch.run(sessionId);
+
+  const postId = promoteSessionToForumPost(
+    sessionId,
+    session.user_id,
+    session.title,
+    category,
+  );
+  return {
+    sessionId,
+    postId,
+    resumed: steps.length - startFrom,
+    total: steps.length,
+  };
 }

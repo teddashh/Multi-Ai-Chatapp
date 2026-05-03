@@ -30,7 +30,7 @@ import {
   saveForumMedia,
 } from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
-import { runAutoDebate } from '../lib/autoDebate.js';
+import { runAutoDebate, resumeAutoDebate } from '../lib/autoDebate.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
@@ -452,6 +452,45 @@ adminRoute.post('/auto-debate', async (c) => {
   } catch (err) {
     const message = (err as Error).message;
     audit(me.id, 'auto_debate_fail', { metadata: { error: message } });
+    return c.json({ error: message }, 500);
+  }
+});
+
+// Resume an interrupted bot debate (server restart killed runMode
+// mid-stream). Runs only the missing roundtable steps using the
+// existing AI msgs as history, then promotes to a forum post.
+adminRoute.post('/auto-debate/resume', async (c) => {
+  const me = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { sessionId?: string; category?: ForumCategory }
+    | null;
+  const sessionId = body?.sessionId?.trim() ?? '';
+  const category = body?.category;
+  if (!sessionId) return c.json({ error: 'sessionId required' }, 400);
+  if (!category || !FORUM_CATEGORIES.includes(category)) {
+    return c.json({ error: 'invalid category' }, 400);
+  }
+  audit(me.id, 'auto_debate_resume_start', {
+    targetSessionId: sessionId,
+    metadata: { category },
+  });
+  try {
+    const result = await resumeAutoDebate(sessionId, category);
+    audit(me.id, 'auto_debate_resume_done', {
+      targetSessionId: result.sessionId,
+      metadata: {
+        postId: result.postId,
+        resumed: result.resumed,
+        total: result.total,
+      },
+    });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    const message = (err as Error).message;
+    audit(me.id, 'auto_debate_resume_fail', {
+      targetSessionId: sessionId,
+      metadata: { error: message },
+    });
     return c.json({ error: message }, 500);
   }
 });
