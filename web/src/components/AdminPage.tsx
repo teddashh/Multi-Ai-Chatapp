@@ -8,6 +8,7 @@ import {
   adminListUserSessions,
   adminRunDigest,
   adminSetUserDisabled,
+  adminTriggerAutoDebate,
   createUser,
   deleteUser,
   inviteUser,
@@ -22,7 +23,7 @@ import {
   type UsageRow,
   type User,
 } from '../api';
-import type { Tier } from '../shared/types';
+import { FORUM_CATEGORIES, type ForumCategory, type Tier } from '../shared/types';
 import { AI_PROVIDERS } from '../shared/constants';
 import { useT } from '../i18n';
 
@@ -31,7 +32,7 @@ interface Props {
   onExit: () => void;
 }
 
-type View = 'users' | 'audit' | 'stats' | 'models' | 'spending' | 'user-detail' | 'session-viewer';
+type View = 'users' | 'audit' | 'stats' | 'models' | 'spending' | 'user-detail' | 'session-viewer' | 'auto-debate';
 
 const TIERS: Tier[] = ['free', 'standard', 'pro', 'super', 'admin'];
 
@@ -113,6 +114,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
           ['spending', 'API Key 花費'],
           ['models', 'Model 健康度'],
           ['audit', '稽核紀錄 / Audit'],
+          ['auto-debate', '🔥 啟動辯論'],
         ] as Array<[View, string]>).map(([k, label]) => (
           <button
             key={k}
@@ -168,6 +170,7 @@ export default function AdminPage({ currentUser, onExit }: Props) {
         {view === 'stats' && <StatsView onError={setError} />}
         {view === 'models' && <ModelStatsView onError={setError} />}
         {view === 'spending' && <SpendingView onError={setError} />}
+        {view === 'auto-debate' && <AutoDebatePanel onError={setError} />}
       </div>
     </div>
   );
@@ -1263,6 +1266,147 @@ function SpendingView({ onError }: { onError: (msg: string) => void }) {
           </table>
         </div>
       ))}
+    </div>
+  );
+}
+
+// =============================================================
+// AUTO-DEBATE PANEL
+// =============================================================
+// Manual trigger for the 4-AI 5-round roundtable + auto-share pipeline.
+// Synchronous from the browser's perspective — debate runs to completion
+// before the response lands (~5-10 min). The "running…" state explains
+// why nothing is moving and tells the admin not to navigate away.
+// =============================================================
+
+function AutoDebatePanel({ onError }: { onError: (msg: string) => void }) {
+  const [topic, setTopic] = useState('');
+  const [category, setCategory] = useState<ForumCategory>('科技');
+  const [title, setTitle] = useState('');
+  const [running, setRunning] = useState(false);
+  const [lastResult, setLastResult] = useState<{
+    postId: number;
+    sessionId: string;
+    steps: number;
+  } | null>(null);
+
+  const submit = useCallback(async () => {
+    const t = topic.trim();
+    if (!t) {
+      onError('topic 不能空白');
+      return;
+    }
+    setRunning(true);
+    setLastResult(null);
+    try {
+      const res = await adminTriggerAutoDebate({
+        topic: t,
+        category,
+        title: title.trim() || undefined,
+      });
+      setLastResult({
+        postId: res.postId,
+        sessionId: res.sessionId,
+        steps: res.steps,
+      });
+      setTopic('');
+      setTitle('');
+    } catch (e) {
+      onError(`auto-debate failed: ${(e as Error).message}`);
+    } finally {
+      setRunning(false);
+    }
+  }, [topic, category, title, onError]);
+
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div>
+        <h2 className="text-lg font-bold text-gray-100 mb-1">🔥 啟動自動辯論</h2>
+        <p className="text-xs text-gray-400 leading-relaxed">
+          四方 AI 五輪辯論 + 自動 share 到論壇 (匿名)。會跑 ~5-10 分鐘，
+          中間 summary + 宣傳圖會在 forum post 上漸進出現。
+          請別關掉這個分頁直到「完成」訊息出來。
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <label className="block text-xs text-gray-400 mb-1.5">看板</label>
+          <div className="flex flex-wrap gap-1.5">
+            {FORUM_CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                disabled={running}
+                className={`px-3 py-1.5 rounded text-sm ${
+                  category === c
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                } disabled:opacity-50`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1.5">
+            主題 / Topic（會當作開場 user 訊息）
+          </label>
+          <textarea
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            disabled={running}
+            rows={5}
+            className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+            placeholder={`例：「OpenAI 發布 GPT-5.5 後，Anthropic 該推遲 Opus 4.7 嗎？」\n或一段論點，給 4 AI 拆解辯論`}
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs text-gray-400 mb-1.5">
+            標題（選填，預設取主題前 60 字）
+          </label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            disabled={running}
+            maxLength={60}
+            className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={submit}
+          disabled={running || !topic.trim()}
+          className="w-full py-2 rounded bg-pink-600 hover:bg-pink-700 disabled:opacity-50 text-white font-medium text-sm"
+        >
+          {running ? '辯論進行中…約 5-10 分鐘，請別關閉此頁' : '🔥 啟動辯論'}
+        </button>
+      </div>
+
+      {lastResult && (
+        <div className="rounded border border-green-700/40 bg-green-900/20 p-3 text-sm text-green-200 space-y-1">
+          <div className="font-semibold">✓ 辯論完成</div>
+          <div className="text-xs">
+            產出 {lastResult.steps} 個 AI 訊息，已 share 為 post #{lastResult.postId}
+          </div>
+          <div className="text-xs">
+            <a
+              href={`/forum/post/${lastResult.postId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-white"
+            >
+              開啟貼文 →
+            </a>{' '}
+            (摘要 + 宣傳圖會在 1 分鐘內陸續到位)
+          </div>
+        </div>
+      )}
     </div>
   );
 }

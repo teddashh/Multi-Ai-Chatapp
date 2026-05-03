@@ -756,7 +756,7 @@ const SUMMARY_MODEL = 'gemini-3-flash-preview';
 // they manually re-ran the generator, pass null for the auto-trigger
 // from /share (the system gifts the first generation, post-share regens
 // are on the user's quota).
-async function generateShareSummary(
+export async function generateShareSummary(
   postId: number,
   billUserId: number | null = null,
 ): Promise<string | null> {
@@ -1068,7 +1068,7 @@ function buildSensitiveInfographicPrompt(post: ForumPostRow): string {
 //   - if `force` is false (the auto-trigger path) we skip when the
 //     post already has any media — so author uploads + earlier
 //     auto-gens aren't overwritten
-async function generateInfographic(
+export async function generateInfographic(
   postId: number,
   opts: { force?: boolean; uploadedByUserId?: number | null } = {},
 ): Promise<number | null> {

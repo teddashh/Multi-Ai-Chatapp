@@ -709,6 +709,21 @@ export async function adminListAudit(limit = 200): Promise<AuditEntry[]> {
   return data.audit;
 }
 
+// Manual auto-debate trigger. Synchronous (~5-10 min) — server runs
+// 5-round 4-AI roundtable + auto-shares. UI must keep the request
+// alive (no fetch timeout) and show a "running…" state.
+export async function adminTriggerAutoDebate(body: {
+  topic: string;
+  category: string;
+  title?: string;
+}): Promise<{ ok: true; sessionId: string; postId: number; steps: number }> {
+  const data = (await adminFetch('/auto-debate', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })) as { ok: true; sessionId: string; postId: number; steps: number };
+  return data;
+}
+
 export async function adminGetUsage(): Promise<UsageRow[]> {
   const data = (await adminFetch('/usage')) as { users: UsageRow[] };
   return data.users;

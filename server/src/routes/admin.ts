@@ -30,6 +30,8 @@ import {
   saveForumMedia,
 } from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
+import { runAutoDebate } from '../lib/autoDebate.js';
+import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
 import type { AIProvider, Tier } from '../shared/types.js';
@@ -414,6 +416,44 @@ adminRoute.post('/forum/posts/:id/nsfw', async (c) => {
     metadata: { postId },
   });
   return c.json({ ok: true, nsfw: body.nsfw });
+});
+
+// === AUTO-DEBATE ===
+// Manual trigger for the 4-AI 5-round roundtable + auto-share pipeline.
+// Cron will call the same runAutoDebate() helper later. Synchronous
+// (~5-10 min response time — debate runs to completion before reply)
+// because admin can just leave the tab open. The post + summary +
+// infograph land progressively as the chain completes.
+adminRoute.post('/auto-debate', async (c) => {
+  const me = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { topic?: string; category?: ForumCategory; title?: string }
+    | null;
+  const topic = body?.topic?.trim() ?? '';
+  const category = body?.category;
+  if (!topic) return c.json({ error: 'topic required' }, 400);
+  if (!category || !FORUM_CATEGORIES.includes(category)) {
+    return c.json({ error: 'invalid category' }, 400);
+  }
+  audit(me.id, 'auto_debate_start', {
+    metadata: { topic: topic.slice(0, 200), category },
+  });
+  try {
+    const result = await runAutoDebate({
+      topic,
+      category,
+      title: body?.title?.trim() || undefined,
+    });
+    audit(me.id, 'auto_debate_done', {
+      targetSessionId: result.sessionId,
+      metadata: { postId: result.postId, steps: result.steps },
+    });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    const message = (err as Error).message;
+    audit(me.id, 'auto_debate_fail', { metadata: { error: message } });
+    return c.json({ error: message }, 500);
+  }
 });
 
 // === AI PERSONA MEDIA LIBRARY ===
