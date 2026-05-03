@@ -24,6 +24,7 @@ import {
   resendVerifyEmail,
   streamChat,
   streamRegenerate,
+  streamRegenerateFromUser,
   updateProfile,
   verifyEmail,
   type SessionSummary,
@@ -769,6 +770,60 @@ export default function App() {
     ],
   );
 
+  // Restart (or edit-then-restart) from a user message. Wipes the
+  // visible AI replies after the user msg optimistically, then streams
+  // the new chain back through the same SSE handler /send uses.
+  const handleRegenerateFromUser = useCallback(
+    async (messageId: string, text?: string) => {
+      if (regeneratingId) return;
+      if (isProcessing) {
+        handleCancel();
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId);
+        if (idx < 0) return prev;
+        const cut = prev.slice(0, idx + 1);
+        // Apply the edit locally too so the bubble shows the new text
+        // immediately, before the server confirms.
+        if (text && text.trim()) {
+          cut[idx] = { ...cut[idx], content: text.trim() };
+        }
+        return cut;
+      });
+
+      setRegeneratingId(messageId);
+      setIsProcessing(true);
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        await streamRegenerateFromUser(
+          { messageId, text, modelOverrides },
+          handleEvent,
+          ctrl.signal,
+        );
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setConnectionLost(true);
+          await reloadActiveSession();
+        }
+      } finally {
+        setRegeneratingId(null);
+        setIsProcessing(false);
+        setWorkflowStatus('');
+        if (abortRef.current === ctrl) abortRef.current = null;
+      }
+    },
+    [
+      regeneratingId,
+      isProcessing,
+      modelOverrides,
+      handleEvent,
+      reloadActiveSession,
+      handleCancel,
+    ],
+  );
+
   // === Render ===
   let content: React.ReactNode;
   if (resetToken) {
@@ -992,6 +1047,7 @@ export default function App() {
             avatarBust={avatarBust}
             onRegenerate={handleRegenerate}
             regeneratingId={regeneratingId}
+            onRegenerateFromUser={handleRegenerateFromUser}
           />
 
           {workflowStatus && (

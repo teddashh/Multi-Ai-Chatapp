@@ -14,6 +14,10 @@ interface Props {
   avatarBust: number;
   onRegenerate?: (messageId: string) => void;
   regeneratingId?: string | null;
+  // Restart / edit-and-restart from a user message. The handler wipes
+  // every message after the user msg server-side and replays the chain.
+  // `text` undefined = pure restart; non-empty = edit then restart.
+  onRegenerateFromUser?: (messageId: string, text?: string) => void;
 }
 
 // Pretty-print a raw model id like "claude-opus-4-7" → "Claude Opus 4.7"
@@ -209,6 +213,7 @@ export default function ChatArea({
   avatarBust,
   onRegenerate,
   regeneratingId,
+  onRegenerateFromUser,
 }: Props) {
   const t = useT();
   const userDisplayName = user.nickname || user.username;
@@ -219,6 +224,9 @@ export default function ChatArea({
   const retryTitle = isSequential ? t.retrySeqTitle : t.retryFreeTitle;
   const endRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Inline edit state for user messages — only one can be open at a time.
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
   // Tracks the most recently "copied" message id for the inline
   // "Copy / Copied" toggle. Cleared after a couple of seconds.
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -321,16 +329,61 @@ export default function ChatArea({
       ) : (
         messages.map((msg) => {
           if (msg.role === 'user') {
+            const isEditing = editingUserId === msg.id;
+            const canRegen = !!onRegenerateFromUser && !regeneratingId;
             return (
-              <div key={msg.id} className="flex gap-2 items-start justify-end">
+              <div
+                key={msg.id}
+                className="group flex gap-2 items-start justify-end"
+              >
                 <div className="flex-1 min-w-0 max-w-[85%] flex flex-col items-end">
                   <div
                     className="text-xs font-semibold mb-1.5 text-blue-300"
                   >
                     {userDisplayName}
                   </div>
-                  <div className="bg-blue-600/20 border border-blue-700/40 rounded-lg p-3 text-sm whitespace-pre-wrap">
-                    {msg.content && <div>{msg.content}</div>}
+                  <div className="bg-blue-600/20 border border-blue-700/40 rounded-lg p-3 text-sm whitespace-pre-wrap w-full">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2">
+                        <textarea
+                          value={editDraft}
+                          onChange={(e) => setEditDraft(e.target.value)}
+                          rows={Math.min(20, Math.max(3, editDraft.split('\n').length))}
+                          className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 resize-none"
+                          autoFocus
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingUserId(null);
+                              setEditDraft('');
+                            }}
+                            className="px-3 py-1 rounded border border-gray-700 hover:bg-gray-800 text-xs text-gray-300"
+                          >
+                            取消
+                          </button>
+                          <button
+                            type="button"
+                            disabled={
+                              !editDraft.trim() ||
+                              editDraft.trim() === msg.content
+                            }
+                            onClick={() => {
+                              const next = editDraft.trim();
+                              setEditingUserId(null);
+                              setEditDraft('');
+                              onRegenerateFromUser?.(msg.id, next);
+                            }}
+                            className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-xs text-white font-medium"
+                          >
+                            儲存並重新生成
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {msg.content && <div>{msg.content}</div>}
                     {msg.attachments && msg.attachments.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2 justify-end">
                         {msg.attachments.map((a) => {
@@ -377,7 +430,40 @@ export default function ChatArea({
                         })}
                       </div>
                     )}
+                      </>
+                    )}
                   </div>
+                  {!isEditing && canRegen && (
+                    <div className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-500 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingUserId(msg.id);
+                          setEditDraft(msg.content);
+                        }}
+                        className="px-1.5 py-0.5 rounded hover:bg-gray-800 hover:text-gray-200"
+                        title="編輯這則訊息並重新生成回覆"
+                      >
+                        ✎ 編輯
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (
+                            confirm(
+                              '重新生成會刪掉這則訊息底下所有的 AI 回覆，確定？',
+                            )
+                          ) {
+                            onRegenerateFromUser?.(msg.id);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 rounded hover:bg-gray-800 hover:text-gray-200"
+                        title="重新讓 AI 回答這則訊息"
+                      >
+                        ↻ 重新生成
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {user.hasAvatar ? (
                   <img

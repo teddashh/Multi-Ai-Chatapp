@@ -697,6 +697,205 @@ chatRoute.post('/regenerate', requireAuth, async (c) => {
   });
 });
 
+// Re-run (or edit + re-run) starting from an existing user message.
+// Standard ChatGPT/Claude-style affordance: hover over a user msg →
+// pencil to edit, ↻ to restart. Both paths land here.
+//
+// Behaviour:
+//   - Validates msgId is a user message in a session the caller owns.
+//   - If `text` is provided, overwrites the user msg content (the edit
+//     case). Otherwise the existing content is reused (pure restart).
+//   - Wipes every message after the user msg, then re-runs the chain
+//     by going through runMode just like /send does. Mode + roles +
+//     singleProvider come from the existing session record so the
+//     replay matches the original session shape exactly.
+//
+// Useful for: typo fixes, prompt iteration, recovering from a server
+// restart that killed the chain mid-flight (no AI msgs ever landed).
+chatRoute.post('/regenerate-from-user', requireAuth, async (c) => {
+  const user = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | {
+        messageId?: string | number;
+        text?: string;
+        modelOverrides?: Partial<Record<AIProvider, string>>;
+      }
+    | null;
+  if (!body?.messageId) {
+    return c.json({ error: 'messageId required' }, 400);
+  }
+  const userMsgId = Number(body.messageId);
+  if (!Number.isFinite(userMsgId)) {
+    return c.json({ error: 'invalid messageId' }, 400);
+  }
+
+  const userMsg = messageStmts.findById.get(userMsgId) as
+    | MessageRow
+    | undefined;
+  if (!userMsg || userMsg.role !== 'user') {
+    return c.json({ error: 'user message not found' }, 404);
+  }
+
+  const session = sessionStmts.findOwned.get(userMsg.session_id, user.id) as
+    | SessionRow
+    | undefined;
+  if (!session) {
+    return c.json({ error: 'session not found' }, 404);
+  }
+
+  const sessionId = userMsg.session_id;
+  const modelOverrides = body.modelOverrides;
+  const modeStr = session.mode as ChatMode;
+
+  // Edit path — overwrite content + bump timestamp.
+  const newText = typeof body.text === 'string' ? body.text.trim() : '';
+  if (newText && newText !== userMsg.content) {
+    messageStmts.updateContent.run(
+      newText,
+      Math.floor(Date.now() / 1000),
+      userMsgId,
+    );
+    userMsg.content = newText;
+  }
+
+  // Wipe everything strictly after the user msg. deleteAfter uses
+  // `id >= ?` so pass userMsgId + 1 to keep the user msg itself.
+  messageStmts.deleteAfter.run(sessionId, userMsgId + 1);
+
+  // Recover roles/singleProvider/profession from the session record so
+  // the replay matches what /send originally built.
+  let roles: ModeRoles | null = null;
+  let singleProvider: AIProvider | undefined;
+  let profession: string | undefined;
+  if (session.roles_json) {
+    try {
+      const parsed = JSON.parse(session.roles_json) as Record<string, unknown>;
+      if (typeof parsed.provider === 'string') {
+        singleProvider = parsed.provider as AIProvider;
+      }
+      if (typeof parsed.profession === 'string') {
+        profession = parsed.profession;
+      }
+      if (!singleProvider) {
+        roles = parsed as unknown as ModeRoles;
+      }
+    } catch {
+      // ignore — fall through to defaults
+    }
+  }
+  if (!roles && !singleProvider && modeStr !== 'free') {
+    roles = defaultRolesFor(modeStr);
+  }
+
+  // Attachments stay attached to the original user msg row; reload
+  // them so paths reflect the post-relocation layout.
+  const rawAtts = attachmentStmts.listForMessage.all(userMsgId) as Array<
+    Pick<AttachmentRow, 'id'>
+  >;
+  const reloadedAttachments = loadAttachments(
+    rawAtts.map((a) => a.id),
+    user.id,
+  );
+
+  // Per-provider history of everything before this user msg (memory
+  // continuity — the AIs see the prior turns).
+  const priorMsgs = (messageStmts.listForSession.all(sessionId) as MessageRow[])
+    .filter((m) => m.id < userMsgId);
+  const perProviderHistory = buildPerProviderHistory(priorMsgs);
+
+  return streamSSE(c, async (stream) => {
+    const previous = sessionAborters.get(sessionId);
+    if (previous) previous.abort();
+    const controller = new AbortController();
+    sessionAborters.set(sessionId, controller);
+    const runTimeout = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
+
+    const pendingRoles: Partial<Record<AIProvider, string>> = {};
+    const send = (event: SSEEvent) => {
+      void stream
+        .writeSSE({ event: event.type, data: JSON.stringify(event) })
+        .catch(() => {});
+    };
+
+    // Same persist-on-done wrapper /send uses, so each AI msg lands in
+    // chat_messages with its provider/role/answered_model stamped.
+    const recordingSend = (event: SSEEvent) => {
+      if (event.type === 'role') {
+        pendingRoles[event.provider] = event.label;
+      }
+      if (event.type === 'done') {
+        const role = pendingRoles[event.provider];
+        if (role) delete pendingRoles[event.provider];
+        if (event.messageId !== undefined) {
+          send(event);
+          return;
+        }
+        const ts = Math.floor(Date.now() / 1000);
+        try {
+          const ins = messageStmts.insert.run(
+            sessionId,
+            'ai',
+            event.provider,
+            role ?? null,
+            event.text,
+            ts,
+          );
+          const msgId = Number(ins.lastInsertRowid);
+          if (event.answeredStage || event.answeredModel || event.requestedModel) {
+            try {
+              messageStmts.setAnswered.run(
+                event.answeredStage ?? null,
+                event.answeredModel ?? null,
+                event.requestedModel ?? null,
+                msgId,
+              );
+            } catch (err) {
+              console.error('failed to stamp answered stage/model', err);
+            }
+          }
+          send({ ...event, messageId: msgId });
+          return;
+        } catch (err) {
+          console.error('failed to persist ai message', err);
+        }
+      }
+      send(event);
+    };
+
+    try {
+      await runMode({
+        text: userMsg.content,
+        mode: modeStr,
+        roles: roles ?? undefined,
+        singleProvider,
+        profession,
+        modelOverrides,
+        attachments: reloadedAttachments,
+        tier: user.tier,
+        lang: user.lang,
+        userId: user.id,
+        sessionId,
+        history: perProviderHistory,
+        emit: recordingSend,
+        signal: controller.signal,
+      });
+      sessionStmts.touch.run(sessionId);
+      send({ type: 'finish' });
+    } catch (err) {
+      send({
+        type: 'error',
+        message: (err as Error).message || 'regenerate failed',
+      });
+      send({ type: 'finish' });
+    } finally {
+      clearTimeout(runTimeout);
+      if (sessionAborters.get(sessionId) === controller) {
+        sessionAborters.delete(sessionId);
+      }
+    }
+  });
+});
+
 // Explicit abort — used by the client's "Stop" button. Disconnecting the
 // SSE stream alone no longer aborts (so backgrounded tabs don't kill the
 // chain), so we need a real way for users to say "stop now please".
