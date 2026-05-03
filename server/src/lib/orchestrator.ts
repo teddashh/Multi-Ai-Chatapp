@@ -10,7 +10,7 @@ import { isGoogleImageModel, runGoogleImage } from './providers/google-image.js'
 import { sanitizeOutboundPromptForSfw } from './promptSafety.js';
 import { saveUpload } from './uploads.js';
 import { attachmentStmts, auditStmts, messageStmts, usageStmts } from './db.js';
-import { resolveModel } from '../shared/models.js';
+import { resolveModel, chatGPTNeedsResponsesAPI } from '../shared/models.js';
 import { getPrompts, PROVIDER_NAMES, type Lang } from '../shared/prompts.js';
 import type { MessageRow } from './db.js';
 import {
@@ -409,6 +409,14 @@ function buildStages(
     ? { name: 'nvidia', run: () => runNvidia(baseOpts) }
     : null;
 
+  // Codex CLI only accepts the chatgpt-account SKUs (gpt-5.4 /
+  // gpt-5.4-mini / gpt-5.5). -pro / o-series / codex live on the
+  // /v1/responses endpoint and the CLI returns "model not supported"
+  // mid-stream. Skip the CLI pre-stage when admin has explicitly
+  // picked one of those — no point burning a spawn we know will fail.
+  const cliIncompatibleChatGPT =
+    provider === 'chatgpt' && chatGPTNeedsResponsesAPI(model);
+
   const stages: ChainStage[] = [];
   if (PROVIDER_MODE === 'api') {
     // Admin (Ted) gets a CLI pre-stage on prod too, so his own chats
@@ -416,11 +424,11 @@ function buildStages(
     // (already paid as flat monthly fees) before touching API quota.
     // Falls through to API on CLI failure / wrong-machine / no auth.
     // Other tiers skip CLI — they have no CLI auth on the box.
-    if (tier === 'admin') stages.push(cliStage);
+    if (tier === 'admin' && !cliIncompatibleChatGPT) stages.push(cliStage);
     if (apiStage) stages.push(apiStage);
     else if (tier !== 'admin') stages.push(cliStage);
   } else {
-    stages.push(cliStage);
+    if (!cliIncompatibleChatGPT) stages.push(cliStage);
     if (apiStage) stages.push(apiStage);
   }
   if (orStage) stages.push(orStage);

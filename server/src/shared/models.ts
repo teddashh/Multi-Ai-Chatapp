@@ -135,7 +135,10 @@ const TIER_MODELS_BASE: Record<Tier, Record<AIProvider, ModelChoices>> = {
 const PROVIDER_MODE_RUNTIME =
   (process.env.PROVIDER_MODE ?? 'cli') === 'api' ? 'api' : 'cli';
 
-function chatGPTNeedsResponsesAPI(model: string): boolean {
+// Exported because the orchestrator also uses it to skip the CLI
+// pre-stage (admin path) when the user has explicitly picked a
+// CLI-incompatible SKU — saves one wasted spawn before fallback.
+export function chatGPTNeedsResponsesAPI(model: string): boolean {
   if (model.includes('-pro')) return true;
   if (model.includes('codex')) return true;
   if (/^o\d/.test(model)) return true;
