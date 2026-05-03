@@ -724,6 +724,19 @@ export async function adminTriggerAutoDebate(body: {
   return data;
 }
 
+// Topic discovery — Gemini + Google Search grounding finds a recent
+// trending topic for the given category. Returns the prompt-ready
+// topic text + suggested title; admin can edit before triggering.
+export async function adminDiscoverTopic(
+  category: string,
+): Promise<{ topic: string; title: string; raw: string }> {
+  const data = (await adminFetch('/auto-debate/discover', {
+    method: 'POST',
+    body: JSON.stringify({ category }),
+  })) as { ok: true; topic: string; title: string; raw: string };
+  return data;
+}
+
 export async function adminGetUsage(): Promise<UsageRow[]> {
   const data = (await adminFetch('/usage')) as { users: UsageRow[] };
   return data.users;

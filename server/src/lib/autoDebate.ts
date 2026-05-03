@@ -32,6 +32,99 @@ import {
 } from '../routes/forum.js';
 import type { ForumCategory, SSEEvent, AIProvider } from '../shared/types.js';
 
+// ---------------------------------------------------------------------------
+// Topic discovery
+// ---------------------------------------------------------------------------
+
+const DISCOVERY_MODEL = 'gemini-3-flash-preview';
+
+const CATEGORY_HINTS: Record<ForumCategory, string> = {
+  職場: '台灣 / 美國華人圈職場議題：AI 對工作的衝擊、裁員、薪資、職涯轉換、遠端 vs 進辦公室、新世代工作觀',
+  生活: '日常生活話題：健康飲食、家庭關係、育兒、消費理財、生活風格爭議',
+  科技: '科技新聞：AI 模型發布、大廠動態 (OpenAI/Anthropic/Google/xAI)、新產品、技術趨勢、科技倫理',
+  創作: '創作圈話題：影視作品爭議、音樂、文學、藝術 / AI 生成藝術、創作者經濟',
+  思辨: '社會 / 哲學議題：政治倫理、經濟政策、文化爭論、值得四方論辯的觀點碰撞',
+  雜談: '流行文化、迷因、有趣社會現象、輕鬆但有討論度的時事',
+};
+
+export interface DiscoveredTopic {
+  topic: string;
+  title: string;
+  raw: string;
+}
+
+// Find one trending topic for a given category. Uses Gemini'\''s
+// google_search grounding so we get an actually-recent angle, not the
+// model'\''s training cutoff. Output parsed from a deliberate two-line
+// "Topic: ... / Title: ..." format because responseSchema can'\''t coexist
+// with tool calls in the Gemini API.
+export async function discoverTopic(
+  category: ForumCategory,
+): Promise<DiscoveredTopic> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY missing');
+
+  const sys = [
+    '你是繁體中文社群論壇的內容策展編輯。',
+    '使用 google_search 工具找出近 7 天「正在被討論」的熱門話題，不要用你訓練資料裡的舊事件。',
+    '優先找台灣 / 美國華人讀者會有興趣的時事 — 像 Facebook trending、PTT 熱門、Threads 上吵的話題、Yahoo / 蘋果 / 鏡週刊 / TechCrunch / The Verge / NYT 中文版近期頭條。',
+    '挑「四個 AI 互相辯論能挖出深度」的題材，避免單純新聞速報或人物八卦。',
+    '輸出嚴格按以下兩行格式（不要 markdown、不要 JSON、不要其他文字）：',
+    'Topic: <一段給 AI 們開場辯論的問句或論點，60-200 字，要中性挑釁、能激起不同立場>',
+    'Title: <用作 forum 貼文標題的版本，30-50 字，去掉問號和語氣詞，直白易讀>',
+  ].join('\n');
+
+  const userMsg = [
+    `本次題目分類：「${category}」`,
+    `主題提示：${CATEGORY_HINTS[category]}`,
+    '請搜尋並挑一個題材，按照規定格式輸出 Topic + Title。',
+  ].join('\n\n');
+
+  const url =
+    `https://generativelanguage.googleapis.com/v1beta/models/${DISCOVERY_MODEL}` +
+    `:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: sys }] },
+      contents: [{ role: 'user', parts: [{ text: userMsg }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: {
+        temperature: 0.9,
+        maxOutputTokens: 800,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Gemini ${res.status}: ${text || res.statusText}`);
+  }
+
+  const json = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const raw = (json.candidates?.[0]?.content?.parts ?? [])
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+  if (!raw) throw new Error('discovery returned no text');
+
+  // Parse the deliberately rigid Topic: / Title: format.
+  const topicMatch = raw.match(/Topic\s*[:：]\s*([\s\S]+?)(?:\n\s*Title\s*[:：]|$)/);
+  const titleMatch = raw.match(/Title\s*[:：]\s*([\s\S]+?)$/m);
+  const topic = topicMatch?.[1]?.trim();
+  const title = titleMatch?.[1]?.trim();
+  if (!topic || !title) {
+    throw new Error(
+      `couldn't parse Topic/Title from discovery output:\n${raw.slice(0, 500)}`,
+    );
+  }
+  return { topic, title: title.slice(0, 60), raw };
+}
+
 const BOT_USERNAME = 'bot';
 const BOT_NICKNAME = 'AI 編輯部';
 

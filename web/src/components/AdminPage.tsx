@@ -6,6 +6,7 @@ import {
   adminGetUsage,
   adminListAudit,
   adminListUserSessions,
+  adminDiscoverTopic,
   adminRunDigest,
   adminSetUserDisabled,
   adminTriggerAutoDebate,
@@ -1284,11 +1285,25 @@ function AutoDebatePanel({ onError }: { onError: (msg: string) => void }) {
   const [category, setCategory] = useState<ForumCategory>('科技');
   const [title, setTitle] = useState('');
   const [running, setRunning] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
   const [lastResult, setLastResult] = useState<{
     postId: number;
     sessionId: string;
     steps: number;
   } | null>(null);
+
+  const discover = useCallback(async () => {
+    setDiscovering(true);
+    try {
+      const res = await adminDiscoverTopic(category);
+      setTopic(res.topic);
+      setTitle(res.title);
+    } catch (e) {
+      onError(`discover failed: ${(e as Error).message}`);
+    } finally {
+      setDiscovering(false);
+    }
+  }, [category, onError]);
 
   const submit = useCallback(async () => {
     const t = topic.trim();
@@ -1351,16 +1366,27 @@ function AutoDebatePanel({ onError }: { onError: (msg: string) => void }) {
         </div>
 
         <div>
-          <label className="block text-xs text-gray-400 mb-1.5">
-            主題 / Topic（會當作開場 user 訊息）
-          </label>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="block text-xs text-gray-400">
+              主題 / Topic（會當作開場 user 訊息）
+            </label>
+            <button
+              type="button"
+              onClick={discover}
+              disabled={running || discovering}
+              className="text-xs px-2 py-0.5 rounded border border-pink-500/50 text-pink-200 hover:bg-pink-900/30 disabled:opacity-50"
+              title="Gemini + Google Search 找一個近 7 天的熱門題目，自動填入"
+            >
+              {discovering ? '🔍 搜尋中…約 10 秒' : '🎲 自動找題目'}
+            </button>
+          </div>
           <textarea
             value={topic}
             onChange={(e) => setTopic(e.target.value)}
             disabled={running}
             rows={5}
             className="w-full bg-gray-900 border border-gray-700 rounded p-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-            placeholder={`例：「OpenAI 發布 GPT-5.5 後，Anthropic 該推遲 Opus 4.7 嗎？」\n或一段論點，給 4 AI 拆解辯論`}
+            placeholder={`例：「OpenAI 發布 GPT-5.5 後，Anthropic 該推遲 Opus 4.7 嗎？」\n或按 🎲 讓 AI 找熱門題目自動填入`}
           />
         </div>
 

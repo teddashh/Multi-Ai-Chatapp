@@ -30,7 +30,7 @@ import {
   saveForumMedia,
 } from '../lib/uploads.js';
 import { runFallbackDigestNow } from '../lib/fallbackDigest.js';
-import { runAutoDebate, resumeAutoDebate } from '../lib/autoDebate.js';
+import { runAutoDebate, resumeAutoDebate, discoverTopic } from '../lib/autoDebate.js';
 import { FORUM_CATEGORIES, type ForumCategory } from '../shared/types.js';
 import { estimateCost } from '../shared/prices.js';
 import { TIER_MODELS } from '../shared/models.js';
@@ -453,6 +453,31 @@ adminRoute.post('/auto-debate', async (c) => {
     const message = (err as Error).message;
     audit(me.id, 'auto_debate_fail', { metadata: { error: message } });
     return c.json({ error: message }, 500);
+  }
+});
+
+// Topic discovery — returns one trending topic + suggested title for
+// a given category. Lets admin preview before kicking off a debate,
+// or chain into runAutoDebate manually. Cron will call discoverTopic
+// directly for unattended runs.
+adminRoute.post('/auto-debate/discover', async (c) => {
+  const me = c.get('user');
+  const body = (await c.req.json().catch(() => null)) as
+    | { category?: ForumCategory }
+    | null;
+  const category = body?.category;
+  if (!category || !FORUM_CATEGORIES.includes(category)) {
+    return c.json({ error: 'invalid category' }, 400);
+  }
+  try {
+    const result = await discoverTopic(category);
+    audit(me.id, 'auto_debate_discover', {
+      metadata: { category, title: result.title.slice(0, 200) },
+    });
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    const message = (err as Error).message;
+    return c.json({ error: message }, 502);
   }
 });
 
