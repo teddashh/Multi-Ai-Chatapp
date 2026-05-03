@@ -11,6 +11,7 @@ import { blogRoute } from './routes/blog.js';
 import { startFallbackDigest } from './lib/fallbackDigest.js';
 import { startAutoDebateScheduler } from './lib/autoDebateScheduler.js';
 import { startBlogScheduler } from './lib/blogScheduler.js';
+import { startDailyCommentScheduler } from './lib/dailyCommentScheduler.js';
 import { forumStmts, blogStmts, type BlogPostRow } from './lib/db.js';
 import { resolve } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
@@ -239,3 +240,8 @@ startAutoDebateScheduler();
 // Prod-only, 8-min boot delay (offset from auto-debate so they don't
 // share a tick).
 startBlogScheduler();
+
+// Daily-comment cron — every 24h one rotating AI persona drops 2
+// comments (one agree, one disagree) on recent forum posts. 12-min
+// boot delay (offset from auto-debate 5min and blog 8min).
+startDailyCommentScheduler();
